@@ -96,75 +96,71 @@ def ask_coach(throttle, brake, speed_kmh):
 
 info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
 info.create(0)
-
-def find_player_scoring(info):
-    for veh in info.data.scoring.vehScoringInfo:
-        if veh.mIsPlayer:
-            return veh
-    return None
-
-def read_state(info)-> CarState:
-
-    player_index = info.data.telemetry.playerVehicleIdx
-    my_car = info.data.telemetry.telemInfo[player_index]
-
-    vx = my_car.mLocalVel.x
-    vy = my_car.mLocalVel.y
-    vz = my_car.mLocalVel.z
-
-    speed_ms = math.sqrt(vx**2 + vy**2 + vz**2)
-    speed_kmh = speed_ms * 3.6
-
-    my_scoring = find_player_scoring(info)
-
-    return CarState(
-        speed_kmh=speed_kmh,
-        throttle=my_car.mFilteredThrottle,
-        brake=my_car.mFilteredBrake,
-        gear=my_car.mGear,
-        rpm=my_car.mEngineRPM,
-        max_rpm=my_car.mEngineMaxRPM,
-        lap_dist=my_scoring.mLapDist,
-        lap_invalidated=my_car.mLapInvalidated,
-        #grip=[my_car.mWheels[i].mGripFract for i in range(4)],   dead
-        wheel_rot= [my_car.mWheels[i].mRotation for i in range(4)],
-        accel_lat= my_car.mLocalAccel.x,
-        accel_long= my_car.mLocalAccel.z,
-        surface=[my_car.mWheels[i].mSurfaceType for i in range(4)],
-        yaw_rate=my_car.mLocalRot.y
-    )
-print("Connected.")
-print("Press Ctrl+C to stop.\n")
-
-loop_count = 0
-coach_thread = None
-
-try:
-    while True:
-        info.update()
+class LiveSource:
+    def __init__(self,info):
+        self.info=info
+        print("Connected.")
+        print("Press Ctrl+C to stop.\n")
         
-        state = read_state(info)
-        radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]  # FL, FR, RL, RR
-        slips = [slip_ratio(state.wheel_rot[i], radii[i], state.speed_kmh / 3.6) for i in range(4)]
-        print(state)
-        print("slips", [round(s, 3) for s in slips])
-        #if loop_count % 20 == 0:
-           ##if coach_thread is None or not coach_thread.is_alive():
-               # print("Starting coach thread")
+    def find_player_scoring(self):
+        for veh in self.info.data.scoring.vehScoringInfo:
+                if veh.mIsPlayer:
+                    return veh
+        return None
 
-               # coach_thread = threading.Thread(
-                ##     args=(throttle, brake, speed_kmh),
-                #    daemon=True
-               # )
-                #coach_thread.start()
+    def read_state(self)-> CarState:
 
+        player_index = self.info.data.telemetry.playerVehicleIdx
+        my_car = self.info.data.telemetry.telemInfo[player_index]
+
+        vx = my_car.mLocalVel.x
+        vy = my_car.mLocalVel.y
+        vz = my_car.mLocalVel.z
+
+        speed_ms = math.sqrt(vx**2 + vy**2 + vz**2)
+        speed_kmh = speed_ms * 3.6
+
+        my_scoring = self.find_player_scoring()
         
 
-        loop_count += 1
-        time.sleep(0.5)
+        return CarState(
+            speed_kmh=speed_kmh,
+            throttle=my_car.mFilteredThrottle,
+            brake=my_car.mFilteredBrake,
+            gear=my_car.mGear,
+            rpm=my_car.mEngineRPM,
+            max_rpm=my_car.mEngineMaxRPM,
+            lap_dist=my_scoring.mLapDist,
+            lap_invalidated=my_car.mLapInvalidated,
+            #grip=[my_car.mWheels[i].mGripFract for i in range(4)],   dead
+            wheel_rot= [my_car.mWheels[i].mRotation for i in range(4)],
+            accel_lat= my_car.mLocalAccel.x,
+            accel_long= my_car.mLocalAccel.z,
+            surface=[my_car.mWheels[i].mSurfaceType for i in range(4)],
+            yaw_rate=my_car.mLocalRot.y
+            
+        )
+    
 
-except KeyboardInterrupt:
-    print("\nStopping...")
-    info.close()
-    print("Closed connection.")
 
+    def __iter__(self):
+
+        try:
+            while True:
+                self.info.update()
+                state = self.read_state()
+                yield state
+                time.sleep(0.5)
+
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            self.info.close()
+            print("Closed connection.")
+
+source = LiveSource(info)
+
+
+for frame in source:
+    radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS] 
+    slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
+    print(frame)
