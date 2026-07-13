@@ -175,20 +175,48 @@ class HardBrakingDetector:
         def update(self,frame):
             
             if(self.previous_brake<self.threshold and frame.brake>=self.threshold and frame.speed_kmh>30 and frame.elapsed_time-self.last_fire_time>3):
-                event= Event(kind="Hard_braking",sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh)
+                event= Event(kind="HARD_BRAKING",sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh)
                 self.last_fire_time= frame.elapsed_time
             else:
                 event= None
             self.previous_brake= frame.brake
             return event
 
-detector = HardBrakingDetector()
+
+class LockUpDetector:
+    def __init__(self, threshold=-0.3):
+        self.threshold = threshold
+        self.previously_locked = False     
+        self.last_fire_time = 0.0
+
+    def update(self, frame, slips):
+        is_locked = (
+            (slips[0] < self.threshold or slips[1] < self.threshold)   
+            and frame.brake > 0.2                                      
+            and frame.speed_kmh > 30                                   
+        )
+       
+        event = None
+        
+        if is_locked and not self.previously_locked and (frame.elapsed_time - self.last_fire_time > 3):
+            event = Event(kind="LOCKUP", sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh)
+            self.last_fire_time = frame.elapsed_time
+        self.previously_locked = is_locked
+        return event
+
+
+braking_detector = HardBrakingDetector()
+lockup_detector = LockUpDetector()
+
 for frame in source:
     radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS] 
     slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
-    hard_braking = detector.update(frame)
+    hard_braking = braking_detector.update(frame)
+    lockup = lockup_detector.update(frame,slips)
     if hard_braking:
         print(hard_braking)
+    if lockup:
+        print(lockup)
     print(frame)
 
 
