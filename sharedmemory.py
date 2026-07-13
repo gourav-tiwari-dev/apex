@@ -180,13 +180,4 @@ if __name__ == "__main__":
     test_api()
 
 
-class BrakeWatcher:
-    def __init__(self,threshold=0.8):
-        self.threshold = threshold
-        self.previous_brake=0.0
-
-    def update(self,brake):
-        crossed = self.previous_brake<self.threshold and brake>=self.threshold
-        self.previous_brake= brake
-        return crossed
 

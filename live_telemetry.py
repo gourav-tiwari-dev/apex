@@ -26,7 +26,7 @@ class CarState:
     accel_lat:  float # mLocalAccel.x — cornering G
     surface: list            # 4x mWheels[i].mSurfaceType
     yaw_rate: float          # mLocalRot
-
+    elapsed_time: float
 
 client = OpenAI(
     base_url="http://localhost:11434/v1",
@@ -137,8 +137,8 @@ class LiveSource:
             accel_lat= my_car.mLocalAccel.x,
             accel_long= my_car.mLocalAccel.z,
             surface=[my_car.mWheels[i].mSurfaceType for i in range(4)],
-            yaw_rate=my_car.mLocalRot.y
-            
+            yaw_rate=my_car.mLocalRot.y,
+            elapsed_time=my_car.mElapsedTime
         )
     
 
@@ -159,8 +159,36 @@ class LiveSource:
 
 source = LiveSource(info)
 
+@dataclass
+class Event:
+    kind: str
+    sim_time:float
+    speed_kmh:float
 
+class HardBrakingDetector:
+        def __init__(self,threshold=0.8):
+            self.threshold = threshold
+            self.previous_brake=0.0
+            self.last_fire_time=0.0
+            
+
+        def update(self,frame):
+            
+            if(self.previous_brake<self.threshold and frame.brake>=self.threshold and frame.speed_kmh>30 and frame.elapsed_time-self.last_fire_time>3):
+                event= Event(kind="Hard_braking",sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh)
+                self.last_fire_time= frame.elapsed_time
+            else:
+                event= None
+            self.previous_brake= frame.brake
+            return event
+
+detector = HardBrakingDetector()
 for frame in source:
     radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS] 
     slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
+    hard_braking = detector.update(frame)
+    if hard_braking:
+        print(hard_braking)
     print(frame)
+
+
