@@ -159,9 +159,27 @@ class LiveSource:
             print("Closed connection.")
 
 
+REPLAY = True
+
+class ReplaySource:
+    def __init__(self):
+        print("Connected.")
+        print("Press Ctrl+C to stop.\n")
+
+    def __iter__(self):
+        try:
+            with gzip.open("tape.jsonl.gz","rt") as f:
+                for line in f:
+                    as_dict = json.loads(line)
+                    as_data = CarState(**as_dict)
+                    yield as_data
+
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            print("Closed connection.")
 
 
-source = LiveSource(info)
+
 
 @dataclass
 class Event:
@@ -233,9 +251,16 @@ class Recorder:
         self.q.put(None)
         self.writer_thread.join()
 
+
+if(REPLAY):
+    source = ReplaySource()
+else:
+    source= LiveSource(info)
+    tele_recorder= Recorder()
+
 braking_detector = HardBrakingDetector()
 lockup_detector = LockUpDetector()
-tele_recorder= Recorder()
+
 
 try:
     for frame in source:
@@ -243,7 +268,8 @@ try:
         slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
         hard_braking = braking_detector.update(frame)
         lockup = lockup_detector.update(frame,slips)
-        tele_recorder.record(frame)
+        if not REPLAY:
+            tele_recorder.record(frame)
         if hard_braking:
             print(hard_braking)
         if lockup:
@@ -254,5 +280,6 @@ except KeyboardInterrupt:
     pass
 
 finally:
-    tele_recorder.stop()
+    if not REPLAY:
+        tele_recorder.stop()
 
