@@ -1,14 +1,15 @@
 import time
 import math
 import threading
-
+import json,gzip
 
 
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
 from openai import OpenAI
 from tts import speak
-from dataclasses import dataclass 
+from dataclasses import dataclass,asdict
+from queue import Queue
 
 @dataclass
 class CarState:
@@ -157,6 +158,9 @@ class LiveSource:
             self.info.close()
             print("Closed connection.")
 
+
+
+
 source = LiveSource(info)
 
 @dataclass
@@ -204,19 +208,51 @@ class LockUpDetector:
         self.previously_locked = is_locked
         return event
 
+class Recorder:
+    def __init__(self):
+        self.q = Queue()
+        self.writer_thread = threading.Thread(target=self._writer_loop)
+        self.writer_thread.start()
+
+    def record(self,frame):
+        self.q.put(frame)
+
+    def _writer_loop(self):
+        with gzip.open("tape.jsonl.gz","wt") as f:
+            while True:
+                item = self.q.get()
+                if item is None:
+                    break
+                
+                as_dict = asdict(item)
+                as_text= json.dumps(as_dict)
+                f.write(as_text + "\n")
+
+    
+    def stop(self):
+        self.q.put(None)
+        self.writer_thread.join()
 
 braking_detector = HardBrakingDetector()
 lockup_detector = LockUpDetector()
+tele_recorder= Recorder()
 
-for frame in source:
-    radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS] 
-    slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
-    hard_braking = braking_detector.update(frame)
-    lockup = lockup_detector.update(frame,slips)
-    if hard_braking:
-        print(hard_braking)
-    if lockup:
-        print(lockup)
-    print(frame)
+try:
+    for frame in source:
+        radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS] 
+        slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
+        hard_braking = braking_detector.update(frame)
+        lockup = lockup_detector.update(frame,slips)
+        tele_recorder.record(frame)
+        if hard_braking:
+            print(hard_braking)
+        if lockup:
+            print(lockup)
+        print(frame)
 
+except KeyboardInterrupt:
+    pass
+
+finally:
+    tele_recorder.stop()
 
