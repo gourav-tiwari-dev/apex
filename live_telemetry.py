@@ -145,13 +145,16 @@ class LiveSource:
 
 
     def __iter__(self):
-
+        last_time= None
         try:
+            
             while True:
                 self.info.update()
                 state = self.read_state()
-                yield state
-                time.sleep(0.5)
+                if state.elapsed_time!=last_time:
+                    last_time= state.elapsed_time
+                    yield state
+                time.sleep(0.002)
 
         except KeyboardInterrupt:
             print("\nStopping...")
@@ -159,7 +162,7 @@ class LiveSource:
             print("Closed connection.")
 
 
-REPLAY = True
+REPLAY = False
 
 class ReplaySource:
     def __init__(self):
@@ -283,12 +286,12 @@ lockup_detector = LockUpDetector()
 corner_detection = CornerEntryDetection()
 
 MONZA_CORNERS = [
-    {"name": "T1 Rettifilo",   "start":  780, "end":  930},
-    {"name": "T4 Roggia",      "start": 1990, "end": 2130},
-    {"name": "T6 Lesmo 1",     "start": 2450, "end": 2510},
-    {"name": "T7 Lesmo 2",     "start": 2800, "end": 2840},
-    {"name": "T8 Ascari",      "start": 3820, "end": 3930},
-    {"name": "T11 Parabolica", "start": 5030, "end": 5120},
+    {"name": "T1 Rettifilo",   "start":  760, "end":  970},
+    {"name": "T4 Roggia",      "start": 1995, "end": 2140},
+    {"name": "T6 Lesmo 1",     "start": 2450, "end": 2520},
+    {"name": "T7 Lesmo 2",     "start": 2785, "end": 2850},
+    {"name": "T8 Ascari",      "start": 3805, "end": 3940},
+    {"name": "T11 Parabolica", "start": 5000, "end": 5130},
 ]
 
 radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
