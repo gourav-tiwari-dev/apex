@@ -183,9 +183,11 @@ class ReplaySource:
 
 @dataclass
 class Event:
+    
     kind: str
     sim_time:float
     speed_kmh:float
+    detail:str|None=None
 
 class HardBrakingDetector:
         def __init__(self,threshold=0.8):
@@ -226,6 +228,24 @@ class LockUpDetector:
         self.previously_locked = is_locked
         return event
 
+
+class CornerEntryDetection:
+    def __init__(self):
+        self.previous_corner=None
+
+    def update(self,frame):
+        current_corner= None
+        for x in MONZA_CORNERS:
+            if x["start"]<=frame.lap_dist<x["end"]:
+                current_corner = x["name"]
+
+        event = None
+        if current_corner is not None and current_corner!=self.previous_corner:
+            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner)
+        self.previous_corner = current_corner
+
+        return event
+
 class Recorder:
     def __init__(self):
         self.q = Queue()
@@ -260,16 +280,29 @@ else:
 
 braking_detector = HardBrakingDetector()
 lockup_detector = LockUpDetector()
+corner_detection = CornerEntryDetection()
 
+MONZA_CORNERS = [
+    {"name": "T1 Rettifilo",   "start":  780, "end":  930},
+    {"name": "T4 Roggia",      "start": 1990, "end": 2130},
+    {"name": "T6 Lesmo 1",     "start": 2450, "end": 2510},
+    {"name": "T7 Lesmo 2",     "start": 2800, "end": 2840},
+    {"name": "T8 Ascari",      "start": 3820, "end": 3930},
+    {"name": "T11 Parabolica", "start": 5030, "end": 5120},
+]
+
+radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
 
 try:
     for frame in source:
-        radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS] 
         slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
         hard_braking = braking_detector.update(frame)
         lockup = lockup_detector.update(frame,slips)
+        corner= corner_detection.update(frame)
         if not REPLAY:
             tele_recorder.record(frame)
+        if corner:
+            print(corner)
         if hard_braking:
             print(hard_braking)
         if lockup:
