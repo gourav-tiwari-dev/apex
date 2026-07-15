@@ -162,7 +162,7 @@ class LiveSource:
             print("Closed connection.")
 
 
-REPLAY = False
+REPLAY = True
 
 class ReplaySource:
     def __init__(self):
@@ -231,6 +231,18 @@ class LockUpDetector:
         self.previously_locked = is_locked
         return event
 
+class ThrottleLift:
+    def __init__(self):
+        self.previous_throttle = 0.0
+        self.last_fire_time=0.0
+    def update(self,frame):
+        event = None
+        if frame.brake<0.2 and self.previous_throttle>=0.5 and frame.throttle<0.5 and frame.elapsed_time-self.last_fire_time>3 and frame.speed_kmh>30:
+            self.last_fire_time = frame.elapsed_time
+            event = Event(kind="THROTTLE_LIFT",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh)
+            
+        self.previous_throttle=frame.throttle
+        return event
 
 class CornerEntryDetection:
     def __init__(self):
@@ -284,7 +296,7 @@ else:
 braking_detector = HardBrakingDetector()
 lockup_detector = LockUpDetector()
 corner_detection = CornerEntryDetection()
-
+throttle_lift = ThrottleLift()
 MONZA_CORNERS = [
     {"name": "T1 Rettifilo",   "start":  760, "end":  970},
     {"name": "T4 Roggia",      "start": 1995, "end": 2140},
@@ -302,6 +314,7 @@ try:
         hard_braking = braking_detector.update(frame)
         lockup = lockup_detector.update(frame,slips)
         corner= corner_detection.update(frame)
+        lift= throttle_lift.update(frame)
         if not REPLAY:
             tele_recorder.record(frame)
         if corner:
@@ -310,7 +323,9 @@ try:
             print(hard_braking)
         if lockup:
             print(lockup)
-        print(frame)
+        if lift:
+            print(lift)
+        #print(frame)
 
 except KeyboardInterrupt:
     pass
