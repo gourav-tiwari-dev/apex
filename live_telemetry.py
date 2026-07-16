@@ -97,6 +97,18 @@ def ask_coach(throttle, brake, speed_kmh):
 
 info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
 info.create(0)
+
+MONZA_CORNERS = [
+    {"name": "T1 Rettifilo",   "start":  760, "end":  970},
+    {"name": "T3 Curva Grande","start": 1250, "end": 1760},
+    {"name": "T4 Roggia",      "start": 1995, "end": 2140},
+    {"name": "T6 Lesmo 1",     "start": 2450, "end": 2520},
+    {"name": "T7 Lesmo 2",     "start": 2785, "end": 2850},
+    {"name": "T8 Ascari",      "start": 3805, "end": 3940},
+    {"name": "T11 Parabolica", "start": 5000, "end": 5130},
+]
+
+radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
 class LiveSource:
     def __init__(self,info):
         self.info=info
@@ -261,6 +273,29 @@ class CornerEntryDetection:
 
         return event
 
+class OffTrackDetector:
+    def __init__(self):
+        self.previously_offtrack=False
+        self.last_fire_time = 0.0
+    def update(self,frame):
+        off_wheels=0
+        event = None
+        current_corner=None
+        for s in frame.surface:
+            if s in (2,4):
+                off_wheels+=1
+        if off_wheels>=2 and self.previously_offtrack!= True and frame.elapsed_time-self.last_fire_time>3:
+            for x in MONZA_CORNERS:
+                if x["start"]<=frame.lap_dist<x["end"]:
+                    current_corner = x["name"]
+            event = Event(kind="OFF_TRACK",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner)
+            self.previously_offtrack = True
+            self.last_fire_time = frame.elapsed_time
+        elif off_wheels < 2:
+            self.previously_offtrack = False
+        return event
+         
+
 class Recorder:
     def __init__(self):
         self.q = Queue()
@@ -297,34 +332,28 @@ braking_detector = HardBrakingDetector()
 lockup_detector = LockUpDetector()
 corner_detection = CornerEntryDetection()
 throttle_lift = ThrottleLift()
-MONZA_CORNERS = [
-    {"name": "T1 Rettifilo",   "start":  760, "end":  970},
-    {"name": "T4 Roggia",      "start": 1995, "end": 2140},
-    {"name": "T6 Lesmo 1",     "start": 2450, "end": 2520},
-    {"name": "T7 Lesmo 2",     "start": 2785, "end": 2850},
-    {"name": "T8 Ascari",      "start": 3805, "end": 3940},
-    {"name": "T11 Parabolica", "start": 5000, "end": 5130},
-]
-
-radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
+offtrack_detector = OffTrackDetector()
 
 try:
     for frame in source:
-        slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
-        hard_braking = braking_detector.update(frame)
-        lockup = lockup_detector.update(frame,slips)
-        corner= corner_detection.update(frame)
-        lift= throttle_lift.update(frame)
-        if not REPLAY:
-            tele_recorder.record(frame)
-        if corner:
-            print(corner)
-        if hard_braking:
-            print(hard_braking)
-        if lockup:
-            print(lockup)
-        if lift:
-            print(lift)
+         slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
+         hard_braking = braking_detector.update(frame)
+         lockup = lockup_detector.update(frame,slips)
+         corner= corner_detection.update(frame)
+         lift= throttle_lift.update(frame)
+         offtrack = offtrack_detector.update(frame)
+         if not REPLAY:
+             tele_recorder.record(frame)
+         if corner:
+             print(corner)
+         if hard_braking:
+             print(hard_braking)
+         if lockup:
+             print(lockup)
+         if lift:
+             print(lift)
+         if offtrack:
+             print(offtrack)
         #print(frame)
 
 except KeyboardInterrupt:
