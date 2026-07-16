@@ -294,7 +294,27 @@ class OffTrackDetector:
         elif off_wheels < 2:
             self.previously_offtrack = False
         return event
-         
+
+class SpinDetector:
+    def __init__(self):
+        self.previously_spinning = False
+        self.last_fire_time=0.0
+
+    def update(self,frame):
+        is_spin = abs( frame.yaw_rate)>1.7 
+        event = None
+        current_corner= None
+        if is_spin and self.previously_spinning!= True and frame.elapsed_time - self.last_fire_time>3:
+            for x in MONZA_CORNERS:
+                if x["start"]<=frame.lap_dist<x["end"]:
+                    current_corner = x["name"]
+            event = Event(kind="SPIN",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner)
+            self.previously_spinning=True
+            self.last_fire_time= frame.elapsed_time
+        if not is_spin:
+            self.previously_spinning=False
+        return event
+
 
 class Recorder:
     def __init__(self):
@@ -333,27 +353,32 @@ lockup_detector = LockUpDetector()
 corner_detection = CornerEntryDetection()
 throttle_lift = ThrottleLift()
 offtrack_detector = OffTrackDetector()
+spin_detector= SpinDetector()
 
 try:
     for frame in source:
-         slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
-         hard_braking = braking_detector.update(frame)
-         lockup = lockup_detector.update(frame,slips)
-         corner= corner_detection.update(frame)
-         lift= throttle_lift.update(frame)
-         offtrack = offtrack_detector.update(frame)
-         if not REPLAY:
-             tele_recorder.record(frame)
-         if corner:
-             print(corner)
-         if hard_braking:
-             print(hard_braking)
-         if lockup:
-             print(lockup)
-         if lift:
-             print(lift)
-         if offtrack:
-             print(offtrack)
+        
+          slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
+          hard_braking = braking_detector.update(frame)
+          lockup = lockup_detector.update(frame,slips)
+          corner= corner_detection.update(frame)
+          lift= throttle_lift.update(frame)
+          offtrack = offtrack_detector.update(frame)
+          spin = spin_detector.update(frame)
+          if not REPLAY:
+              tele_recorder.record(frame)
+          if corner:
+              print(corner)
+          if hard_braking:
+              print(hard_braking)
+          if lockup:
+              print(lockup)
+          if lift:
+              print(lift)
+          if offtrack:
+              print(offtrack)
+          if spin:
+            print(spin)
         #print(frame)
 
 except KeyboardInterrupt:
