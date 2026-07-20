@@ -183,7 +183,7 @@ class ReplaySource:
 
     def __iter__(self):
         try:
-            with gzip.open("tape.jsonl.gz","rt") as f:
+            with gzip.open("tape_60hz_clean.jsonl.gz","rt") as f:
                 for line in f:
                     as_dict = json.loads(line)
                     as_data = CarState(**as_dict)
@@ -204,57 +204,77 @@ class Event:
     speed_kmh:float
     detail:str|None=None
 
-class HardBrakingDetector:
-        def __init__(self,threshold=0.8):
-            self.threshold = threshold
-            self.previous_brake=0.0
-            self.last_fire_time=0.0
-            
+class Detector:
+    def __init__(self):
+        self.armed=False
+        self.last_fire_time=0.0
+        self.consecutive_true=0
+        self.cooldown=3.0
+        self.debounce_frames=2
 
-        def update(self,frame):
-            
-            if(self.previous_brake<self.threshold and frame.brake>=self.threshold and frame.speed_kmh>30 and frame.elapsed_time-self.last_fire_time>3):
-                event= Event(kind="HARD_BRAKING",sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh)
-                self.last_fire_time= frame.elapsed_time
-            else:
-                event= None
-            self.previous_brake= frame.brake
-            return event
+    def current_corner(self,frame):
+        corner= None
+        for x in MONZA_CORNERS:
+            if x["start"]<=frame.lap_dist<x["end"]:
+                corner = x["name"]
+        return corner
+
+    def build_event(self,frame):
+        return Event(kind=self.kind,sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh,detail=self.current_corner(frame))
+
+    def is_triggered(self,frame)->bool:
+        raise NotImplementedError
+
+    def update(self,frame):
+        triggered= self.is_triggered(frame)
+        event = None
+        if not triggered:
+            self.armed=False
+            self.consecutive_true=0
+            event=None
+
+        elif triggered and self.consecutive_true<self.debounce_frames:
+            self.consecutive_true+=1
+            event=None
+
+        elif triggered and self.consecutive_true>=self.debounce_frames and frame.elapsed_time-self.last_fire_time>self.cooldown and not self.armed:
+            event=self.build_event(frame)
+            self.last_fire_time=frame.elapsed_time
+            self.armed=True
+            self.consecutive_true+=1
+        
+        return event
+
+class HardBrakingDetector(Detector):
+        def __init__(self):
+            super().__init__()
+            self.kind="HARD_BRAKING"
+        def is_triggered(self, frame):
+            return frame.brake>0.8 and frame.speed_kmh>30
 
 
-class LockUpDetector:
+class LockUpDetector(Detector):
     def __init__(self, threshold=-0.3):
-        self.threshold = threshold
-        self.previously_locked = False     
-        self.last_fire_time = 0.0
-
-    def update(self, frame, slips):
+        self.threshold=threshold
+        super().__init__()
+        self.kind="LOCKUP"
+    def is_triggered (self, frame):
+        slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
         is_locked = (
             (slips[0] < self.threshold or slips[1] < self.threshold)   
             and frame.brake > 0.2                                      
             and frame.speed_kmh > 30                                   
         )
-       
-        event = None
+        return is_locked
         
-        if is_locked and not self.previously_locked and (frame.elapsed_time - self.last_fire_time > 3):
-            event = Event(kind="LOCKUP", sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh)
-            self.last_fire_time = frame.elapsed_time
-        self.previously_locked = is_locked
-        return event
 
-class ThrottleLift:
+class ThrottleLift(Detector):
     def __init__(self):
-        self.previous_throttle = 0.0
-        self.last_fire_time=0.0
-    def update(self,frame):
-        event = None
-        if frame.brake<0.2 and self.previous_throttle>=0.5 and frame.throttle<0.5 and frame.elapsed_time-self.last_fire_time>3 and frame.speed_kmh>30:
-            self.last_fire_time = frame.elapsed_time
-            event = Event(kind="THROTTLE_LIFT",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh)
+        super().__init__()
+        self.kind="THROTTLE_LIFT"
+    def is_triggered(self,frame):
+        return frame.brake<0.2  and frame.throttle<0.5 and frame.speed_kmh>30
             
-        self.previous_throttle=frame.throttle
-        return event
 
 class CornerEntryDetection:
     def __init__(self):
@@ -273,47 +293,25 @@ class CornerEntryDetection:
 
         return event
 
-class OffTrackDetector:
+class OffTrackDetector(Detector):
     def __init__(self):
-        self.previously_offtrack=False
-        self.last_fire_time = 0.0
-    def update(self,frame):
+        super().__init__()
+        self.kind="OFF_TRACK"
+    def is_triggered(self,frame):
         off_wheels=0
-        event = None
-        current_corner=None
         for s in frame.surface:
             if s in (2,4):
                 off_wheels+=1
-        if off_wheels>=2 and self.previously_offtrack!= True and frame.elapsed_time-self.last_fire_time>3:
-            for x in MONZA_CORNERS:
-                if x["start"]<=frame.lap_dist<x["end"]:
-                    current_corner = x["name"]
-            event = Event(kind="OFF_TRACK",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner)
-            self.previously_offtrack = True
-            self.last_fire_time = frame.elapsed_time
-        elif off_wheels < 2:
-            self.previously_offtrack = False
-        return event
+        return off_wheels>=2
 
-class SpinDetector:
+class SpinDetector(Detector):
     def __init__(self):
-        self.previously_spinning = False
-        self.last_fire_time=0.0
+        super().__init__()
+        self.kind="SPIN"
 
-    def update(self,frame):
-        is_spin = abs( frame.yaw_rate)>1.7 
-        event = None
-        current_corner= None
-        if is_spin and self.previously_spinning!= True and frame.elapsed_time - self.last_fire_time>3:
-            for x in MONZA_CORNERS:
-                if x["start"]<=frame.lap_dist<x["end"]:
-                    current_corner = x["name"]
-            event = Event(kind="SPIN",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner)
-            self.previously_spinning=True
-            self.last_fire_time= frame.elapsed_time
-        if not is_spin:
-            self.previously_spinning=False
-        return event
+    def is_triggered(self,frame):
+        return abs( frame.yaw_rate)>1.7 
+    
 
 
 class Recorder:
@@ -348,37 +346,24 @@ else:
     source= LiveSource(info)
     tele_recorder= Recorder()
 
-braking_detector = HardBrakingDetector()
-lockup_detector = LockUpDetector()
-corner_detection = CornerEntryDetection()
-throttle_lift = ThrottleLift()
-offtrack_detector = OffTrackDetector()
-spin_detector= SpinDetector()
+detectors=[
+    HardBrakingDetector(),
+     LockUpDetector(),
+     CornerEntryDetection(),
+     ThrottleLift(),
+     OffTrackDetector(),
+     SpinDetector()]
 
 try:
     for frame in source:
         
-          slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
-          hard_braking = braking_detector.update(frame)
-          lockup = lockup_detector.update(frame,slips)
-          corner= corner_detection.update(frame)
-          lift= throttle_lift.update(frame)
-          offtrack = offtrack_detector.update(frame)
-          spin = spin_detector.update(frame)
-          if not REPLAY:
+        for detector in detectors:
+            event = detector.update(frame)
+            if event:
+                print(event)
+        if not REPLAY:
               tele_recorder.record(frame)
-          if corner:
-              print(corner)
-          if hard_braking:
-              print(hard_braking)
-          if lockup:
-              print(lockup)
-          if lift:
-              print(lift)
-          if offtrack:
-              print(offtrack)
-          if spin:
-            print(spin)
+
         #print(frame)
 
 except KeyboardInterrupt:
