@@ -98,6 +98,21 @@ def ask_coach(throttle, brake, speed_kmh):
 info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
 info.create(0)
 
+scoring   = info.data.scoring.vehScoringInfo       # timing / position
+telemetry = info.data.telemetry.telemInfo  
+
+def match_opponents():
+    opponents=[]
+    telemetry_by_id= {t.mID:t for t in telemetry if t.mID!=0}
+    for s in scoring:
+        if s.mID !=0:
+            telemetry_info=telemetry_by_id.get(s.mID)
+            opponents.append((s,telemetry_info))
+
+    return opponents
+
+print(len(match_opponents()))
+
 MONZA_CORNERS = [
     {"name": "T1 Rettifilo",   "start":  760, "end":  970},
     {"name": "T3 Curva Grande","start": 1250, "end": 1760},
@@ -313,7 +328,7 @@ class SpinDetector(Detector):
         return abs( frame.yaw_rate)>1.7 
     
 
-
+ 
 class Recorder:
     def __init__(self):
         self.q = Queue()
