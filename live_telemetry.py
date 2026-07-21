@@ -111,7 +111,6 @@ def match_opponents():
 
     return opponents
 
-print(len(match_opponents()))
 
 MONZA_CORNERS = [
     {"name": "T1 Rettifilo",   "start":  760, "end":  970},
