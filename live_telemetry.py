@@ -188,6 +188,7 @@ class Event:
     sim_time:float
     speed_kmh:float
     detail:str|None=None
+    conclusion: str | None = None
 
 class Detector:
     def __init__(self):
@@ -234,6 +235,7 @@ class HardBrakingDetector(Detector):
         def __init__(self):
             super().__init__()
             self.kind="HARD_BRAKING"
+       
         def is_triggered(self, frame):
             return frame.brake>0.8 and frame.speed_kmh>30
 
@@ -243,6 +245,11 @@ class LockUpDetector(Detector):
         self.threshold=threshold
         super().__init__()
         self.kind="LOCKUP"
+
+    def build_event(self, frame):
+            e=super().build_event(frame)
+            corner = e.detail or "the straight" 
+            e.conclusion = f"Front lockup under heavy braking into {corner} at {e.speed_kmh:.0f}:km/h"
     def is_triggered (self, frame):
         slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
         is_locked = (

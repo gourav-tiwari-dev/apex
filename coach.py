@@ -10,6 +10,7 @@ class Event:
     sim_time:float
     speed_kmh:float
     detail:str|None=None
+    conclusion: str | None = None
 
 SYSTEM_PROMPT = (
     "You are a terse race engineer talking to your driver over team radio. "
@@ -25,7 +26,7 @@ client = OpenAI(base_url="https://aicredits.in/v1", api_key=os.environ["AICREDIT
 
 
 def phrase_event(event):
-    context = f"{event.kind} · {event.detail} · {event.speed_kmh:.0f}km/h"   
+    context = event.conclusion or f"{event.kind} · {event.detail} · {event.speed_kmh:.0f}km/h"   
     resp = client.chat.completions.create(
         model="deepseek-v4-flash",
         messages=[
@@ -36,4 +37,4 @@ def phrase_event(event):
     return resp.choices[0].message.content                                
 
 if __name__ == "__main__":
-    print(phrase_event(Event(kind="LOCKUP", sim_time=123.4, speed_kmh=180.0,  detail="T8 Ascari")))
+    print(phrase_event(Event(kind="LOCKUP", sim_time=123.4, speed_kmh=180.0,  detail="T8 Ascari",conclusion="Front lockup under heavy braking into ascari at 180 km/h")))
