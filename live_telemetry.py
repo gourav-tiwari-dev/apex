@@ -235,7 +235,11 @@ class HardBrakingDetector(Detector):
         def __init__(self):
             super().__init__()
             self.kind="HARD_BRAKING"
-       
+        def build_event(self, frame):
+            e= super().build_event(frame)
+            corner = e.detail or "the straight" 
+            e.conclusion = f"hard on the brakes into {corner}"
+            return e
         def is_triggered(self, frame):
             return frame.brake>0.8 and frame.speed_kmh>30
 
@@ -249,7 +253,8 @@ class LockUpDetector(Detector):
     def build_event(self, frame):
             e=super().build_event(frame)
             corner = e.detail or "the straight" 
-            e.conclusion = f"Front lockup under heavy braking into {corner} at {e.speed_kmh:.0f}:km/h"
+            e.conclusion = f"Front lockup under heavy braking into {corner} at {e.speed_kmh:.0f}km/h"
+            return e
     def is_triggered (self, frame):
         slips = [slip_ratio(frame.wheel_rot[i], radii[i],frame.speed_kmh / 3.6) for i in range(4)]
         is_locked = (
@@ -264,6 +269,13 @@ class ThrottleLift(Detector):
     def __init__(self):
         super().__init__()
         self.kind="THROTTLE_LIFT"
+    
+    def build_event(self, frame):
+        e= super().build_event(frame)
+        corner = e.detail or "the straight "
+        e.conclusion = f"lifted early into {corner}"
+        return e
+    
     def is_triggered(self,frame):
         return frame.brake<0.2  and frame.throttle<0.5 and frame.speed_kmh>30
             
@@ -272,15 +284,17 @@ class CornerEntryDetection:
     def __init__(self):
         self.previous_corner=None
 
+
     def update(self,frame):
         current_corner= None
+        event = None
         for x in MONZA_CORNERS:
             if x["start"]<=frame.lap_dist<x["end"]:
                 current_corner = x["name"]
-
-        event = None
+        
+        
         if current_corner is not None and current_corner!=self.previous_corner:
-            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner)
+            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner,conclusion = f"entering {current_corner} at {frame.speed_kmh:.0f}km/h")
         self.previous_corner = current_corner
 
         return event
@@ -289,6 +303,18 @@ class OffTrackDetector(Detector):
     def __init__(self):
         super().__init__()
         self.kind="OFF_TRACK"
+
+    def build_event(self, frame):
+        e= super().build_event(frame)
+        surface = "Road"
+        for s in frame.surface:
+            if s==2:
+                surface = "grass"
+            elif s==4:
+                surface= "gravel"
+        e.conclusion = f"Ran Wide onto {surface}"
+        return e
+
     def is_triggered(self,frame):
         off_wheels=0
         for s in frame.surface:
@@ -300,7 +326,11 @@ class SpinDetector(Detector):
     def __init__(self):
         super().__init__()
         self.kind="SPIN"
-
+    def build_event(self, frame):
+        e= super().build_event(frame)
+        corner = e.detail or "the straight "
+        e.conclusion = f"rear stepped out at {corner}"
+        return e
     def is_triggered(self,frame):
         return abs( frame.yaw_rate)>1.7 
     
