@@ -10,6 +10,7 @@ from openai import OpenAI
 from tts import speak
 from dataclasses import dataclass,asdict
 from queue import Queue
+from coach import phrase_event
 
 @dataclass
 class CarState:
@@ -63,36 +64,6 @@ def slip_ratio(wheel_rotation, wheel_radius, car_speed_ms):
     return (wheel_surface_speed - car_speed_ms) / car_speed_ms
 
 
-def ask_coach(throttle, brake, speed_kmh):
-    print("Coach thread started")
-
-    response = client.chat.completions.create(
-        model="llama3.2:3b",
-        messages=[
-            {
-                "role": "system",
-                "content": "Give some racing advice under 10 words."
-            },
-            {
-                "role": "user",
-                "content": f"Throttle:{throttle}, Brake:{brake}, Speed:{speed_kmh}, corner: Ascari Monza"
-            }
-        ],
-        temperature=0.7
-    )
-
-    advice = response.choices[0].message.content
-
-    print("LLM responded:", advice)
-
-    
-    print("Before speech")
-
-    speak(advice)
-    
-    print("After speech")
-
-    print("Coach thread finished")
 
 
 info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
@@ -369,12 +340,16 @@ detectors=[
      SpinDetector()]
 
 try:
+    last_spoken_time=0.0
     for frame in source:
         
         for detector in detectors:
             event = detector.update(frame)
             if event:
                 print(event)
+                if frame.elapsed_time-last_spoken_time>=5:
+                    print(phrase_event(event))
+                    last_spoken_time=frame.elapsed_time
         if not REPLAY:
               tele_recorder.record(frame)
 
