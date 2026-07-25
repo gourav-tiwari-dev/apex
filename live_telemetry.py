@@ -90,7 +90,7 @@ MONZA_CORNERS = [
     {"name": "T6 Lesmo 1",     "start": 2450, "end": 2520},
     {"name": "T7 Lesmo 2",     "start": 2785, "end": 2850},
     {"name": "T8 Ascari",      "start": 3805, "end": 3940},
-    {"name": "T11 Parabolica", "start": 5000, "end": 5130},
+    {"name": "T11 Parabolica", "start": 5000, "end": 5400},
 ]
 
 radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
@@ -188,6 +188,7 @@ class Event:
     sim_time:float
     speed_kmh:float
     detail:str|None=None
+    lap_dist: float = 0.0
     conclusion: str | None = None
 
 class Detector:
@@ -199,14 +200,14 @@ class Detector:
         self.debounce_frames=2
 
     def current_corner(self,frame):
-        corner= None
+        corner= "the straight"
         for x in MONZA_CORNERS:
             if x["start"]<=frame.lap_dist<x["end"]:
                 corner = x["name"]
         return corner
 
     def build_event(self,frame):
-        return Event(kind=self.kind,sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh,detail=self.current_corner(frame))
+        return Event(kind=self.kind,sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh,detail=self.current_corner(frame),lap_dist=frame.lap_dist)
 
     def is_triggered(self,frame)->bool:
         raise NotImplementedError
@@ -269,15 +270,36 @@ class ThrottleLift(Detector):
     def __init__(self):
         super().__init__()
         self.kind="THROTTLE_LIFT"
+        self.last_start_time = 0.0
+        self.lifting=False
     
     def build_event(self, frame):
         e= super().build_event(frame)
-        corner = e.detail or "the straight "
-        e.conclusion = f"lifted early into {corner}"
+        corner = e.detail or "the straight"
+        e.conclusion = f"off throttle and coasting at {corner}, no braking"
         return e
     
-    def is_triggered(self,frame):
-        return frame.brake<0.2  and frame.throttle<0.5 and frame.speed_kmh>30
+    def is_triggered(self, frame):
+        braking = frame.brake > 0.2
+        off_throttle = frame.throttle < 0.5 and frame.speed_kmh > 30
+
+        
+        if not self.lifting:
+            if off_throttle and not braking:
+                self.lifting = True
+                self.last_start_time = frame.elapsed_time
+            return False
+
+        
+        if braking:                 
+            self.lifting = False
+            return False
+        if not off_throttle:        
+            self.lifting = False
+            return False
+
+    
+        return frame.elapsed_time - self.last_start_time > 1.0
             
 
 class CornerEntryDetection:
@@ -294,7 +316,7 @@ class CornerEntryDetection:
         
         
         if current_corner is not None and current_corner!=self.previous_corner:
-            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner,conclusion = f"entering {current_corner} at {frame.speed_kmh:.0f}km/h")
+            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner,lap_dist=frame.lap_dist,conclusion = f"entering {current_corner} at {frame.speed_kmh:.0f}km/h")
         self.previous_corner = current_corner
 
         return event
@@ -312,7 +334,7 @@ class OffTrackDetector(Detector):
                 surface = "grass"
             elif s==4:
                 surface= "gravel"
-        e.conclusion = f"Ran Wide onto {surface}"
+        e.conclusion = f"Ran Wide onto {surface} at {self.current_corner(frame)}, {e.speed_kmh:.0f}km/h"
         return e
 
     def is_triggered(self,frame):
@@ -368,6 +390,10 @@ else:
     source= LiveSource(info)
     tele_recorder= Recorder()
 
+detector_priority = {"SPIN": 1, "OFF_TRACK": 2, "LOCKUP": 3, "THROTTLE_LIFT": 4}
+INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
+SPEAK_COOLDOWN = 5.0
+
 detectors=[
     HardBrakingDetector(),
      LockUpDetector(),
@@ -376,21 +402,36 @@ detectors=[
      OffTrackDetector(),
      SpinDetector()]
 
+
 try:
-    last_spoken_time=0.0
+    last_spoken_time = 0.0
     for frame in source:
-        
+        event_list = []
         for detector in detectors:
             event = detector.update(frame)
             if event:
-                print(event)
-                if frame.elapsed_time-last_spoken_time>=5:
-                    print(phrase_event(event))
-                    last_spoken_time=frame.elapsed_time
-        if not REPLAY:
-              tele_recorder.record(frame)
+                print(event)                            
+                if event.kind in detector_priority:     
+                    event_list.append(event)            
 
-        #print(frame)
+        spoken_event = None
+        max_priority = 10                               
+        for event in event_list:
+            if detector_priority[event.kind] < max_priority:
+                spoken_event = event
+                max_priority = detector_priority[event.kind]
+
+        if spoken_event:                                
+            is_incident = spoken_event.kind in INCIDENTS
+            cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
+            if is_incident or cooldown_open:            
+                line=phrase_event(spoken_event)
+                if line:
+                    print(line)
+                last_spoken_time = frame.elapsed_time
+
+        if not REPLAY:
+            tele_recorder.record(frame)
 
 except KeyboardInterrupt:
     pass
