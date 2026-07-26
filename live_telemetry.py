@@ -1,3 +1,4 @@
+from sys import maxsize
 import time
 import math
 import threading
@@ -9,7 +10,7 @@ from lmu_data import LMUObjectOut, LMUConstants
 from openai import OpenAI
 from tts import speak
 from dataclasses import dataclass,asdict
-from queue import Queue
+from queue import Full, Queue
 from coach import phrase_event
 
 @dataclass
@@ -402,7 +403,18 @@ detectors=[
      OffTrackDetector(),
      SpinDetector()]
 
+speak_queue = Queue(maxsize=1)
+def worker_function():
+    while True:
+        current_event= speak_queue.get()
+        if current_event is None:
+            break
+        line = phrase_event(current_event)
+        if line:
+            print(line)
 
+worker=threading.Thread(target= worker_function,daemon=True)
+worker.start()
 try:
     last_spoken_time = 0.0
     for frame in source:
@@ -420,16 +432,19 @@ try:
             if detector_priority[event.kind] < max_priority:
                 spoken_event = event
                 max_priority = detector_priority[event.kind]
-
+        
         if spoken_event:                                
             is_incident = spoken_event.kind in INCIDENTS
             cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
-            if is_incident or cooldown_open:            
-                line=phrase_event(spoken_event)
-                if line:
-                    print(line)
-                last_spoken_time = frame.elapsed_time
-
+            if is_incident or cooldown_open: 
+                 
+                try:
+                    speak_queue.put_nowait(spoken_event)
+                    
+                    last_spoken_time = frame.elapsed_time
+                except Full:
+                    pass
+        
         if not REPLAY:
             tele_recorder.record(frame)
 
@@ -437,6 +452,8 @@ except KeyboardInterrupt:
     pass
 
 finally:
+    speak_queue.put(None)
+    worker.join(timeout=5)
     if not REPLAY:
         tele_recorder.stop()
 
