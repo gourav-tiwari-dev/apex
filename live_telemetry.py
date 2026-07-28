@@ -1,3 +1,4 @@
+from mimetypes import init
 from sys import maxsize
 import time
 import math
@@ -12,6 +13,7 @@ from tts import speak
 from dataclasses import dataclass,asdict
 from queue import Full, Queue
 from coach import phrase_event
+from coach import radio_check
 
 @dataclass
 class CarState:
@@ -416,6 +418,11 @@ def worker_function():
 worker=threading.Thread(target= worker_function,daemon=True)
 worker.start()
 try:
+    if radio_check() is None:
+       print("[radio check failed — driving without coach]")
+    else:
+        print("[coach is online]")
+    
     last_spoken_time = 0.0
     for frame in source:
         event_list = []
