@@ -1,5 +1,3 @@
-from mimetypes import init
-from sys import maxsize
 import time
 import math
 import threading
@@ -32,11 +30,6 @@ class CarState:
     surface: list            # 4x mWheels[i].mSurfaceType
     yaw_rate: float          # mLocalRot
     elapsed_time: float
-
-client = OpenAI(
-    base_url="http://localhost:11434/v1",
-    api_key="ollama"
-)
 
 # Wheel radii in metres (from mStaticUndeflectedRadius: 34cm front, 36cm rear).
 # Constant — no need to read them every frame.
@@ -163,7 +156,7 @@ class LiveSource:
 
 
 REPLAY = True
-
+REPLAY_SPEED=1
 class ReplaySource:
     def __init__(self):
         print("Connected.")
@@ -172,10 +165,21 @@ class ReplaySource:
     def __iter__(self):
         try:
             with gzip.open("tape_60hz_clean.jsonl.gz","rt") as f:
+                start_wall=time.perf_counter()
+                start_sim=None
                 for line in f:
                     as_dict = json.loads(line)
                     as_data = CarState(**as_dict)
+                    if start_sim is None:
+                        start_sim=as_data.elapsed_time
+                    target=start_wall+(as_data.elapsed_time-start_sim)/REPLAY_SPEED
+                    delay = target - time.perf_counter()
+                    if delay<0:
+                        continue
+                    else:
+                        time.sleep(delay)
                     yield as_data
+                    
 
         except KeyboardInterrupt:
             print("\nStopping...")
