@@ -78,5 +78,5 @@ def radio_check():
 
 if __name__ == "__main__":
     for i in range(0,5):
-        print(phrase_event(Event(kind="THROTTLE_LIFT", sim_time=123.4, speed_kmh=180.0,  detail="T8 Ascari",conclusion="Throttle lift into  ascari with no braking at 180 km/h")))
+        print(phrase_event(Event(kind="THROTTLE_LIFT", sim_time=123.4, speed_kmh=180.0,  detail="T8 Ascari",conclusion="radio check")))
         i+=1

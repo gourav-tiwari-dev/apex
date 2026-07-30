@@ -407,16 +407,22 @@ detectors=[
 
 speak_queue = Queue(maxsize=1)
 def worker_function():
+    STALE_THRESHOLD=5.0
     while True:
         current_event= speak_queue.get()
         if current_event is None:
             break
         line = phrase_event(current_event)
         if line:
-            print(line)
+            if latest_sim_time-current_event.sim_time<STALE_THRESHOLD:
+                print(line)
+            else:
+                print(f"[stale line dropped: {current_event.kind}@{current_event.detail}]")
 
+latest_sim_time=0
 worker=threading.Thread(target= worker_function,daemon=True)
 worker.start()
+
 try:
     if radio_check() is None:
        print("[radio check failed — driving without coach]")
@@ -425,6 +431,7 @@ try:
     
     last_spoken_time = 0.0
     for frame in source:
+        latest_sim_time=frame.elapsed_time
         event_list = []
         for detector in detectors:
             event = detector.update(frame)
