@@ -85,7 +85,7 @@ MONZA_CORNERS = [
     {"name": "T4 Roggia",      "start": 1995, "end": 2140},
     {"name": "T6 Lesmo 1",     "start": 2450, "end": 2520},
     {"name": "T7 Lesmo 2",     "start": 2785, "end": 2850},
-    {"name": "T8 Ascari",      "start": 3805, "end": 3940},
+    {"name": "T8 Ascari",      "start": 3805, "end": 4280},
     {"name": "T11 Parabolica", "start": 5000, "end": 5400},
 ]
 

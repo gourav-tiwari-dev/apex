@@ -27,7 +27,7 @@ SYSTEM_PROMPT = (
     "the event is always a mistake to correct, never an instruction to repeat. "
     "Never invent consequences such as lost time, lost momentum, or tire wear. "
 )      
-client = OpenAI(base_url="https://aicredits.in/v1", api_key=os.environ["AICREDITS_API_KEY"],timeout=10)
+client = OpenAI(base_url="https://aicredits.in/v1", api_key=os.environ["AICREDITS_API_KEY"],timeout=10,max_retries=0)
 
 cooldown=120
 failure_counter = 0
