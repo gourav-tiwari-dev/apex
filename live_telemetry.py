@@ -1,7 +1,7 @@
 import time
 import math
 import threading
-import json,gzip
+import json,gzip,hashlib
 
 
 from sharedmemory import MMapControl
@@ -156,7 +156,7 @@ class LiveSource:
 
 
 REPLAY = True
-REPLAY_SPEED=1
+REPLAY_SPEED=None
 class ReplaySource:
     def __init__(self):
         print("Connected.")
@@ -172,12 +172,14 @@ class ReplaySource:
                     as_data = CarState(**as_dict)
                     if start_sim is None:
                         start_sim=as_data.elapsed_time
-                    target=start_wall+(as_data.elapsed_time-start_sim)/REPLAY_SPEED
-                    delay = target - time.perf_counter()
-                    if delay<0:
-                        continue
-                    else:
-                        time.sleep(delay)
+                    if REPLAY_SPEED:
+                        target=start_wall+(as_data.elapsed_time-start_sim)/REPLAY_SPEED
+                        delay = target - time.perf_counter()
+                        if delay<0:
+                            yield as_data
+                            continue
+                        else:
+                            time.sleep(delay)
                     yield as_data
                     
 
@@ -411,7 +413,7 @@ detectors=[
 
 speak_queue = Queue(maxsize=1)
 def worker_function():
-    STALE_THRESHOLD=5.0
+    STALE_THRESHOLD=6.0
     while True:
         current_event= speak_queue.get()
         if current_event is None:
@@ -426,8 +428,10 @@ def worker_function():
 latest_sim_time=0
 worker=threading.Thread(target= worker_function,daemon=True)
 worker.start()
+dropped_events=0
 
 try:
+    hash_events=[]
     if radio_check() is None:
        print("[radio check failed — driving without coach]")
     else:
@@ -441,7 +445,8 @@ try:
             event = detector.update(frame)
             if event:
                 print(event)                            
-                if event.kind in detector_priority:     
+                if event.kind in detector_priority: 
+                        
                     event_list.append(event)            
 
         spoken_event = None
@@ -454,13 +459,16 @@ try:
         if spoken_event:                                
             is_incident = spoken_event.kind in INCIDENTS
             cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
-            if is_incident or cooldown_open: 
+            if is_incident or cooldown_open:
+                hash_events.append(spoken_event) 
                  
                 try:
-                    speak_queue.put_nowait(spoken_event)
                     
+                    speak_queue.put_nowait(spoken_event)
                     last_spoken_time = frame.elapsed_time
                 except Full:
+                    dropped_events+=1
+                    print(f"[queue full line dropped: {spoken_event.kind}@{spoken_event.detail}]")
                     pass
         
         if not REPLAY:
@@ -470,8 +478,15 @@ except KeyboardInterrupt:
     pass
 
 finally:
+    SHUTDOWN_GRACE=3*5
     speak_queue.put(None)
-    worker.join(timeout=5)
+    worker.join(timeout=SHUTDOWN_GRACE)
+    print(dropped_events)
+    
+    
     if not REPLAY:
         tele_recorder.stop()
+    serialized = json.dumps([asdict(e) for e in hash_events])
+    event_hash = hashlib.sha256(serialized.encode()).hexdigest()
+    print(event_hash)
 
