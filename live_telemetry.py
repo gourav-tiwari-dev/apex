@@ -156,7 +156,7 @@ class LiveSource:
 
 
 REPLAY = True
-REPLAY_SPEED=None
+REPLAY_SPEED=1
 class ReplaySource:
     def __init__(self):
         print("Connected.")
@@ -421,7 +421,10 @@ def worker_function():
         line = phrase_event(current_event)
         if line:
             if latest_sim_time-current_event.sim_time<STALE_THRESHOLD:
-                print(line)
+                if not REPLAY_SPEED and REPLAY:
+                    print(line)
+                else:
+                    speak(line)
             else:
                 print(f"[stale line dropped: {current_event.kind}@{current_event.detail}]")
 
