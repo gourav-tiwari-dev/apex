@@ -156,7 +156,7 @@ class LiveSource:
 
 
 REPLAY = True
-REPLAY_SPEED=1
+REPLAY_SPEED=None
 class ReplaySource:
     def __init__(self):
         print("Connected.")
@@ -197,8 +197,9 @@ class Event:
     sim_time:float
     speed_kmh:float
     detail:str|None=None
-    lap_dist: float = 0.0
     conclusion: str | None = None
+    lap_dist: float=0.0
+    lap_count: int=0
 
 class Detector:
     def __init__(self):
@@ -253,6 +254,16 @@ class HardBrakingDetector(Detector):
         def is_triggered(self, frame):
             return frame.brake>0.8 and frame.speed_kmh>30
 
+class lapCounter:
+    def __init__(self):
+        self.previous_lap_dist=0
+        self.lap_count=0
+    def update(self,frame):
+        if self.previous_lap_dist-frame.lap_dist>1000:
+            self.lap_count+=1
+        self.previous_lap_dist=frame.lap_dist
+        return self.lap_count
+        
 
 class LockUpDetector(Detector):
     def __init__(self, threshold=-0.3):
@@ -411,6 +422,8 @@ detectors=[
      OffTrackDetector(),
      SpinDetector()]
 
+lap_counter = lapCounter()
+
 speak_queue = Queue(maxsize=1)
 def worker_function():
     STALE_THRESHOLD=6.0
@@ -442,11 +455,13 @@ try:
     
     last_spoken_time = 0.0
     for frame in source:
+        lap_count = lap_counter.update(frame)
         latest_sim_time=frame.elapsed_time
         event_list = []
         for detector in detectors:
             event = detector.update(frame)
             if event:
+                event.lap_count = lap_count
                 print(event)                            
                 if event.kind in detector_priority: 
                         
