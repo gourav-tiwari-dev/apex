@@ -14,7 +14,7 @@ from queue import Full, Empty, Queue
 from datetime import datetime
 from coach import phrase_event
 from coach import radio_check
-from memory import connect_db,start_session,save_event,save_spoken
+from memory import connect_db,start_session,save_event,save_spoken,finish_session
 
 @dataclass
 class CarState:
@@ -159,7 +159,7 @@ class LiveSource:
 
 
 REPLAY = True
-REPLAY_SPEED=1
+REPLAY_SPEED=None
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 class ReplaySource:
     def __init__(self):
@@ -465,6 +465,7 @@ worker=threading.Thread(target= worker_function,daemon=True)
 worker.start()
 dropped_events=0
 conn = None
+session_id = None
 
 try:
     conn = connect_db()
@@ -530,7 +531,7 @@ finally:
     worker.join(timeout=SHUTDOWN_GRACE)
     if conn:
         drain_spoken(conn)
-        conn.close()
+        
     print(dropped_events)
     
     
@@ -538,5 +539,10 @@ finally:
         tele_recorder.stop()
     serialized = json.dumps([asdict(e) for e in hash_events])
     event_hash = hashlib.sha256(serialized.encode()).hexdigest()
+    if session_id:
+        finish_session(conn,session_id,event_hash)
+        conn.close()
+    else:
+        conn.close()
     print(event_hash)
 

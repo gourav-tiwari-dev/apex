@@ -50,4 +50,7 @@ def save_event(conn,session_id,event):
 def save_spoken(conn,event_id,spoken_at,line):
   cur = conn.execute("INSERT INTO spoken (event_id,spoken_at,line) VALUES (?,?,?)",(event_id,spoken_at,line))
   conn.commit()
-  
+
+def finish_session(conn,session_id,hash):
+  cur = conn.execute("UPDATE sessions SET event_hash = ? WHERE id = ?",(hash,session_id))
+  conn.commit()
