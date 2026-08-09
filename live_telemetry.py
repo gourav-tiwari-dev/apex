@@ -4,14 +4,17 @@ import threading
 import json,gzip,hashlib
 
 
+
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
 from openai import OpenAI
 from tts import speak
 from dataclasses import dataclass,asdict
-from queue import Full, Queue
+from queue import Full, Empty, Queue
+from datetime import datetime
 from coach import phrase_event
 from coach import radio_check
+from memory import connect_db,start_session,save_event,save_spoken
 
 @dataclass
 class CarState:
@@ -156,7 +159,8 @@ class LiveSource:
 
 
 REPLAY = True
-REPLAY_SPEED=None
+REPLAY_SPEED=1
+TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 class ReplaySource:
     def __init__(self):
         print("Connected.")
@@ -164,7 +168,7 @@ class ReplaySource:
 
     def __iter__(self):
         try:
-            with gzip.open("tape_60hz_clean.jsonl.gz","rt") as f:
+            with gzip.open(TAPE_PATH,"rt") as f:
                 start_wall=time.perf_counter()
                 start_sim=None
                 for line in f:
@@ -196,7 +200,7 @@ class Event:
     kind: str
     sim_time:float
     speed_kmh:float
-    detail:str|None=None
+    corner:str|None=None
     conclusion: str | None = None
     lap_dist: float=0.0
     lap_count: int=0
@@ -217,7 +221,7 @@ class Detector:
         return corner
 
     def build_event(self,frame):
-        return Event(kind=self.kind,sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh,detail=self.current_corner(frame),lap_dist=frame.lap_dist)
+        return Event(kind=self.kind,sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh,corner=self.current_corner(frame),lap_dist=frame.lap_dist)
 
     def is_triggered(self,frame)->bool:
         raise NotImplementedError
@@ -248,7 +252,7 @@ class HardBrakingDetector(Detector):
             self.kind="HARD_BRAKING"
         def build_event(self, frame):
             e= super().build_event(frame)
-            corner = e.detail or "the straight" 
+            corner = e.corner or "the straight" 
             e.conclusion = f"hard on the brakes into {corner}"
             return e
         def is_triggered(self, frame):
@@ -273,7 +277,7 @@ class LockUpDetector(Detector):
 
     def build_event(self, frame):
             e=super().build_event(frame)
-            corner = e.detail or "the straight" 
+            corner = e.corner or "the straight" 
             e.conclusion = f"Front lockup under heavy braking into {corner} at {e.speed_kmh:.0f}km/h"
             return e
     def is_triggered (self, frame):
@@ -295,7 +299,7 @@ class ThrottleLift(Detector):
     
     def build_event(self, frame):
         e= super().build_event(frame)
-        corner = e.detail or "the straight"
+        corner = e.corner or "the straight"
         e.conclusion = f"off throttle and coasting at {corner}, no braking"
         return e
     
@@ -336,7 +340,7 @@ class CornerEntryDetection:
         
         
         if current_corner is not None and current_corner!=self.previous_corner:
-            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,detail=current_corner,lap_dist=frame.lap_dist,conclusion = f"entering {current_corner} at {frame.speed_kmh:.0f}km/h")
+            event=  Event(kind="CORNER_ENTRY",sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,corner=current_corner,lap_dist=frame.lap_dist,conclusion = f"entering {current_corner} at {frame.speed_kmh:.0f}km/h")
         self.previous_corner = current_corner
 
         return event
@@ -354,7 +358,7 @@ class OffTrackDetector(Detector):
                 surface = "grass"
             elif s==4:
                 surface= "gravel"
-        e.conclusion = f"Ran Wide onto {surface} at {self.current_corner(frame)}, {e.speed_kmh:.0f}km/h"
+        e.conclusion = f"Ran Wide onto {surface} at {e.corner}, {e.speed_kmh:.0f}km/h"
         return e
 
     def is_triggered(self,frame):
@@ -370,7 +374,7 @@ class SpinDetector(Detector):
         self.kind="SPIN"
     def build_event(self, frame):
         e= super().build_event(frame)
-        corner = e.detail or "the straight "
+        corner = e.corner or "the straight "
         e.conclusion = f"rear stepped out at {corner}"
         return e
     def is_triggered(self,frame):
@@ -425,28 +429,47 @@ detectors=[
 lap_counter = lapCounter()
 
 speak_queue = Queue(maxsize=1)
+spoken_results = Queue()
 def worker_function():
     STALE_THRESHOLD=6.0
     while True:
-        current_event= speak_queue.get()
-        if current_event is None:
+        item = speak_queue.get()
+        if item is None:
             break
-        line = phrase_event(current_event)
+        event, event_id = item
+        line = phrase_event(event)
         if line:
-            if latest_sim_time-current_event.sim_time<STALE_THRESHOLD:
+            spoken_at = latest_sim_time
+            if spoken_at - event.sim_time < STALE_THRESHOLD:
                 if not REPLAY_SPEED and REPLAY:
                     print(line)
                 else:
                     speak(line)
+                    spoken_results.put((event_id, spoken_at, line))
+
             else:
-                print(f"[stale line dropped: {current_event.kind}@{current_event.detail}]")
+                print(f"[stale line dropped: {event.kind}@{event.corner}]")
+
+
+def drain_spoken(conn):
+    while True:
+        try:
+            event_id, spoken_at, line = spoken_results.get_nowait()
+        except Empty:
+            break
+        save_spoken(conn, event_id, spoken_at, line)
+
 
 latest_sim_time=0
 worker=threading.Thread(target= worker_function,daemon=True)
 worker.start()
 dropped_events=0
+conn = None
 
 try:
+    conn = connect_db()
+    session_started = datetime.now().isoformat(timespec="seconds")
+    session_id = start_session(conn,session_started,TAPE_PATH,REPLAY_SPEED)
     hash_events=[]
     if radio_check() is None:
        print("[radio check failed — driving without coach]")
@@ -462,33 +485,39 @@ try:
             event = detector.update(frame)
             if event:
                 event.lap_count = lap_count
-                print(event)                            
+                print(event)
+                event_id = save_event(conn,session_id,event)                             
                 if event.kind in detector_priority: 
                         
-                    event_list.append(event)            
+                    event_list.append((event, event_id))            
 
         spoken_event = None
+        spoken_event_id = None
         max_priority = 10                               
-        for event in event_list:
+        for event, eid in event_list:
             if detector_priority[event.kind] < max_priority:
                 spoken_event = event
+                spoken_event_id = eid
                 max_priority = detector_priority[event.kind]
         
         if spoken_event:                                
             is_incident = spoken_event.kind in INCIDENTS
             cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
             if is_incident or cooldown_open:
+                
                 hash_events.append(spoken_event) 
                  
                 try:
                     
-                    speak_queue.put_nowait(spoken_event)
+                    speak_queue.put_nowait((spoken_event, spoken_event_id))
                     last_spoken_time = frame.elapsed_time
                 except Full:
                     dropped_events+=1
-                    print(f"[queue full line dropped: {spoken_event.kind}@{spoken_event.detail}]")
+                    print(f"[queue full line dropped: {spoken_event.kind}@{spoken_event.corner}]")
                     pass
         
+        drain_spoken(conn)
+
         if not REPLAY:
             tele_recorder.record(frame)
 
@@ -499,6 +528,9 @@ finally:
     SHUTDOWN_GRACE=3*5
     speak_queue.put(None)
     worker.join(timeout=SHUTDOWN_GRACE)
+    if conn:
+        drain_spoken(conn)
+        conn.close()
     print(dropped_events)
     
     
