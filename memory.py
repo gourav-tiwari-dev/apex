@@ -29,6 +29,22 @@ SCHEMA = """
     line          TEXT    NOT NULL,
     FOREIGN KEY (event_id) REFERENCES events (id)
   );
+
+  CREATE TABLE IF NOT EXISTS laps (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    lap_count     INTEGER NOT NULL,
+    validity      INTEGER NOT NULL,          -- mCountLapFlag: 0/1/2
+    sector1       REAL,                      -- NOT WIRED YET (mCurSector1)
+    sector2       REAL,                      -- NOT WIRED YET (mCurSector2, cumulative s1+s2)
+    sector3       REAL,                      -- NOT WIRED YET (derive: mLastLapTime - sector2)
+    fuel          REAL,                      -- NOT WIRED YET (mFuel, litres, at lap start)
+    energy        REAL,                      -- NOT WIRED YET (mBatteryChargeFraction 0.0-1.0)
+    tyre_wear     REAL,                      -- NOT WIRED YET (mWear; PROXY for age, not age)
+    clean_air     INTEGER,                   -- NOT WIRED YET (mTimeBehindNext > 2.0 for the lap)
+    UNIQUE (session_id, lap_count),
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
 """
 
 def connect_db(db_path='apex.db'):
@@ -51,6 +67,17 @@ def save_spoken(conn,event_id,spoken_at,line):
   cur = conn.execute("INSERT INTO spoken (event_id,spoken_at,line) VALUES (?,?,?)",(event_id,spoken_at,line))
   conn.commit()
 
+def save_lap(conn,session_id,lap_count,validity,sector1=None,sector2=None,sector3=None,fuel=None,energy=None,tyre_wear=None,clean_air=None):
+  cur = conn.execute("INSERT INTO laps (session_id,lap_count,validity,sector1,sector2,sector3,fuel,energy,tyre_wear,clean_air) VALUES (?,?,?,?,?,?,?,?,?,?)",(session_id,lap_count,validity,sector1,sector2,sector3,fuel,energy,tyre_wear,clean_air))
+  conn.commit()
+  return cur.lastrowid
+
+
 def finish_session(conn,session_id,hash):
   cur = conn.execute("UPDATE sessions SET event_hash = ? WHERE id = ?",(hash,session_id))
   conn.commit()
+
+
+
+# TODO(next brick): corner stats + time-loss ranker — cut-line #6
+# def ranker(conn, ...):
