@@ -14,7 +14,7 @@ from queue import Full, Empty, Queue
 from datetime import datetime
 from coach import phrase_event
 from coach import radio_check
-from memory import connect_db,start_session,save_event,save_spoken,finish_session
+from memory import connect_db,start_session,save_event,save_spoken,finish_session,save_lap
 
 @dataclass
 class CarState:
@@ -262,9 +262,12 @@ class lapCounter:
     def __init__(self):
         self.previous_lap_dist=0
         self.lap_count=0
+        self.wrapped=False
     def update(self,frame):
+        self.wrapped=False
         if self.previous_lap_dist-frame.lap_dist>1000:
             self.lap_count+=1
+            self.wrapped=True
         self.previous_lap_dist=frame.lap_dist
         return self.lap_count
         
@@ -478,8 +481,18 @@ try:
         print("[coach is online]")
     
     last_spoken_time = 0.0
+    # GUESSED — mLapInvalidated never observed True (n=33485)
+    validity = 1                      # 1 = valid, 0 = invalidated
     for frame in source:
         lap_count = lap_counter.update(frame)
+
+        if lap_counter.wrapped:
+            save_lap(conn,session_id,lap_count-1,validity)
+            validity = 1
+
+        if frame.lap_invalidated:
+            validity = 0
+
         latest_sim_time=frame.elapsed_time
         event_list = []
         for detector in detectors:

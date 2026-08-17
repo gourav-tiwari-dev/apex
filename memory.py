@@ -80,4 +80,4 @@ def finish_session(conn,session_id,hash):
 
 
 # TODO(next brick): corner stats + time-loss ranker — cut-line #6
-# def ranker(conn, ...):
+ #def ranker(conn,  ):
