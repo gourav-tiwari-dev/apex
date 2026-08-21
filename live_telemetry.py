@@ -160,7 +160,7 @@ class LiveSource:
             print("Closed connection.")
 
 
-REPLAY = True
+REPLAY = False
 REPLAY_SPEED=None
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 class ReplaySource:
@@ -443,7 +443,10 @@ class SpinDetector(Detector):
 
  
 class Recorder:
-    def __init__(self):
+    def __init__(self,path):
+        # path is unique per session - a hardcoded name silently overwrote the
+        # previous session's tape every run.
+        self.path = path
         self.q = Queue()
         self.writer_thread = threading.Thread(target=self._writer_loop)
         self.writer_thread.start()
@@ -452,7 +455,7 @@ class Recorder:
         self.q.put(frame)
 
     def _writer_loop(self):
-        with gzip.open("tape.jsonl.gz","wt") as f:
+        with gzip.open(self.path,"wt") as f:
             while True:
                 item = self.q.get()
                 if item is None:
@@ -470,9 +473,14 @@ class Recorder:
 
 if(REPLAY):
     source = ReplaySource()
+    tape_out = TAPE_PATH
 else:
     source= LiveSource(info)
-    tele_recorder= Recorder()
+    # wall-clock is correct HERE: this names a file for a human, it is not
+    # telemetry timing. All event timing still comes from mElapsedTime.
+    tape_out = f"tape_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl.gz"
+    tele_recorder= Recorder(tape_out)
+    print(f"Recording to {tape_out}")
 
 detector_priority = {"SPIN": 1, "OFF_TRACK": 2, "LOCKUP": 3, "THROTTLE_LIFT": 4}
 INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
@@ -531,7 +539,7 @@ session_id = None
 try:
     conn = connect_db()
     session_started = datetime.now().isoformat(timespec="seconds")
-    session_id = start_session(conn,session_started,TAPE_PATH,REPLAY_SPEED)
+    session_id = start_session(conn,session_started,tape_out,REPLAY_SPEED)
     hash_events=[]
     if radio_check() is None:
        print("[radio check failed — driving without coach]")
