@@ -14,7 +14,7 @@ from queue import Full, Empty, Queue
 from datetime import datetime
 from coach import phrase_event
 from coach import radio_check
-from memory import connect_db,start_session,save_event,save_spoken,finish_session,save_lap
+from memory import connect_db,start_session,save_event,save_spoken,finish_session,save_lap,save_corner_stat,print_corner_report
 
 @dataclass
 class CarState:
@@ -38,6 +38,8 @@ class CarState:
 # Constant — no need to read them every frame.
 FRONT_RADIUS = 0.34
 REAR_RADIUS  = 0.36
+
+
 
 def slip_ratio(wheel_rotation, wheel_radius, car_speed_ms):
     """
@@ -204,6 +206,61 @@ class Event:
     conclusion: str | None = None
     lap_dist: float=0.0
     lap_count: int=0
+
+@dataclass
+class CornerStat:
+    lap_count:int
+    corner:str 
+    brake_onset: float|None
+    min_speed: float|None 
+
+BRAKE_ON = 0.4
+
+class CornerStats:
+    def __init__(self):
+        self.corner = None
+        self.lap_count = None
+        self.brake_onset = None
+        self.min_speed = None
+        self.prev_brake = 0.0
+
+    def current_corner(self, frame):
+        corner = None
+        for x in MONZA_CORNERS:
+            if x["start"] <= frame.lap_dist < x["end"]:
+                corner = x["name"]
+        return corner
+
+    def update(self, frame, lap_count):
+        now = self.current_corner(frame)
+        was = self.corner
+        stat = None
+
+        if now is None and was is not None:
+            # LEAVING - hand back the row, then forget everything
+            stat = CornerStat(self.lap_count, self.corner,
+                              self.brake_onset, self.min_speed)
+            self.corner = None
+            self.lap_count = None
+            self.brake_onset = None
+            self.min_speed = None
+
+        elif now is not None:
+            if now != was:
+                # just arrived - start a fresh corner
+                self.corner = now
+                self.lap_count = lap_count
+                self.brake_onset = None
+                self.min_speed = None
+            # measure - runs on the arrival frame too
+            if self.min_speed is None or frame.speed_kmh < self.min_speed:
+                self.min_speed = frame.speed_kmh
+            if self.brake_onset is None and self.prev_brake < BRAKE_ON <= frame.brake:
+                self.brake_onset = frame.lap_dist
+
+        self.prev_brake = frame.brake
+        return stat
+
 
 class Detector:
     def __init__(self):
@@ -430,6 +487,7 @@ detectors=[
      SpinDetector()]
 
 lap_counter = lapCounter()
+corner_stats = CornerStats()
 
 speak_queue = Queue(maxsize=1)
 spoken_results = Queue()
@@ -485,6 +543,11 @@ try:
     validity = 1                      # 1 = valid, 0 = invalidated
     for frame in source:
         lap_count = lap_counter.update(frame)
+
+        stat = corner_stats.update(frame, lap_count)
+        if stat:
+            print(stat)
+            save_corner_stat(conn, session_id, stat)
 
         if lap_counter.wrapped:
             save_lap(conn,session_id,lap_count-1,validity)
@@ -554,6 +617,7 @@ finally:
     event_hash = hashlib.sha256(serialized.encode()).hexdigest()
     if session_id:
         finish_session(conn,session_id,event_hash)
+        print_corner_report(conn,session_id)
         conn.close()
     else:
         conn.close()

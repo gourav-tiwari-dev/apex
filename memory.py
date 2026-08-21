@@ -1,4 +1,5 @@
 import sqlite3
+from statistics import median
 
 SCHEMA = """
   CREATE TABLE IF NOT EXISTS sessions (
@@ -45,6 +46,19 @@ SCHEMA = """
     UNIQUE (session_id, lap_count),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
+
+  -- REBUILDABLE CACHE. Everything here is derived from the tape by CornerStats.
+  -- Safe to DROP and replay. Never the source of truth.
+  CREATE TABLE IF NOT EXISTS corner_stats (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    lap_count     INTEGER NOT NULL,
+    corner        TEXT    NOT NULL,
+    brake_onset   REAL,                      -- raw lap_dist where brake crossed 0.4; NULL = never braked
+    min_speed     REAL,
+    UNIQUE (session_id, lap_count, corner),
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
 """
 
 def connect_db(db_path='apex.db'):
@@ -78,8 +92,60 @@ def finish_session(conn,session_id,hash):
   conn.commit()
 
 
+def save_corner_stat(conn,session_id,stat):
+  cur = conn.execute("INSERT OR REPLACE INTO corner_stats (session_id,lap_count,corner,brake_onset,min_speed) VALUES (?,?,?,?,?)",(session_id,stat.lap_count,stat.corner,stat.brake_onset,stat.min_speed))
+  conn.commit()
+  return cur.lastrowid
 
-# TODO(next brick): corner stats + time-loss ranker — cut-line #6
+
+def corner_report(conn,session_id=None):
+  """Per-corner report card. Median is the typical lap, spread is how repeatable you are.
+  Sorted by brake-point spread: the least repeatable corner comes first."""
+  if session_id is None:
+    rows = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats").fetchall()
+    incident_rows = conn.execute("SELECT corner,COUNT(*) FROM events WHERE kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner").fetchall()
+  else:
+    rows = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE session_id = ?",(session_id,)).fetchall()
+    incident_rows = conn.execute("SELECT corner,COUNT(*) FROM events WHERE session_id = ? AND kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner",(session_id,)).fetchall()
+
+  incidents = dict(incident_rows)
+  by_corner = {}
+  for corner,lap_count,brake_onset,min_speed in rows:
+    by_corner.setdefault(corner,[]).append((brake_onset,min_speed))
+
+  report = []
+  for corner,values in by_corner.items():
+    onsets = [o for o,_ in values if o is not None]
+    speeds = [s for _,s in values if s is not None]
+    report.append({
+      "corner":        corner,
+      "laps":          len(values),
+      "onset_median":  median(onsets) if onsets else None,
+      "onset_spread":  max(onsets)-min(onsets) if len(onsets) > 1 else None,
+      "speed_median":  median(speeds) if speeds else None,
+      "speed_spread":  max(speeds)-min(speeds) if len(speeds) > 1 else None,
+      "incidents":     incidents.get(corner,0),
+    })
+  report.sort(key=lambda r: (r["onset_spread"] is None, -(r["onset_spread"] or 0)))
+  return report
+
+
+def print_corner_report(conn,session_id=None):
+  report = corner_report(conn,session_id)
+  if not report:
+    print("[no corner stats recorded]")
+    return
+  def fmt(v,width,dp):
+    return " " * (width-2) + "--" if v is None else f"{v:>{width}.{dp}f}"
+  print()
+  print("CORNER REPORT CARD" + (f" - session {session_id}" if session_id else " - all sessions"))
+  print(f"{'corner':<16}{'laps':>5}{'brake pt':>10}{'spread':>8}{'min spd':>9}{'spread':>8}{'inc':>5}")
+  print("-" * 61)
+  for r in report:
+    print(f"{r['corner']:<16}{r['laps']:>5}{fmt(r['onset_median'],10,1)}{fmt(r['onset_spread'],8,1)}{fmt(r['speed_median'],9,1)}{fmt(r['speed_spread'],8,1)}{r['incidents']:>5}")
+  print()
+
+
 def ranker(conn):
   cur = conn.execute("SELECT corner,SUM(CASE WHEN kind='CORNER_ENTRY' THEN 1 ELSE 0 END) AS entries,SUM(CASE WHEN kind IN ('OFF_TRACK','SPIN','LOCKUP') THEN 1 ELSE 0 END) AS incidents,SUM(CASE WHEN kind IN ('OFF_TRACK','SPIN','LOCKUP') THEN 1 ELSE 0 END) * 1.0 / SUM(CASE WHEN kind='CORNER_ENTRY' THEN 1 ELSE 0 END) AS rate FROM events GROUP BY corner ORDER BY rate DESC")
   return cur.fetchall()

@@ -4,3 +4,5 @@ graphify-out/
 *.log
 *.wav
 *.md
+# local-only test scaffolding, not part of the project
+test_toy.py
