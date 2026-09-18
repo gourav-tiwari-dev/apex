@@ -65,14 +65,6 @@ def slip_ratio(wheel_rotation, wheel_radius, car_speed_ms):
     return (wheel_surface_speed - car_speed_ms) / car_speed_ms
 
 
-
-
-info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
-info.create(0)
-
-scoring   = info.data.scoring.vehScoringInfo       # timing / position
-telemetry = info.data.telemetry.telemInfo  
-
 def match_opponents():
     opponents=[]
     telemetry_by_id= {t.mID:t for t in telemetry if t.mID!=0}
@@ -491,166 +483,172 @@ class Recorder:
         self.q.put(None)
         self.writer_thread.join()
 
+if __name__ == "__main__":
+    info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
+    info.create(0)
 
-if(REPLAY):
-    source = ReplaySource()
-    tape_out = TAPE_PATH
-else:
-    source= LiveSource(info)
-    # wall-clock is correct HERE: this names a file for a human, it is not
-    # telemetry timing. All event timing still comes from mElapsedTime.
-    tape_out = f"tape_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl.gz"
-    tele_recorder= Recorder(tape_out)
-    print(f"Recording to {tape_out}")
+    scoring   = info.data.scoring.vehScoringInfo       # timing / position
+    telemetry = info.data.telemetry.telemInfo  
 
-detector_priority = {"SPIN": 1, "OFF_TRACK": 2, "LOCKUP": 3, "THROTTLE_LIFT": 4}
-INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
-SPEAK_COOLDOWN = 5.0
+    if(REPLAY):
+        source = ReplaySource()
+        tape_out = TAPE_PATH
+    else:
+        source= LiveSource(info)
+        # wall-clock is correct HERE: this names a file for a human, it is not
+        # telemetry timing. All event timing still comes from mElapsedTime.
+        tape_out = f"tape_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl.gz"
+        tele_recorder= Recorder(tape_out)
+        print(f"Recording to {tape_out}")
 
-detectors=[
-    HardBrakingDetector(),
-     LockUpDetector(),
-     CornerEntryDetection(),
-     ThrottleLift(),
-     OffTrackDetector(),
-     SpinDetector()]
+    detector_priority = {"SPIN": 1, "OFF_TRACK": 2, "LOCKUP": 3, "THROTTLE_LIFT": 4}
+    INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
+    SPEAK_COOLDOWN = 5.0
 
-lap_counter = LapCounter()
-lap_distance = LapDistance()
-corner_stats = CornerStats()
+    detectors=[
+        HardBrakingDetector(),
+        LockUpDetector(),
+        CornerEntryDetection(),
+        ThrottleLift(),
+        OffTrackDetector(),
+        SpinDetector()]
 
-speak_queue = Queue(maxsize=1)
-spoken_results = Queue()
-def worker_function():
-    STALE_THRESHOLD=6.0
-    while True:
-        item = speak_queue.get()
-        if item is None:
-            break
-        event, event_id = item
-        line = phrase_event(event)
-        if line:
-            spoken_at = latest_sim_time
-            if spoken_at - event.sim_time < STALE_THRESHOLD:
-                if not REPLAY_SPEED and REPLAY:
-                    print(line)
-                    spoken_results.put((event_id, spoken_at, line))
+    lap_counter = LapCounter()
+    lap_distance = LapDistance()
+    corner_stats = CornerStats()
+
+    speak_queue = Queue(maxsize=1)
+    spoken_results = Queue()
+    def worker_function():
+        STALE_THRESHOLD=6.0
+        while True:
+            item = speak_queue.get()
+            if item is None:
+                break
+            event, event_id = item
+            line = phrase_event(event)
+            if line:
+                spoken_at = latest_sim_time
+                if spoken_at - event.sim_time < STALE_THRESHOLD:
+                    if not REPLAY_SPEED and REPLAY:
+                        print(line)
+                        spoken_results.put((event_id, spoken_at, line))
+                    else:
+                        speak(line)
+                        spoken_results.put((event_id, spoken_at, line))
+
                 else:
-                    speak(line)
-                    spoken_results.put((event_id, spoken_at, line))
-
-            else:
-                print(f"[stale line dropped: {event.kind}@{event.corner}]")
+                    print(f"[stale line dropped: {event.kind}@{event.corner}]")
 
 
-def drain_spoken(conn):
-    while True:
-        try:
-            event_id, spoken_at, line = spoken_results.get_nowait()
-        except Empty:
-            break
-        save_spoken(conn, event_id, spoken_at, line)
+    def drain_spoken(conn):
+        while True:
+            try:
+                event_id, spoken_at, line = spoken_results.get_nowait()
+            except Empty:
+                break
+            save_spoken(conn, event_id, spoken_at, line)
 
 
-latest_sim_time=0
-worker=threading.Thread(target= worker_function,daemon=True)
-worker.start()
-dropped_events=0
-conn = None
-session_id = None
+    latest_sim_time=0
+    worker=threading.Thread(target= worker_function,daemon=True)
+    worker.start()
+    dropped_events=0
+    conn = None
+    session_id = None
 
-try:
-    conn = connect_db()
-    session_started = datetime.now().isoformat(timespec="seconds")
-    session_id = start_session(conn,session_started,tape_out,REPLAY_SPEED)
-    hash_events=[]
-    if radio_check() is None:
-       print("[radio check failed — driving without coach]")
-    else:
-        print("[coach is online]")
-    
-    last_spoken_time = 0.0
-    # GUESSED — mLapInvalidated never observed True (n=33485)
-    validity = 1                      # 1 = valid, 0 = invalidated
-    for frame in source:
-        lap_count = lap_counter.update(frame)
-        real_lap_distance = lap_distance.update(frame)
-        stat = corner_stats.update(frame, lap_count,real_lap_distance)
-        if stat:
-            print(stat)
-            save_corner_stat(conn, session_id, stat)
-
-        if lap_counter.wrapped:
-            save_lap(conn,session_id,lap_count-1,validity)
-            validity = 1
-
-        if frame.lap_invalidated:
-            validity = 0
-
-        latest_sim_time=frame.elapsed_time
-        event_list = []
-        for detector in detectors:
-            event = detector.update(frame)
-            if event:
-                event.lap_count = lap_count
-                print(event)
-                event_id = save_event(conn,session_id,event)                             
-                if event.kind in detector_priority: 
-                        
-                    event_list.append((event, event_id))            
-
-        spoken_event = None
-        spoken_event_id = None
-        max_priority = 10                               
-        for event, eid in event_list:
-            if detector_priority[event.kind] < max_priority:
-                spoken_event = event
-                spoken_event_id = eid
-                max_priority = detector_priority[event.kind]
+    try:
+        conn = connect_db()
+        session_started = datetime.now().isoformat(timespec="seconds")
+        session_id = start_session(conn,session_started,tape_out,REPLAY_SPEED)
+        hash_events=[]
+        if radio_check() is None:
+            print("[radio check failed — driving without coach]")
+        else:
+            print("[coach is online]")
         
-        if spoken_event:                                
-            is_incident = spoken_event.kind in INCIDENTS
-            cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
-            if is_incident or cooldown_open:
-                
-                hash_events.append(spoken_event) 
-                 
-                try:
+        last_spoken_time = 0.0
+        # GUESSED — mLapInvalidated never observed True (n=33485)
+        validity = 1                      # 1 = valid, 0 = invalidated
+        for frame in source:
+            lap_count = lap_counter.update(frame)
+            real_lap_distance = lap_distance.update(frame)
+            stat = corner_stats.update(frame, lap_count,real_lap_distance)
+            if stat:
+                print(stat)
+                save_corner_stat(conn, session_id, stat)
+
+            if lap_counter.wrapped:
+                save_lap(conn,session_id,lap_count-1,validity)
+                validity = 1
+
+            if frame.lap_invalidated:
+                validity = 0
+
+            latest_sim_time=frame.elapsed_time
+            event_list = []
+            for detector in detectors:
+                event = detector.update(frame)
+                if event:
+                    event.lap_count = lap_count
+                    print(event)
+                    event_id = save_event(conn,session_id,event)                             
+                    if event.kind in detector_priority: 
+                            
+                        event_list.append((event, event_id))            
+
+            spoken_event = None
+            spoken_event_id = None
+            max_priority = 10                               
+            for event, eid in event_list:
+                if detector_priority[event.kind] < max_priority:
+                    spoken_event = event
+                    spoken_event_id = eid
+                    max_priority = detector_priority[event.kind]
+            
+            if spoken_event:                                
+                is_incident = spoken_event.kind in INCIDENTS
+                cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
+                if is_incident or cooldown_open:
                     
-                    speak_queue.put_nowait((spoken_event, spoken_event_id))
-                    last_spoken_time = frame.elapsed_time
-                except Full:
-                    dropped_events+=1
-                    print(f"[queue full line dropped: {spoken_event.kind}@{spoken_event.corner}]")
-                    pass
-        
-        drain_spoken(conn)
+                    hash_events.append(spoken_event) 
+                    
+                    try:
+                        
+                        speak_queue.put_nowait((spoken_event, spoken_event_id))
+                        last_spoken_time = frame.elapsed_time
+                    except Full:
+                        dropped_events+=1
+                        print(f"[queue full line dropped: {spoken_event.kind}@{spoken_event.corner}]")
+                        pass
+            
+            drain_spoken(conn)
 
+            if not REPLAY:
+                tele_recorder.record(frame)
+
+    except KeyboardInterrupt:
+        pass
+
+    finally:
+        SHUTDOWN_GRACE=3*5
+        speak_queue.put(None)
+        worker.join(timeout=SHUTDOWN_GRACE)
+        if conn:
+            drain_spoken(conn)
+            
+        print(dropped_events)
+        
+        
         if not REPLAY:
-            tele_recorder.record(frame)
-
-except KeyboardInterrupt:
-    pass
-
-finally:
-    SHUTDOWN_GRACE=3*5
-    speak_queue.put(None)
-    worker.join(timeout=SHUTDOWN_GRACE)
-    if conn:
-        drain_spoken(conn)
-        
-    print(dropped_events)
-    
-    
-    if not REPLAY:
-        tele_recorder.stop()
-    serialized = json.dumps([asdict(e) for e in hash_events])
-    event_hash = hashlib.sha256(serialized.encode()).hexdigest()
-    if session_id:
-        finish_session(conn,session_id,event_hash)
-        print_corner_report(conn,session_id)
-        conn.close()
-    else:
-        conn.close()
-    print(event_hash)
+            tele_recorder.stop()
+        serialized = json.dumps([asdict(e) for e in hash_events])
+        event_hash = hashlib.sha256(serialized.encode()).hexdigest()
+        if session_id:
+            finish_session(conn,session_id,event_hash)
+            print_corner_report(conn,session_id)
+            conn.close()
+        else:
+            conn.close()
+        print(event_hash)
 
