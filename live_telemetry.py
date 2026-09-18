@@ -160,8 +160,8 @@ class LiveSource:
             print("Closed connection.")
 
 
-REPLAY = False
-REPLAY_SPEED=None
+REPLAY = True
+REPLAY_SPEED=2
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 class ReplaySource:
     def __init__(self):
@@ -226,12 +226,12 @@ class CornerStats:
 
     def current_corner(self, frame):
         corner = None
-        for x in MONZA_CORNERS:
-            if x["start"] <= frame.lap_dist < x["end"]:
-                corner = x["name"]
+        for monza_corner in MONZA_CORNERS:
+            if frame.lap_dist >= monza_corner["start"] and frame.lap_dist < monza_corner["end"]:
+                corner = monza_corner["name"]
         return corner
 
-    def update(self, frame, lap_count):
+    def update(self, frame, lap_count,real_lap_distance):
         now = self.current_corner(frame)
         was = self.corner
         stat = None
@@ -255,8 +255,10 @@ class CornerStats:
             # measure - runs on the arrival frame too
             if self.min_speed is None or frame.speed_kmh < self.min_speed:
                 self.min_speed = frame.speed_kmh
-            if self.brake_onset is None and self.prev_brake < BRAKE_ON <= frame.brake:
-                self.brake_onset = frame.lap_dist
+            # brake just crossed BRAKE_ON this frame: below it last frame, at or above it now
+            brake_crossed = self.prev_brake < BRAKE_ON and frame.brake >= BRAKE_ON
+            if self.brake_onset is None and brake_crossed:
+                self.brake_onset = real_lap_distance
 
         self.prev_brake = frame.brake
         return stat
@@ -315,7 +317,7 @@ class HardBrakingDetector(Detector):
         def is_triggered(self, frame):
             return frame.brake>0.8 and frame.speed_kmh>30
 
-class lapCounter:
+class LapCounter:
     def __init__(self):
         self.previous_lap_dist=0
         self.lap_count=0
@@ -327,6 +329,22 @@ class lapCounter:
             self.wrapped=True
         self.previous_lap_dist=frame.lap_dist
         return self.lap_count
+
+class LapDistance:
+    def __init__(self):
+        self.previous_lap_dist=None
+        self.travelled_distance=0
+        self.previous_time=0
+
+    def update(self,frame):
+        if frame.lap_dist!= self.previous_lap_dist:
+            self.previous_lap_dist=frame.lap_dist
+            self.travelled_distance = 0
+        else:
+            self.travelled_distance += frame.speed_kmh/3.6 * (frame.elapsed_time - self.previous_time)
+        self.previous_time=frame.elapsed_time
+        final_distance = self.previous_lap_dist + self.travelled_distance
+        return final_distance
         
 
 class LockUpDetector(Detector):
@@ -494,7 +512,8 @@ detectors=[
      OffTrackDetector(),
      SpinDetector()]
 
-lap_counter = lapCounter()
+lap_counter = LapCounter()
+lap_distance = LapDistance()
 corner_stats = CornerStats()
 
 speak_queue = Queue(maxsize=1)
@@ -512,6 +531,7 @@ def worker_function():
             if spoken_at - event.sim_time < STALE_THRESHOLD:
                 if not REPLAY_SPEED and REPLAY:
                     print(line)
+                    spoken_results.put((event_id, spoken_at, line))
                 else:
                     speak(line)
                     spoken_results.put((event_id, spoken_at, line))
@@ -551,8 +571,8 @@ try:
     validity = 1                      # 1 = valid, 0 = invalidated
     for frame in source:
         lap_count = lap_counter.update(frame)
-
-        stat = corner_stats.update(frame, lap_count)
+        real_lap_distance = lap_distance.update(frame)
+        stat = corner_stats.update(frame, lap_count,real_lap_distance)
         if stat:
             print(stat)
             save_corner_stat(conn, session_id, stat)

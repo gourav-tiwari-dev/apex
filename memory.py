@@ -98,36 +98,107 @@ def save_corner_stat(conn,session_id,stat):
   return cur.lastrowid
 
 
+def load_corner_rows(conn,session_id):
+  # session_id None means every session
+  if session_id is None:
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats")
+  else:
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE session_id = ?",(session_id,))
+  return cur.fetchall()
+
+
+def load_incident_counts(conn,session_id):
+  # session_id None means every session
+  if session_id is None:
+    cur = conn.execute("SELECT corner,COUNT(*) FROM events WHERE kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner")
+  else:
+    cur = conn.execute("SELECT corner,COUNT(*) FROM events WHERE session_id = ? AND kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner",(session_id,))
+
+  incident_counts = {}
+  for row in cur.fetchall():
+    corner = row[0]
+    count = row[1]
+    incident_counts[corner] = count
+  return incident_counts
+
+
+def middle_value(numbers):
+  if len(numbers) == 0:
+    return None
+  return median(numbers)
+
+
+def spread(numbers):
+  # one lap has nothing to compare against, so no spread
+  if len(numbers) < 2:
+    return None
+  return max(numbers) - min(numbers)
+
+
+def onset_spread_of(corner_row):
+  return corner_row["onset_spread"]
+
+
 def corner_report(conn,session_id=None):
   """Per-corner report card. Median is the typical lap, spread is how repeatable you are.
   Sorted by brake-point spread: the least repeatable corner comes first."""
-  if session_id is None:
-    rows = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats").fetchall()
-    incident_rows = conn.execute("SELECT corner,COUNT(*) FROM events WHERE kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner").fetchall()
-  else:
-    rows = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE session_id = ?",(session_id,)).fetchall()
-    incident_rows = conn.execute("SELECT corner,COUNT(*) FROM events WHERE session_id = ? AND kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner",(session_id,)).fetchall()
+  rows = load_corner_rows(conn,session_id)
+  incident_counts = load_incident_counts(conn,session_id)
 
-  incidents = dict(incident_rows)
-  by_corner = {}
-  for corner,lap_count,brake_onset,min_speed in rows:
-    by_corner.setdefault(corner,[]).append((brake_onset,min_speed))
+  # group the laps by corner: {"T1 Rettifilo": [(brake_onset, min_speed), ...], ...}
+  laps_by_corner = {}
+  for row in rows:
+    corner, lap_count, brake_onset, min_speed = row
+    if corner not in laps_by_corner:
+      laps_by_corner[corner] = []
+    laps_by_corner[corner].append((brake_onset,min_speed))
 
   report = []
-  for corner,values in by_corner.items():
-    onsets = [o for o,_ in values if o is not None]
-    speeds = [s for _,s in values if s is not None]
+  for corner in laps_by_corner:
+    laps = laps_by_corner[corner]
+
+    # a lap with no braking (T3 is taken flat) has brake_onset None - leave it out
+    onsets = []
+    speeds = []
+    for brake_onset, min_speed in laps:
+      if brake_onset is not None:
+        onsets.append(brake_onset)
+      if min_speed is not None:
+        speeds.append(min_speed)
+
+    incidents = 0
+    if corner in incident_counts:
+      incidents = incident_counts[corner]
+
     report.append({
       "corner":        corner,
-      "laps":          len(values),
-      "onset_median":  median(onsets) if onsets else None,
-      "onset_spread":  max(onsets)-min(onsets) if len(onsets) > 1 else None,
-      "speed_median":  median(speeds) if speeds else None,
-      "speed_spread":  max(speeds)-min(speeds) if len(speeds) > 1 else None,
-      "incidents":     incidents.get(corner,0),
+      "laps":          len(laps),
+      "onset_median":  middle_value(onsets),
+      "onset_spread":  spread(onsets),
+      "speed_median":  middle_value(speeds),
+      "speed_spread":  spread(speeds),
+      "incidents":     incidents,
     })
-  report.sort(key=lambda r: (r["onset_spread"] is None, -(r["onset_spread"] or 0)))
-  return report
+
+  # corners with a spread first, biggest spread on top; corners with no spread at the bottom
+  with_spread = []
+  without_spread = []
+  for corner_row in report:
+    if corner_row["onset_spread"] is None:
+      without_spread.append(corner_row)
+    else:
+      with_spread.append(corner_row)
+  with_spread.sort(key=onset_spread_of, reverse=True)
+
+  return with_spread + without_spread
+
+
+def format_number(value,width):
+  if value is None:
+    text = "--"
+  else:
+    text = f"{value:.1f}"
+  return text.rjust(width)
 
 
 def print_corner_report(conn,session_id=None):
@@ -135,14 +206,33 @@ def print_corner_report(conn,session_id=None):
   if not report:
     print("[no corner stats recorded]")
     return
-  def fmt(v,width,dp):
-    return " " * (width-2) + "--" if v is None else f"{v:>{width}.{dp}f}"
+
+  if session_id:
+    title = "CORNER REPORT CARD - session " + str(session_id)
+  else:
+    title = "CORNER REPORT CARD - all sessions"
+
+  header = "corner".ljust(16)
+  header += "laps".rjust(5)
+  header += "brake pt".rjust(10)
+  header += "spread".rjust(8)
+  header += "min spd".rjust(9)
+  header += "spread".rjust(8)
+  header += "inc".rjust(5)
+
   print()
-  print("CORNER REPORT CARD" + (f" - session {session_id}" if session_id else " - all sessions"))
-  print(f"{'corner':<16}{'laps':>5}{'brake pt':>10}{'spread':>8}{'min spd':>9}{'spread':>8}{'inc':>5}")
+  print(title)
+  print(header)
   print("-" * 61)
-  for r in report:
-    print(f"{r['corner']:<16}{r['laps']:>5}{fmt(r['onset_median'],10,1)}{fmt(r['onset_spread'],8,1)}{fmt(r['speed_median'],9,1)}{fmt(r['speed_spread'],8,1)}{r['incidents']:>5}")
+  for corner_row in report:
+    line = corner_row["corner"].ljust(16)
+    line += str(corner_row["laps"]).rjust(5)
+    line += format_number(corner_row["onset_median"],10)
+    line += format_number(corner_row["onset_spread"],8)
+    line += format_number(corner_row["speed_median"],9)
+    line += format_number(corner_row["speed_spread"],8)
+    line += str(corner_row["incidents"]).rjust(5)
+    print(line)
   print()
 
 
