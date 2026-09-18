@@ -101,18 +101,18 @@ def save_corner_stat(conn,session_id,stat):
 def load_corner_rows(conn,session_id):
   # session_id None means every session
   if session_id is None:
-    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats")
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE lap_count > 0")
   else:
-    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE session_id = ?",(session_id,))
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE session_id = ? AND lap_count > 0",(session_id,))
   return cur.fetchall()
 
 
 def load_incident_counts(conn,session_id):
   # session_id None means every session
   if session_id is None:
-    cur = conn.execute("SELECT corner,COUNT(*) FROM events WHERE kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner")
+    cur = conn.execute("SELECT corner,COUNT(*) FROM events WHERE kind IN ('OFF_TRACK','SPIN','LOCKUP') AND lap_count > 0 GROUP BY corner")
   else:
-    cur = conn.execute("SELECT corner,COUNT(*) FROM events WHERE session_id = ? AND kind IN ('OFF_TRACK','SPIN','LOCKUP') GROUP BY corner",(session_id,))
+    cur = conn.execute("SELECT corner,COUNT(*) FROM events WHERE session_id = ? AND kind IN ('OFF_TRACK','SPIN','LOCKUP') AND lap_count > 0 GROUP BY corner",(session_id,))
 
   incident_counts = {}
   for row in cur.fetchall():
