@@ -224,15 +224,15 @@ class CornerStats:
         self.min_speed = None
         self.prev_brake = 0.0
 
-    def current_corner(self, frame):
+    def current_corner(self, real_lap_distance):
         corner = None
         for monza_corner in MONZA_CORNERS:
-            if frame.lap_dist >= monza_corner["start"] and frame.lap_dist < monza_corner["end"]:
+            if real_lap_distance >= monza_corner["start"] and real_lap_distance < monza_corner["end"]:
                 corner = monza_corner["name"]
         return corner
 
     def update(self, frame, lap_count,real_lap_distance):
-        now = self.current_corner(frame)
+        now = self.current_corner(frame,real_lap_distance)
         was = self.corner
         stat = None
 
