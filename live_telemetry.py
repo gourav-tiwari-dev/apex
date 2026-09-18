@@ -84,14 +84,17 @@ def match_opponents():
     return opponents
 
 
+# windows measured from my own laps (tape 20260821, laps 1-11):
+# start = earliest braking - 25 m, end = back to full throttle and straight (lateral g < 0.5) + 25 m
+# Curva Grande is taken flat, so it keeps its old hand-picked window
 MONZA_CORNERS = [
-    {"name": "T1 Rettifilo",   "start":  760, "end":  970},
+    {"name": "T1 Rettifilo",   "start":  747, "end": 1088},
     {"name": "T3 Curva Grande","start": 1250, "end": 1760},
-    {"name": "T4 Roggia",      "start": 1995, "end": 2140},
-    {"name": "T6 Lesmo 1",     "start": 2450, "end": 2520},
-    {"name": "T7 Lesmo 2",     "start": 2785, "end": 2850},
-    {"name": "T8 Ascari",      "start": 3805, "end": 4280},
-    {"name": "T11 Parabolica", "start": 5000, "end": 5400},
+    {"name": "T4 Roggia",      "start": 1974, "end": 2321},
+    {"name": "T6 Lesmo 1",     "start": 2431, "end": 2742},
+    {"name": "T7 Lesmo 2",     "start": 2768, "end": 2998},
+    {"name": "T8 Ascari",      "start": 3795, "end": 4318},
+    {"name": "T11 Parabolica", "start": 4992, "end": 5584},
 ]
 
 radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
@@ -232,7 +235,7 @@ class CornerStats:
         return corner
 
     def update(self, frame, lap_count,real_lap_distance):
-        now = self.current_corner(frame,real_lap_distance)
+        now = self.current_corner(real_lap_distance)
         was = self.corner
         stat = None
 
