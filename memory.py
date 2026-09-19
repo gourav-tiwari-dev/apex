@@ -244,3 +244,24 @@ def load_reference(path):
   with open(path, "r") as f:
     data = json.load(f)
     return data 
+
+def compare_to_reference(conn,reference_path,session_id):
+  report = corner_report(conn,session_id)
+  reference_report = load_reference(reference_path)
+  reference = reference_report["corners"]
+  comparison = []
+
+  for current_row in report:
+    current_corner = current_row["corner"]
+    if current_corner not in reference:
+      continue
+    else:
+      your_min_speed = current_row["speed_median"]
+      ref_min_speed = reference[current_corner]["min_speed"]
+      gap = your_min_speed - ref_min_speed
+      comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"]})
+  
+  return comparison
+
+    
+
