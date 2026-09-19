@@ -1,4 +1,4 @@
-import sqlite3
+import sqlite3, json
 from statistics import median
 
 SCHEMA = """
@@ -239,3 +239,8 @@ def print_corner_report(conn,session_id=None):
 def ranker(conn):
   cur = conn.execute("SELECT corner,SUM(CASE WHEN kind='CORNER_ENTRY' THEN 1 ELSE 0 END) AS entries,SUM(CASE WHEN kind IN ('OFF_TRACK','SPIN','LOCKUP') THEN 1 ELSE 0 END) AS incidents,SUM(CASE WHEN kind IN ('OFF_TRACK','SPIN','LOCKUP') THEN 1 ELSE 0 END) * 1.0 / SUM(CASE WHEN kind='CORNER_ENTRY' THEN 1 ELSE 0 END) AS rate FROM events GROUP BY corner ORDER BY rate DESC")
   return cur.fetchall()
+
+def load_reference(path):
+  with open(path, "r") as f:
+    data = json.load(f)
+    return data 

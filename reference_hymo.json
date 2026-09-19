@@ -1,0 +1,12 @@
+{
+    "source": "HYMO Academy, Andrew McWilliam, BMW M4 LMGT3, fixed setup, 1:49.202, YouTube",
+    "session_type": "race",
+    "corners": {
+      "T1 Rettifilo":   {"min_speed": 62,    "confidence": "checked"},
+      "T4 Roggia":      {"min_speed": 90,    "confidence": "checked"},
+      "T6 Lesmo 1":     {"min_speed": 134.5, "confidence": "checked"},
+      "T7 Lesmo 2":     {"min_speed": 130,   "confidence": "checked"},
+      "T8 Ascari":      {"min_speed": 133.5, "confidence": "checked"},
+      "T11 Parabolica": {"min_speed": 127,   "confidence": "checked"}
+    }
+  }
