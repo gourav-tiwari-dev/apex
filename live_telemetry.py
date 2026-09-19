@@ -209,9 +209,11 @@ class CornerStat:
     brake_onset: float|None
     min_speed: float|None 
     slow_zone: float|None
+    coast: float|None
 
 BRAKE_ON = 0.4
 SLOW_ZONE_X = 10
+PEDAL_OFF = 0.05
 
 class CornerStats:
     def __init__(self):
@@ -235,16 +237,19 @@ class CornerStats:
         was = self.corner
         stat = None
         step = 0.0
+        coast = 0.0
         slow_zone = 0
         if self.prev_time is not None:
             step = frame.speed_kmh/3.6 * (frame.elapsed_time - self.prev_time)
         if now is None and was is not None:
             # LEAVING - hand back the row, then forget everything
-            for speed,meters in self.frames:
+            for speed,meters,throttle,brake in self.frames:
                 if speed <= self.min_speed + SLOW_ZONE_X:
                     slow_zone+= meters
+                if brake <PEDAL_OFF and throttle < PEDAL_OFF:
+                    coast+=meters
             stat = CornerStat(self.lap_count, self.corner,
-                              self.brake_onset, self.min_speed,slow_zone)
+                              self.brake_onset, self.min_speed,slow_zone,coast)
             self.corner = None
             self.lap_count = None
             self.brake_onset = None
@@ -264,7 +269,7 @@ class CornerStats:
             if self.min_speed is None or frame.speed_kmh < self.min_speed:
                 self.min_speed = frame.speed_kmh
             
-            self.frames.append((frame.speed_kmh, step))
+            self.frames.append((frame.speed_kmh, step,frame.throttle,frame.brake))
             # brake just crossed BRAKE_ON this frame: below it last frame, at or above it now
             brake_crossed = self.prev_brake < BRAKE_ON and frame.brake >= BRAKE_ON
             if self.brake_onset is None and brake_crossed:

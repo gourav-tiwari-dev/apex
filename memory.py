@@ -58,6 +58,7 @@ SCHEMA = """
     brake_onset   REAL,                      -- raw lap_dist where brake crossed 0.4; NULL = never braked
     min_speed     REAL,
     slow_zone     REAL,
+    coast         REAL,
     UNIQUE (session_id, lap_count, corner),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
@@ -95,7 +96,7 @@ def finish_session(conn,session_id,hash):
 
 
 def save_corner_stat(conn,session_id,stat):
-  cur = conn.execute("INSERT OR REPLACE INTO corner_stats (session_id,lap_count,corner,brake_onset,min_speed,slow_zone) VALUES (?,?,?,?,?,?)",(session_id,stat.lap_count,stat.corner,stat.brake_onset,stat.min_speed,stat.slow_zone))
+  cur = conn.execute("INSERT OR REPLACE INTO corner_stats (session_id,lap_count,corner,brake_onset,min_speed,slow_zone,coast) VALUES (?,?,?,?,?,?,?)",(session_id,stat.lap_count,stat.corner,stat.brake_onset,stat.min_speed,stat.slow_zone,stat.coast))
   conn.commit()
   return cur.lastrowid
 
