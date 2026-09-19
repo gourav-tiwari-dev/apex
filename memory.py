@@ -1,5 +1,6 @@
 import sqlite3, json
 from statistics import median
+from time import time
 
 SCHEMA = """
   CREATE TABLE IF NOT EXISTS sessions (
@@ -56,6 +57,7 @@ SCHEMA = """
     corner        TEXT    NOT NULL,
     brake_onset   REAL,                      -- raw lap_dist where brake crossed 0.4; NULL = never braked
     min_speed     REAL,
+    slow_zone     REAL,
     UNIQUE (session_id, lap_count, corner),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
@@ -93,7 +95,7 @@ def finish_session(conn,session_id,hash):
 
 
 def save_corner_stat(conn,session_id,stat):
-  cur = conn.execute("INSERT OR REPLACE INTO corner_stats (session_id,lap_count,corner,brake_onset,min_speed) VALUES (?,?,?,?,?)",(session_id,stat.lap_count,stat.corner,stat.brake_onset,stat.min_speed))
+  cur = conn.execute("INSERT OR REPLACE INTO corner_stats (session_id,lap_count,corner,brake_onset,min_speed,slow_zone) VALUES (?,?,?,?,?,?)",(session_id,stat.lap_count,stat.corner,stat.brake_onset,stat.min_speed,stat.slow_zone))
   conn.commit()
   return cur.lastrowid
 
@@ -101,9 +103,9 @@ def save_corner_stat(conn,session_id,stat):
 def load_corner_rows(conn,session_id):
   # session_id None means every session
   if session_id is None:
-    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE lap_count > 0")
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed,slow_zone FROM corner_stats WHERE lap_count > 0")
   else:
-    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed FROM corner_stats WHERE session_id = ? AND lap_count > 0",(session_id,))
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed,slow_zone FROM corner_stats WHERE session_id = ? AND lap_count > 0",(session_id,))
   return cur.fetchall()
 
 
@@ -148,10 +150,10 @@ def corner_report(conn,session_id=None):
   # group the laps by corner: {"T1 Rettifilo": [(brake_onset, min_speed), ...], ...}
   laps_by_corner = {}
   for row in rows:
-    corner, lap_count, brake_onset, min_speed = row
+    corner, lap_count, brake_onset, min_speed,slow_zone = row
     if corner not in laps_by_corner:
       laps_by_corner[corner] = []
-    laps_by_corner[corner].append((brake_onset,min_speed))
+    laps_by_corner[corner].append((brake_onset,min_speed,slow_zone))
 
   report = []
   for corner in laps_by_corner:
@@ -160,7 +162,10 @@ def corner_report(conn,session_id=None):
     # a lap with no braking (T3 is taken flat) has brake_onset None - leave it out
     onsets = []
     speeds = []
-    for brake_onset, min_speed in laps:
+    zones = []
+    for brake_onset, min_speed,slow_zone in laps:
+      if slow_zone is not None:
+        zones.append(slow_zone)
       if brake_onset is not None:
         onsets.append(brake_onset)
       if min_speed is not None:
@@ -178,6 +183,7 @@ def corner_report(conn,session_id=None):
       "speed_median":  middle_value(speeds),
       "speed_spread":  spread(speeds),
       "incidents":     incidents,
+      "zone_median":   middle_value(zones)
     })
 
   # corners with a spread first, biggest spread on top; corners with no spread at the bottom
@@ -252,15 +258,24 @@ def compare_to_reference(conn,reference_path,session_id):
   comparison = []
 
   for current_row in report:
+    zone = current_row["zone_median"]
+    
     current_corner = current_row["corner"]
     if current_corner not in reference:
       continue
-    else:
-      your_min_speed = current_row["speed_median"]
-      ref_min_speed = reference[current_corner]["min_speed"]
-      gap = your_min_speed - ref_min_speed
-      comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"]})
+    
+    your_min_speed = current_row["speed_median"]
+    ref_min_speed = reference[current_corner]["min_speed"]
+    time_lost = zone/(your_min_speed/3.6) - zone/(ref_min_speed/3.6)
+    gap = your_min_speed - ref_min_speed
+    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost})
   
+  return comparison
+
+def time_lost_of(row):
+  return row["time_lost"]
+def rank_by_time_lost(comparison):
+  comparison.sort(key = time_lost_of, reverse = True)
   return comparison
 
     
