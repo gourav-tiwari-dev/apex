@@ -1,8 +1,9 @@
-import os,json,sqlite3
+import os,json,sqlite3,time
 from dotenv import load_dotenv
 load_dotenv()
 from openai import OpenAI
 from memory import build_evidence_pack
+from tts import speak
 
 DEBRIEF_PROMPT = (
     "You are a race engineer debriefing your driver after a session. "
@@ -37,22 +38,39 @@ DEBRIEF_PROMPT = (
     "is positive, this driver is level with or ahead of the reference at that corner. "
     "Say that plainly. Do not invent a problem the numbers do not show. "
 
+    "DO NOT RANK OR ORDER THE CORNERS. Never say a corner has the largest, smallest, "
+    "highest, lowest or second-anything value, and never call two corners similar. You are "
+    "reading six rows and you will get the ordering wrong. Compare only by quoting both "
+    "numbers side by side and letting them speak: 'T1 is 6.3 km/h down, T8 is 14.4 km/h down'. "
+    "The corners array is already sorted by time lost, largest first, so the focus corner is "
+    "the biggest loss - that one ordering you may state, and no other. "
+
     "IF THE NUMBERS DO NOT EXPLAIN IT, SAY SO. When the measurements for the focus corner "
     "do not account for its time loss, state that the data does not explain it, and name "
-    "the single measurement Apex would need to record to find out. That is a complete and "
-    "correct answer. Never fill the gap with a plausible cause. "
+    "the single measurement Apex would need to find out. That is a complete and correct "
+    "answer. Never fill the gap with a plausible cause. "
 
     "OTHER LIMITS. Never suggest setup changes - brake bias, wing, tyre pressures - you do "
     "not have that data. Never mention gears, racing line or kerbs as facts about this "
     "driver: they appear only in the reference driver's technique text. Never guess what "
     "the driver felt or was trying to do. No praise, no filler, no greetings. "
 
-    "YOUR ANSWER. Write about the corner named in 'focus' only. "
-    "First: what the numbers show about that corner. "
-    "Then: either the one thing to change, or, if the numbers do not explain it, what "
-    "Apex needs to measure next. "
-    "Use the other corners only as contrast to test your own explanation against. "
-    "Keep it under 150 words."
+    "YOUR ANSWER. Reply with JSON only, no code fences, with exactly two keys: "
+    "'analysis' and 'spoken'. "
+
+    "'analysis' is for the engineering log, not for the driver. Write about the corner named "
+    "in 'focus' only. First what the numbers show, then either the one thing to change or, if "
+    "the numbers do not explain it, what Apex needs to measure next. Use the other corners "
+    "only as contrast to test your explanation against. Under 150 words. "
+
+    "'spoken' is read aloud to the driver as he takes his helmet off. Exactly two sentences. "
+    "Write numbers as plain digits exactly as they appear in the box, with their unit, for "
+    "example '0.35 s' or '6.3 km/h'. Do not spell numbers out as words and do not round them. "
+    "No markdown, no brackets, no dashes, no other symbols. Name the corner by its tag, for "
+    "example 'Turn 1'. Include exactly one number, so he has a sense of the scale, and no "
+    "more. Say what to do in terms of the track and the car, never in terms of a measurement: "
+    "'carry more speed to the apex', never 'raise your minimum speed through the slow zone'. "
+    "No praise, no greeting, no jargon."
 )
 
 client = OpenAI(
@@ -62,21 +80,64 @@ client = OpenAI(
     max_retries = 0
 )
 
-def debrief(pack):
-    resp = client.chat.completions.create(
-        model= "deepseek-v4.1-flash",
-        messages = [{
-            "role":"system", "content": DEBRIEF_PROMPT},
-            {"role": "user", "content": json.dumps(pack)
-        }],
+def ask_once(pack):
+    text = ""
+    finish = None
+    stream = client.chat.completions.create(
+        model = "deepseek-v4.1-flash",
+        max_tokens = 16000,
+        stream = True,
+        messages = [
+            {"role": "system", "content": DEBRIEF_PROMPT},
+            {"role": "user", "content": json.dumps(pack)},
+        ],
     )
-    choice = resp.choices[0]
-    if choice.finish_reason != "stop":
-        print(f"[debrief cut off: {choice.finish_reason}]")
-        return None
-    return choice.message.content
+    for chunk in stream:
+        
+        if chunk.choices:
+            
+            if chunk.choices[0].finish_reason:
+                finish = chunk.choices[0].finish_reason
+            piece = chunk.choices[0].delta.content
+            if piece:
+                text += piece
+
+    return text, finish
+
+
+def debrief(pack):
+    for attempt in range(3):
+        try:
+            text, finish = ask_once(pack)
+        except Exception as e:
+            print(f"[debrief failed: {e.__class__.__name__}]")
+            time.sleep(3)
+            continue
+        if finish != "stop":
+            print(f"[debrief cut off: {finish}]")
+            time.sleep(3)
+            continue
+        if text == "":
+            print("[debrief came back empty]")
+            time.sleep(3)
+            continue
+        try:
+            answer = json.loads(text)
+            
+        except ValueError:
+            print("[debrief dont give valid json]")
+            time.sleep(3)
+            continue
+        return answer
+    return None
+
 
 if __name__ == "__main__":
     conn = sqlite3.connect("apex.db")
     pack = build_evidence_pack(conn, "reference_hymo.json", 11)
-    print(debrief(pack))
+    answer = debrief(pack)
+    if answer is None:
+        print("[no debrief]")
+    else:
+        print(answer["analysis"])
+        
