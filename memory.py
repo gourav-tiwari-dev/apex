@@ -104,9 +104,9 @@ def save_corner_stat(conn,session_id,stat):
 def load_corner_rows(conn,session_id):
   # session_id None means every session
   if session_id is None:
-    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed,slow_zone FROM corner_stats WHERE lap_count > 0")
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed,slow_zone,coast FROM corner_stats WHERE lap_count > 0")
   else:
-    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed,slow_zone FROM corner_stats WHERE session_id = ? AND lap_count > 0",(session_id,))
+    cur = conn.execute("SELECT corner,lap_count,brake_onset,min_speed,slow_zone,coast FROM corner_stats WHERE session_id = ? AND lap_count > 0",(session_id,))
   return cur.fetchall()
 
 
@@ -151,10 +151,10 @@ def corner_report(conn,session_id=None):
   # group the laps by corner: {"T1 Rettifilo": [(brake_onset, min_speed), ...], ...}
   laps_by_corner = {}
   for row in rows:
-    corner, lap_count, brake_onset, min_speed,slow_zone = row
+    corner, lap_count, brake_onset, min_speed,slow_zone,coast = row
     if corner not in laps_by_corner:
       laps_by_corner[corner] = []
-    laps_by_corner[corner].append((brake_onset,min_speed,slow_zone))
+    laps_by_corner[corner].append((brake_onset,min_speed,slow_zone,coast))
 
   report = []
   for corner in laps_by_corner:
@@ -164,9 +164,12 @@ def corner_report(conn,session_id=None):
     onsets = []
     speeds = []
     zones = []
-    for brake_onset, min_speed,slow_zone in laps:
+    coasts = []
+    for brake_onset, min_speed,slow_zone,coast in laps:
       if slow_zone is not None:
         zones.append(slow_zone)
+      if coast is not None:
+        coasts.append(coast)
       if brake_onset is not None:
         onsets.append(brake_onset)
       if min_speed is not None:
@@ -184,7 +187,8 @@ def corner_report(conn,session_id=None):
       "speed_median":  middle_value(speeds),
       "speed_spread":  spread(speeds),
       "incidents":     incidents,
-      "zone_median":   middle_value(zones)
+      "zone_median":   middle_value(zones),
+      "coast_median":  middle_value(coasts)
     })
 
   # corners with a spread first, biggest spread on top; corners with no spread at the bottom
@@ -260,16 +264,17 @@ def compare_to_reference(conn,reference_path,session_id):
 
   for current_row in report:
     zone = current_row["zone_median"]
-    
+    coast = current_row["coast_median"]
+    brake = current_row["onset_median"]
     current_corner = current_row["corner"]
     if current_corner not in reference:
       continue
-    
+    technique = reference[current_corner]["technique"]
     your_min_speed = current_row["speed_median"]
     ref_min_speed = reference[current_corner]["min_speed"]
     time_lost = zone/(your_min_speed/3.6) - zone/(ref_min_speed/3.6)
     gap = your_min_speed - ref_min_speed
-    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost})
+    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost, "coast": coast, "brake_point":brake, "technique":technique})
   
   return comparison
 
@@ -279,5 +284,28 @@ def rank_by_time_lost(comparison):
   comparison.sort(key = time_lost_of, reverse = True)
   return comparison
 
+def build_evidence_pack(conn,reference, session_id):
+  reference_report = load_reference(reference)
+  ranked = rank_by_time_lost(compare_to_reference(conn,reference,session_id))
+  corners = []
+  for row in ranked:
+    corners.append({
+            "corner":             row["corner"],
+            "time_lost_s":        round(row["time_lost"], 2),
+            "your_min_kmh":       round(row["yours"], 1),
+            "hymo_min_kmh":       row["ref"],
+            "gap_kmh":            round(row["gap"], 1),
+            "your_coast_m":       round(row["coast"], 1),
+            "your_brake_point_m": round(row["brake_point"], 1),
+            "hymo_technique":     row["technique"],
+        })
+  pack = {                        
+        "driver": {"input": "controller", "car": "BMW M4 LMGT3", "session_type": "race"},
+        "reference": {"source": reference_report["source"],
+                      "note": "min speeds checked on the HUD; technique text extracted by Gemini, unverified"},
+        "focus": corners[0]["corner"],
+        "corners": corners,
+    }
+  return pack
     
 
