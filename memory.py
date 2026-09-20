@@ -274,7 +274,7 @@ def compare_to_reference(conn,reference_path,session_id):
     ref_min_speed = reference[current_corner]["min_speed"]
     time_lost = zone/(your_min_speed/3.6) - zone/(ref_min_speed/3.6)
     gap = your_min_speed - ref_min_speed
-    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost, "coast": coast, "brake_point":brake, "technique":technique})
+    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost, "slow_zone": zone, "coast": coast, "brake_point":brake, "technique":technique})
   
   return comparison
 
@@ -295,6 +295,7 @@ def build_evidence_pack(conn,reference, session_id):
             "your_min_kmh":       round(row["yours"], 1),
             "hymo_min_kmh":       row["ref"],
             "gap_kmh":            round(row["gap"], 1),
+            "your_slow_zone_m":   round(row["slow_zone"], 1),
             "your_coast_m":       round(row["coast"], 1),
             "your_brake_point_m": round(row["brake_point"], 1),
             "hymo_technique":     row["technique"],
