@@ -131,6 +131,25 @@ def debrief(pack):
         return answer
     return None
 
+def for_speaking(text):
+    split_answer = text.split(" ")
+    out = []
+    for i in split_answer:
+        tail = ""
+                      # junk: never spoken
+        if i and i[-1] in ".,!?":        # the pause: keep it
+            tail = i[-1]
+            i = i[:-1]
+        i = i.strip("()*-")
+        if i == "m":
+            out.append("meters"+ tail)
+        elif i == "s":
+            out.append("seconds"+ tail)
+        elif i == "km/h":
+            out.append("kilometers an hour"+tail)
+        else:
+            out.append(i+tail)
+    return " ".join(out)
 
 if __name__ == "__main__":
     conn = sqlite3.connect("apex.db")
@@ -140,4 +159,4 @@ if __name__ == "__main__":
         print("[no debrief]")
     else:
         print(answer["analysis"])
-        
+        speak(for_speaking(answer["spoken"]))
