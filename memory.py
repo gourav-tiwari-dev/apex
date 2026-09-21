@@ -101,6 +101,11 @@ def save_lap(conn,session_id,lap_count,validity,sector1=None,sector2=None,sector
   conn.commit()
   return cur.lastrowid
 
+def save_contract(conn,session_id,contract):
+  cur = conn.execute("INSERT INTO focus_contracts (session_id,corner,focus,metric,baseline,target,min_laps) VALUES (?,?,?,?,?,?,?)",(session_id,contract["corner"],contract["focus"],contract["metric"],contract["baseline"],contract["target"],contract["min_laps"]))
+  conn.commit()
+  return cur.lastrowid
+
 
 def finish_session(conn,session_id,hash):
   cur = conn.execute("UPDATE sessions SET event_hash = ? WHERE id = ?",(hash,session_id))
