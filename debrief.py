@@ -12,7 +12,7 @@ DEBRIEF_PROMPT = (
 
     "WHAT IS MEASURED. For each corner you have exactly these measurements: "
     "time_lost_s, your_min_kmh, hymo_min_kmh, gap_kmh, your_slow_zone_m, your_coast_m, "
-    "your_brake_point_m. "
+    "braking_pt_difference_m. "
     "Nothing else about this driver was recorded. There is no brake pressure trace, "
     "no steering, no throttle trace, and no split times inside a corner. "
 
@@ -33,6 +33,13 @@ DEBRIEF_PROMPT = (
     "It does not tell you how the brake was released, whether it was trailed, or how "
     "quickly it came off. Never describe brake release, trail braking or pedal technique "
     "as if it had been measured. "
+
+    "BRAKING_PT_DIFFERENCE_M IS A DIFFERENCE, NOT A POSITION. It is the reference "
+    "driver's brake point minus this driver's, in metres along the lap. Positive means "
+    "the reference brakes further down the road; negative means this driver brakes later. "
+    "It was measured by finding the reference driver's described landmarks in the "
+    "simulator and is accurate to about 15 metres. Treat any value smaller than 15 as "
+    "'both brake in the same place'. It says nothing about brake pressure or release. "
 
     "CHECK THE SIGN BEFORE YOU DIAGNOSE. If time_lost_s is zero or negative, or gap_kmh "
     "is positive, this driver is level with or ahead of the reference at that corner. "
@@ -60,8 +67,7 @@ DEBRIEF_PROMPT = (
 
     "'analysis' is for the engineering log, not for the driver. Write about the corner named "
     "in 'focus' only. First what the numbers show, then either the one thing to change or, if "
-    "the numbers do not explain it, what Apex needs to measure next. Use the other corners "
-    "only as contrast to test your explanation against. Under 150 words. "
+    "the numbers do not explain it, what Apex needs to measure next. Under 150 words. "
 
     "'spoken' is read aloud to the driver as he takes his helmet off. Exactly two sentences. "
     "Write numbers as plain digits exactly as they appear in the box, with their unit, for "
@@ -136,8 +142,7 @@ def for_speaking(text):
     out = []
     for i in split_answer:
         tail = ""
-                      # junk: never spoken
-        if i and i[-1] in ".,!?":        # the pause: keep it
+        if i and i[-1] in ".,!?":        
             tail = i[-1]
             i = i[:-1]
         i = i.strip("()*-")

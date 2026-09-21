@@ -1,34 +1,42 @@
+
 {
   "source": "HYMO Academy, Andrew McWilliam, BMW M4 LMGT3, fixed setup, 1:49.202, YouTube",
   "session_type": "race",
+  "brake_point_note": "Landmarks from the guide, located in-sim on 21 Sep by stopping on each one. The reading is precise to under a metre; identifying the landmark is worth about +/- 15 m.",
   "corners": {
     "T1 Rettifilo": {
       "min_speed": 62,
+      "brake_point": 782.5,
       "confidence": "checked",
       "technique": "Brakes 95-100% in a straight line down the gears, just after the 150m board. Bleeds off early and sharply just before turn-in, then mounts the right apex kerb."
     },
     "T4 Roggia": {
       "min_speed": 90,
+      "brake_point": 2011.0,
       "confidence": "checked",
       "technique": "Hard straight-line braking to 2nd, just after the escape road. Trails off the last 20-30% while turning into the left kerb, fully off as the car mounts the apex."
     },
     "T6 Lesmo 1": {
       "min_speed": 134.5,
+      "brake_point": 2469.1,
       "confidence": "checked",
       "technique": "No 100% spike: smooth 60-70% pressure just before the orange barrier. Long trail deep past turn-in toward the inside kerb."
     },
     "T7 Lesmo 2": {
       "min_speed": 130,
+      "brake_point": 2799.9,
       "confidence": "checked",
       "technique": "Brief, punchy brake to 2nd just before the 50m board. Releases early before the apex kerb, then immediate full throttle."
     },
     "T8 Ascari": {
       "min_speed": 133.5,
+      "brake_point": 3825.2,
       "confidence": "checked",
       "technique": "Heavy straight-line braking 5th to 3rd at the end of the escape road. Trails late into the first left apex, fully off once the car rotates, flat across the middle and right kerbs."
     },
     "T11 Parabolica": {
       "min_speed": 127,
+      "brake_point": 5032.4,
       "confidence": "checked",
       "technique": "Firm straight-line braking to 3rd at the overhead light box. Holds 10-15% brake well past turn-in, then smoothly back to throttle."
     }

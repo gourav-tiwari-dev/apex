@@ -191,7 +191,7 @@ def corner_report(conn,session_id=None):
       "coast_median":  middle_value(coasts)
     })
 
-  # corners with a spread first, biggest spread on top; corners with no spread at the bottom
+
   with_spread = []
   without_spread = []
   for corner_row in report:
@@ -271,10 +271,13 @@ def compare_to_reference(conn,reference_path,session_id):
       continue
     technique = reference[current_corner]["technique"]
     your_min_speed = current_row["speed_median"]
+    ref_brake = reference[current_corner]["brake_point"]
     ref_min_speed = reference[current_corner]["min_speed"]
+    
     time_lost = zone/(your_min_speed/3.6) - zone/(ref_min_speed/3.6)
     gap = your_min_speed - ref_min_speed
-    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost, "slow_zone": zone, "coast": coast, "brake_point":brake, "technique":technique})
+    braking_gap = ref_brake - brake
+    comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost, "slow_zone": zone, "coast": coast, "brake_point":brake, "technique":technique, "braking_difference":braking_gap})
   
   return comparison
 
@@ -297,14 +300,16 @@ def build_evidence_pack(conn,reference, session_id):
             "gap_kmh":            round(row["gap"], 1),
             "your_slow_zone_m":   round(row["slow_zone"], 1),
             "your_coast_m":       round(row["coast"], 1),
-            "your_brake_point_m": round(row["brake_point"], 1),
             "hymo_technique":     row["technique"],
+            "braking_pt_difference_m":  round(row["braking_difference"],1)
         })
 
   pack = {                        
         "driver": {"input": "controller", "car": "BMW M4 LMGT3", "session_type": "race"},
         "reference": {"source": reference_report["source"],
-                      "note": "min speeds checked on the HUD; technique text extracted by Gemini, unverified"},
+                      "note": "min speeds checked on the HUD; technique text extracted by Gemini, unverified",
+                      "brake_point_note": reference_report["brake_point_note"]},
+
         "focus": corners[0]["corner"],
         "corners": corners,
     }
