@@ -62,6 +62,18 @@ SCHEMA = """
     UNIQUE (session_id, lap_count, corner),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
+
+  CREATE TABLE IF NOT EXISTS focus_contracts (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,          
+    corner        TEXT    NOT NULL,
+    focus         TEXT    NOT NULL,          
+    metric        TEXT    NOT NULL,          
+    baseline      REAL    NOT NULL,          
+    target        REAL    NOT NULL,         
+    min_laps      INTEGER NOT NULL,          
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
 """
 
 def connect_db(db_path='apex.db'):
@@ -316,3 +328,25 @@ def build_evidence_pack(conn,reference, session_id):
   return pack
     
 
+
+MIN_TARGET_STEP_KMH = 1.5
+CONTRACT_MIN_LAPS = 8
+
+def make_contract(pack, spoken):
+  focus_corner = pack["corners"][0]
+  baseline = focus_corner["your_min_kmh"]
+  reference = focus_corner["hymo_min_kmh"]
+  target = baseline + (reference - baseline) / 2
+
+  if target - baseline < MIN_TARGET_STEP_KMH:
+    return None
+
+  contract = {
+    "corner":   focus_corner["corner"],
+    "focus":    spoken,
+    "metric":   "min_speed",
+    "baseline": round(baseline, 1),
+    "target":   round(target, 1),
+    "min_laps": CONTRACT_MIN_LAPS,
+  }
+  return contract
