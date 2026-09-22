@@ -1,8 +1,9 @@
-import os,json,sqlite3,time
+import os,json,sqlite3,time,sys
 from dotenv import load_dotenv
 load_dotenv()
 from openai import OpenAI
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
+from memory import latest_session_id, load_latest_contract, evaluate_contract
 from tts import speak
 
 DEBRIEF_PROMPT = (
@@ -156,9 +157,38 @@ def for_speaking(text):
             out.append(i+tail)
     return " ".join(out)
 
+
+def verdict_line(contract, grade):
+    corner = contract["corner"]
+    before = contract["baseline"]
+    target = contract["target"]
+    if grade["verdict"] == "insufficient":
+        return f"Not enough clean laps at {corner} to grade last session's job, {grade['laps']} of {contract['min_laps']}."
+    after = grade["result"]
+    if grade["verdict"] == "hit":
+        return f"Last session's job at {corner} is done. You went from {before} km/h to {after} km/h."
+    if grade["verdict"] == "moved":
+        return f"You moved at {corner}, from {before} km/h to {after} km/h, but the target was {target} km/h."
+    return f"No real change at {corner}, {before} km/h before and {after} km/h now."
+
 if __name__ == "__main__":
     conn = connect_db("apex.db")
-    pack = build_evidence_pack(conn, "reference_hymo.json", 11)
+
+    # Grade the latest session unless one is named, for example: python debrief.py 11
+    session_id = latest_session_id(conn)
+    if len(sys.argv) > 1:
+        session_id = int(sys.argv[1])
+    print(f"session {session_id}")
+
+    # First the receipt: did last session's contract come true in this one?
+    previous = load_latest_contract(conn, session_id)
+    if previous is not None:
+        grade = evaluate_contract(conn, previous, session_id)
+        line = verdict_line(previous, grade)
+        print(f"verdict: {grade['verdict']} - {line}")
+        speak(for_speaking(line))
+
+    pack = build_evidence_pack(conn, "reference_hymo.json", session_id)
     answer = debrief(pack)
     if answer is None:
         print("[no debrief]")
@@ -169,5 +199,5 @@ if __name__ == "__main__":
         if contract is None:
             print("[no contract: the gap is too small to coach]")
         else:
-            save_contract(conn, 11, contract)
+            save_contract(conn, session_id, contract)
             print(f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps")

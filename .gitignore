@@ -6,3 +6,4 @@ graphify-out/
 *.md
 # local-only test scaffolding, not part of the project
 test_toy.py
+!README.md
