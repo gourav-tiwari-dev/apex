@@ -108,6 +108,21 @@ def save_contract(conn,session_id,contract):
   return cur.lastrowid
 
 
+def load_latest_contract(conn,before_session_id):
+  row = conn.execute("SELECT session_id,corner,focus,metric,baseline,target,min_laps FROM focus_contracts WHERE session_id < ? ORDER BY session_id DESC LIMIT 1",(before_session_id,)).fetchone()
+  if row is None:
+    return None
+  return {
+    "session_id": row[0],
+    "corner":     row[1],
+    "focus":      row[2],
+    "metric":     row[3],
+    "baseline":   row[4],
+    "target":     row[5],
+    "min_laps":   row[6],
+  }
+
+
 def finish_session(conn,session_id,hash):
   cur = conn.execute("UPDATE sessions SET event_hash = ? WHERE id = ?",(hash,session_id))
   conn.commit()
