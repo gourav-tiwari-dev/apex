@@ -2,7 +2,7 @@ import os,json,sqlite3,time
 from dotenv import load_dotenv
 load_dotenv()
 from openai import OpenAI
-from memory import build_evidence_pack
+from memory import build_evidence_pack, connect_db, make_contract, save_contract
 from tts import speak
 
 DEBRIEF_PROMPT = (
@@ -157,7 +157,7 @@ def for_speaking(text):
     return " ".join(out)
 
 if __name__ == "__main__":
-    conn = sqlite3.connect("apex.db")
+    conn = connect_db("apex.db")
     pack = build_evidence_pack(conn, "reference_hymo.json", 11)
     answer = debrief(pack)
     if answer is None:
@@ -165,3 +165,9 @@ if __name__ == "__main__":
     else:
         print(answer["analysis"])
         speak(for_speaking(answer["spoken"]))
+        contract = make_contract(pack, answer["spoken"])
+        if contract is None:
+            print("[no contract: the gap is too small to coach]")
+        else:
+            save_contract(conn, 11, contract)
+            print(f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps")

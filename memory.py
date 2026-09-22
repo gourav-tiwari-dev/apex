@@ -72,6 +72,7 @@ SCHEMA = """
     baseline      REAL    NOT NULL,          
     target        REAL    NOT NULL,         
     min_laps      INTEGER NOT NULL,          
+    UNIQUE (session_id),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
 """
@@ -102,7 +103,7 @@ def save_lap(conn,session_id,lap_count,validity,sector1=None,sector2=None,sector
   return cur.lastrowid
 
 def save_contract(conn,session_id,contract):
-  cur = conn.execute("INSERT INTO focus_contracts (session_id,corner,focus,metric,baseline,target,min_laps) VALUES (?,?,?,?,?,?,?)",(session_id,contract["corner"],contract["focus"],contract["metric"],contract["baseline"],contract["target"],contract["min_laps"]))
+  cur = conn.execute("INSERT OR REPLACE INTO focus_contracts (session_id,corner,focus,metric,baseline,target,min_laps) VALUES (?,?,?,?,?,?,?)",(session_id,contract["corner"],contract["focus"],contract["metric"],contract["baseline"],contract["target"],contract["min_laps"]))
   conn.commit()
   return cur.lastrowid
 
