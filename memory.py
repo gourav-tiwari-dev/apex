@@ -371,3 +371,7 @@ def make_contract(pack, spoken):
     "min_laps": CONTRACT_MIN_LAPS,
   }
   return contract
+
+def load_contract_laps(conn, session_id, corner):
+  cur = conn.execute("SELECT cs.min_speed FROM corner_stats cs JOIN laps l ON l.session_id = cs.session_id AND l.lap_count = cs.lap_count WHERE cs.session_id = ? AND cs.corner = ? AND cs.lap_count > 0 AND l.validity = 1",(session_id,corner))
+  return [row[0] for row in cur.fetchall()]
