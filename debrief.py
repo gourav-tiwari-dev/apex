@@ -58,6 +58,15 @@ DEBRIEF_PROMPT = (
     "the single measurement Apex would need to find out. That is a complete and correct "
     "answer. Never fill the gap with a plausible cause. "
 
+    "LAST CONTRACT. 'last_contract' is the one job this driver was given last session, and "
+    "how it went this session. It is null when there was no job. Code already graded it: "
+    "'verdict' is hit (reached target), moved (improved by at least 1.5 km/h but missed "
+    "target), flat (no real change) or insufficient (too few clean laps to judge, so "
+    "'result' and 'gain' are null). Never re-grade it and never argue with the verdict. "
+    "When the verdict is insufficient, do not compare any speed against its baseline. "
+    "Do not say why a verdict happened: the numbers show that the speed changed, not "
+    "what the driver did to change it. "
+
     "OTHER LIMITS. Never suggest setup changes - brake bias, wing, tyre pressures - you do "
     "not have that data. Never mention gears, racing line or kerbs as facts about this "
     "driver: they appear only in the reference driver's technique text. Never guess what "
@@ -66,8 +75,11 @@ DEBRIEF_PROMPT = (
     "YOUR ANSWER. Reply with JSON only, no code fences, with exactly two keys: "
     "'analysis' and 'spoken'. "
 
-    "'analysis' is for the engineering log, not for the driver. Write about the corner named "
-    "in 'focus' only. First what the numbers show, then either the one thing to change or, if "
+    "'analysis' is for the engineering log, not for the driver. If 'last_contract' is not "
+    "null, the FIRST sentence of 'analysis' is about it and nothing else: its corner, its "
+    "verdict, and its baseline, result and target exactly as given. The SECOND sentence says "
+    "whether the focus corner is the same job continuing or the focus has moved on to a new "
+    "corner. Then write about the corner named in 'focus' only. First what the numbers show, then either the one thing to change or, if "
     "the numbers do not explain it, what Apex needs to measure next. Under 150 words. "
 
     "'spoken' is read aloud to the driver as he takes his helmet off. Exactly two sentences. "
@@ -182,13 +194,25 @@ if __name__ == "__main__":
 
     # First the receipt: did last session's contract come true in this one?
     previous = load_latest_contract(conn, session_id)
+    last_contract = None
     if previous is not None:
         grade = evaluate_contract(conn, previous, session_id)
         line = verdict_line(previous, grade)
         print(f"verdict: {grade['verdict']} - {line}")
         speak(for_speaking(line))
+        # the same facts, handed to the LLM so the debrief knows how last time's job went
+        last_contract = {
+            "corner":   previous["corner"],
+            "baseline": previous["baseline"],
+            "target":   previous["target"],
+            "result":   grade.get("result"),
+            "gain":     grade.get("gain"),
+            "verdict":  grade["verdict"],
+            "laps":     grade["laps"],
+        }
 
     pack = build_evidence_pack(conn, "reference_hymo.json", session_id)
+    pack["last_contract"] = last_contract
     answer = debrief(pack)
     if answer is None:
         print("[no debrief]")
