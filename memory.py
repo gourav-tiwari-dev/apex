@@ -83,6 +83,10 @@ def connect_db(db_path='apex.db'):
     conn.executescript(SCHEMA)
     return conn
 
+def latest_session_id(conn):
+  row = conn.execute("SELECT MAX(id) FROM sessions").fetchone()
+  return row[0]
+
 def start_session(conn,started_at,tape_path,replay_speed):
   cur = conn.execute("INSERT INTO sessions (started_at,tape_path,replay_speed) VALUES (?,?,?)",(started_at,tape_path,replay_speed))
   conn.commit()
@@ -375,3 +379,21 @@ def make_contract(pack, spoken):
 def load_contract_laps(conn, session_id, corner):
   cur = conn.execute("SELECT cs.min_speed FROM corner_stats cs JOIN laps l ON l.session_id = cs.session_id AND l.lap_count = cs.lap_count WHERE cs.session_id = ? AND cs.corner = ? AND cs.lap_count > 0 AND l.validity = 1",(session_id,corner))
   return [row[0] for row in cur.fetchall()]
+
+
+def evaluate_contract(conn, contract, session_id):
+  speeds = load_contract_laps(conn, session_id, contract["corner"])
+
+  if len(speeds) < contract["min_laps"]:
+    return {"verdict": "insufficient", "laps": len(speeds)}
+
+  result = round(median(speeds), 1)
+  gain = round(result - contract["baseline"], 1)
+
+  if result >= contract["target"]:
+    return {"verdict": "hit", "laps": len(speeds), "result": result, "gain": gain}
+
+  if gain >= MIN_TARGET_STEP_KMH:
+    return {"verdict": "moved", "laps": len(speeds), "result": result, "gain": gain}
+
+  return {"verdict": "flat", "laps": len(speeds), "result": result, "gain": gain}
