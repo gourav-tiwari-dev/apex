@@ -10,11 +10,11 @@ from lmu_data import LMUObjectOut, LMUConstants
 from dataclasses import dataclass,asdict
 from queue import Full, Empty, Queue
 from datetime import datetime
-from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals
+from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners
 from radio import Governor, Budget
 from persona import Persona
 from voice import Voice, RadioDesk
-from seats.performance import call_from_event
+from seats.performance import call_from_event, PerformanceEngineer
 from seats import Moment
 from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer
@@ -544,6 +544,35 @@ class OffTrackDetector(Detector):
                 off_wheels+=1
         return off_wheels>=2
 
+# Rear snap on the brakes, the problem Gourav cannot work out by feel (23 Sep 2026).
+# In a steady corner the car rotates at lateral_g / speed. When it rotates much faster
+# than that while braking with lock on, the rear has let go.
+# GUESSED thresholds: tune them on his tapes once they carry steering.
+SNAP_BRAKE = 0.15            # on the brakes
+SNAP_STEERING = 0.05         # with some lock on (trail braking)
+SNAP_MIN_SPEED_MS = 15.0     # 54 km/h: slower than this, yaw means nothing
+SNAP_RATIO = 1.4             # rotating 40% faster than the corner explains
+SNAP_MARGIN = 0.1            # rad/s, so tiny wobbles on a straight never count
+
+class RearSnapDetector(Detector):
+    def __init__(self):
+        super().__init__()
+        self.kind = "REAR_SNAP"
+
+    def build_event(self, frame):
+        e = super().build_event(frame)
+        e.conclusion = f"rear snapped under braking at {e.corner}"
+        return e
+
+    def is_triggered(self, frame):
+        if frame.steering is None:
+            return False                 # old tapes have no steering channel
+        speed_ms = frame.speed_kmh / 3.6
+        if frame.brake < SNAP_BRAKE or abs(frame.steering) < SNAP_STEERING or speed_ms < SNAP_MIN_SPEED_MS:
+            return False
+        explained = abs(frame.accel_lat) / speed_ms
+        return abs(frame.yaw_rate) > SNAP_RATIO * explained + SNAP_MARGIN
+
 class SpinDetector(Detector):
     def __init__(self):
         super().__init__()
@@ -621,7 +650,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         CornerEntryDetection(),
         ThrottleLift(),
         OffTrackDetector(),
-        SpinDetector()]
+        SpinDetector(),
+        RearSnapDetector()]
 
     lap_counter = LapCounter()
     lap_distance = LapDistance()
@@ -643,7 +673,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     last_opponents = []
 
     # the seats that watch the whole race (the performance seat rides on the detectors)
-    seats = [Spotter(), RaceEngineer(), Strategist()]
+    performance = PerformanceEngineer()
+    seats = [Spotter(), RaceEngineer(), Strategist(), performance]
 
     governor = Governor()
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
@@ -739,7 +770,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             corner_now = corner_at(current_corners, real_lap_distance)
             moment = Moment(frame=frame, race=source.race, new_race=source.new_race, near=source.near,
                             lap_count=lap_count, lap_wrapped=lap_counter.wrapped, corner=corner_now,
-                            track=track)
+                            track=track, corner_stat=stat, session_type=session_type,
+                            corners=current_corners)
             for seat in seats:
                 for call in seat.update(moment):
                     governor.offer(call)
@@ -800,6 +832,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     strikes = last_limit_steps - first_limit_steps
                 save_session_result(conn, session_id, grid, final_place, strikes)
                 save_rivals(conn, session_id, last_opponents)
+            save_opponent_corners(conn, session_id, performance.opponents.rows)
             print_corner_report(conn, session_id)
             print(f"session {session_id} ended: {end_reason}   LLM spend ~Rs {budget.spent_rs:.2f}")
         if conn is not None:

@@ -109,6 +109,20 @@ SCHEMA = """
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
 
+  -- v2: how every same-class car took each corner, from their telemetry during the race.
+  -- The reference for tracks with no reference lap: the fastest car in my own races.
+  CREATE TABLE IF NOT EXISTS opponent_corners (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    steam_id      TEXT,
+    driver        TEXT,
+    car_class     TEXT,
+    corner        TEXT    NOT NULL,
+    lap_count     INTEGER,
+    min_speed     REAL    NOT NULL,          -- from 5 Hz snapshots: good to a km/h or two
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
+
   -- v2 TEAM MEMORY. A cache rebuilt from the drives by team_memory.build_profile().
   -- A fact exists only with evidence: at least one row in profile_evidence (checked in code,
   -- and every evidence row must point at a real event / lap / session - foreign keys).
@@ -229,6 +243,12 @@ def save_rivals(conn,session_id,opponents):
   for o in opponents:
     conn.execute("INSERT OR REPLACE INTO rivals_seen (session_id,steam_id,driver,car_class,best_lap,final_place) VALUES (?,?,?,?,?,?)",
       (session_id,str(o.steam_id),o.driver,o.car_class,o.best_lap,o.place))
+  conn.commit()
+
+def save_opponent_corners(conn,session_id,rows):
+  for steam_id, driver, car_class, corner, lap_count, min_speed in rows:
+    conn.execute("INSERT INTO opponent_corners (session_id,steam_id,driver,car_class,corner,lap_count,min_speed) VALUES (?,?,?,?,?,?,?)",
+      (session_id,steam_id,driver,car_class,corner,lap_count,min_speed))
   conn.commit()
 
 def set_session_track(conn,session_id,track,session_type):
