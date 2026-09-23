@@ -75,13 +75,62 @@ SCHEMA = """
     UNIQUE (session_id),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
+
+  -- v2: every call any seat raised, and what happened to it.
+  -- status: spoken / stale / expired / no_line / queue_full / voice_failed
+  CREATE TABLE IF NOT EXISTS radio_log (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    sim_time      REAL    NOT NULL,          -- when the seat raised it
+    seat          TEXT    NOT NULL,
+    kind          TEXT    NOT NULL,
+    priority      INTEGER NOT NULL,
+    urgent        INTEGER NOT NULL,
+    status        TEXT    NOT NULL,
+    line          TEXT,                      -- the words actually said
+    reason        TEXT,                      -- why a line was refused or dropped
+    conclusion    TEXT,
+    facts         TEXT,                      -- JSON
+    evidence      TEXT,                      -- JSON: ids of the rows it rests on
+    latency_ms    INTEGER,
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
+
+  -- v2: the cost of every LLM call, so the Rs 5 cap is checked against real numbers
+  CREATE TABLE IF NOT EXISTS llm_calls (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    seat          TEXT    NOT NULL,
+    tokens_in     INTEGER NOT NULL,
+    tokens_out    INTEGER NOT NULL,
+    seconds       REAL,
+    cost_rs       REAL    NOT NULL,          -- ESTIMATE: derived prices, see radio.Budget
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
 """
+
+# v2 columns added to tables that already exist in older databases
+NEW_COLUMNS = {
+    "sessions": [("track", "TEXT"), ("session_type", "INTEGER"),
+                 ("end_reason", "TEXT"), ("ended_at", "TEXT")],
+}
 
 def connect_db(db_path='apex.db'):
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    add_new_columns(conn)
     return conn
+
+def add_new_columns(conn):
+    # CREATE TABLE IF NOT EXISTS never changes a table that is already there,
+    # so an old apex.db needs its new columns added by hand
+    for table, columns in NEW_COLUMNS.items():
+        existing = [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+        for name, kind in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    conn.commit()
 
 def latest_session_id(conn):
   row = conn.execute("SELECT MAX(id) FROM sessions").fetchone()
@@ -127,8 +176,23 @@ def load_latest_contract(conn,before_session_id):
   }
 
 
-def finish_session(conn,session_id,hash):
-  cur = conn.execute("UPDATE sessions SET event_hash = ? WHERE id = ?",(hash,session_id))
+def finish_session(conn,session_id,hash,end_reason=None,ended_at=None):
+  cur = conn.execute("UPDATE sessions SET event_hash = ?, end_reason = ?, ended_at = ? WHERE id = ?",(hash,end_reason,ended_at,session_id))
+  conn.commit()
+
+def set_session_track(conn,session_id,track,session_type):
+  conn.execute("UPDATE sessions SET track = ?, session_type = ? WHERE id = ?",(track,session_type,session_id))
+  conn.commit()
+
+def save_radio(conn,session_id,call,status,line=None,reason=None,latency_ms=None):
+  cur = conn.execute("INSERT INTO radio_log (session_id,sim_time,seat,kind,priority,urgent,status,line,reason,conclusion,facts,evidence,latency_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    (session_id,call.sim_time,call.seat,call.kind,call.priority,int(call.urgent),status,line,reason,call.conclusion,json.dumps(call.facts),json.dumps(call.evidence),latency_ms))
+  conn.commit()
+  return cur.lastrowid
+
+def save_llm_call(conn,session_id,seat,llm):
+  conn.execute("INSERT INTO llm_calls (session_id,seat,tokens_in,tokens_out,seconds,cost_rs) VALUES (?,?,?,?,?,?)",
+    (session_id,seat,llm["tokens_in"],llm["tokens_out"],llm["seconds"],llm["cost_rs"]))
   conn.commit()
 
 

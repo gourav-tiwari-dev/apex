@@ -7,14 +7,14 @@ import json,gzip,hashlib
 
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
-from openai import OpenAI
-from tts import speak
 from dataclasses import dataclass,asdict
 from queue import Full, Empty, Queue
 from datetime import datetime
-from coach import phrase_event
-from coach import radio_check
-from memory import connect_db,start_session,save_event,save_spoken,finish_session,save_lap,save_corner_stat,print_corner_report
+from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call
+from radio import Governor, Budget
+from persona import Persona
+from voice import Voice, RadioDesk
+from seats.performance import call_from_event
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
 from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map
 
@@ -175,6 +175,7 @@ class LiveSource:
 
 
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
+BUDGET_PER_SESSION_RS = 5.0   # Gourav's cap, 23 Sep 2026: past it, template lines only
 class ReplaySource:
     def __init__(self, speed, tape_path=TAPE_PATH):
         self.speed = speed
@@ -526,32 +527,36 @@ class Recorder:
         self.q.put(None)
         self.writer_thread.join()
 
-def run_session(replay,replay_speed,tape_path=TAPE_PATH):
+GAME_PHASE_OVER = 8      # mGamePhase: the session has finished
+
+
+def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None):
+    """One LMU session, start to finish. Returns the database id of the session.
+
+    out_loud: speak through the speakers (default) or print lines (fast replays, tests).
+    clean:    no swearing, for recordings other people will hear.
+    persona:  who phrases the lines; tests pass a fake so no LLM call is ever made."""
     global current_corners
     REPLAY = replay
-    REPLAY_SPEED=replay_speed
-    info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
-    info.create(0)
+    REPLAY_SPEED = replay_speed
+    if out_loud is None:
+        # a replay at max speed prints its lines, like v1 did
+        out_loud = not (REPLAY and not REPLAY_SPEED)
 
-    scoring   = info.data.scoring.vehScoringInfo       # timing / position
-    telemetry = info.data.telemetry.telemInfo  
-
-    if(REPLAY):
+    if REPLAY:
         source = ReplaySource(REPLAY_SPEED, tape_path)
         tape_out = tape_path
     else:
-        source= LiveSource(info)
+        info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
+        info.create(0)
+        source = LiveSource(info)
         # wall-clock is correct HERE: this names a file for a human, it is not
         # telemetry timing. All event timing still comes from mElapsedTime.
         tape_out = f"tape_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl.gz"
-        tele_recorder= Recorder(tape_out)
+        tele_recorder = Recorder(tape_out)
         print(f"Recording to {tape_out}")
 
-    detector_priority = {"SPIN": 1, "OFF_TRACK": 2, "LOCKUP": 3, "THROTTLE_LIFT": 4}
-    INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
-    SPEAK_COOLDOWN = 5.0
-
-    detectors=[
+    detectors = [
         HardBrakingDetector(),
         LockUpDetector(),
         CornerEntryDetection(),
@@ -566,60 +571,40 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
     # Old tapes carry no track name, so they keep the Monza map they were driven on.
     current_corners = MONZA_CORNERS
     track = None
+    session_type = None
     learning_track = False
     track_learner = TrackMapLearner()
 
-    speak_queue = Queue(maxsize=1)
-    spoken_results = Queue()
-    def worker_function():
-        STALE_THRESHOLD=6.0
-        while True:
-            item = speak_queue.get()
-            if item is None:
-                break
-            event, event_id = item
-            line = phrase_event(event)
-            if line:
-                spoken_at = latest_sim_time
-                if spoken_at - event.sim_time < STALE_THRESHOLD:
-                    if not REPLAY_SPEED and REPLAY:
-                        print(line)
-                        spoken_results.put((event_id, spoken_at, line))
-                    else:
-                        speak(line)
-                        spoken_results.put((event_id, spoken_at, line))
+    governor = Governor()
+    budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
+    voice = Voice(out_loud)
+    if persona is None:
+        persona = Persona(clean=clean)
+    desk = RadioDesk(voice, persona, budget, clean)
 
-                else:
-                    print(f"[stale line dropped: {event.kind}@{event.corner}]")
-
-
-    def drain_spoken(conn):
-        while True:
-            try:
-                event_id, spoken_at, line = spoken_results.get_nowait()
-            except Empty:
-                break
-            save_spoken(conn, event_id, spoken_at, line)
-
-
-    latest_sim_time=0
-    worker=threading.Thread(target= worker_function,daemon=True)
-    worker.start()
-    dropped_events=0
     conn = None
     session_id = None
+    end_reason = "tape_end" if REPLAY else "stopped_by_driver"
+
+    def log_finished_lines():
+        for result in desk.drain():
+            call = result["call"]
+            save_radio(conn, session_id, call, result["status"], result["line"],
+                       result["reason"], result["latency_ms"])
+            if result["llm"] is not None:
+                save_llm_call(conn, session_id, call.seat, result["llm"])
+
+    def log_dropped_calls():
+        for call, reason in governor.dropped:
+            save_radio(conn, session_id, call, reason)
+        governor.dropped = []
 
     try:
         conn = connect_db()
         session_started = datetime.now().isoformat(timespec="seconds")
-        session_id = start_session(conn,session_started,tape_out,REPLAY_SPEED)
-        hash_events=[]
-        if radio_check() is None:
-            print("[radio check failed — driving without coach]")
-        else:
-            print("[coach is online]")
-        
-        last_spoken_time = 0.0
+        session_id = start_session(conn, session_started, tape_out, REPLAY_SPEED)
+        voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
+
         # GUESSED — mLapInvalidated never observed True (n=33485)
         validity = 1                      # 1 = valid, 0 = invalidated
         for frame in source:
@@ -630,6 +615,8 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
             # anything below tags a corner onto a stat or an event
             if track is None and source.race is not None:
                 track = source.race.session.track
+                session_type = source.race.session.session
+                set_session_track(conn, session_id, track, session_type)
                 current_corners = corners_for_track(track)
                 learning_track = current_corners is None
                 if learning_track:
@@ -642,56 +629,42 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
                 if learned is not None:
                     current_corners = learned
 
-            stat = corner_stats.update(frame, lap_count,real_lap_distance)
+            stat = corner_stats.update(frame, lap_count, real_lap_distance)
             if stat:
                 print(stat)
                 save_corner_stat(conn, session_id, stat)
 
             if lap_counter.wrapped:
-                save_lap(conn,session_id,lap_count-1,validity)
+                save_lap(conn, session_id, lap_count - 1, validity)
                 validity = 1
 
             if frame.lap_invalidated:
                 validity = 0
 
-            latest_sim_time=frame.elapsed_time
-            event_list = []
+            # the seats raise calls ...
             for detector in detectors:
                 event = detector.update(frame)
                 if event:
                     event.lap_count = lap_count
                     print(event)
-                    event_id = save_event(conn,session_id,event)                             
-                    if event.kind in detector_priority: 
-                            
-                        event_list.append((event, event_id))            
+                    event_id = save_event(conn, session_id, event)
+                    call = call_from_event(event, event_id)
+                    if call is not None:
+                        governor.offer(call)
 
-            spoken_event = None
-            spoken_event_id = None
-            max_priority = 10                               
-            for event, eid in event_list:
-                if detector_priority[event.kind] < max_priority:
-                    spoken_event = event
-                    spoken_event_id = eid
-                    max_priority = detector_priority[event.kind]
-            
-            if spoken_event:                                
-                is_incident = spoken_event.kind in INCIDENTS
-                cooldown_open = frame.elapsed_time - last_spoken_time > SPEAK_COOLDOWN
-                if is_incident or cooldown_open:
-                    
-                    hash_events.append(spoken_event) 
-                    
-                    try:
-                        
-                        speak_queue.put_nowait((spoken_event, spoken_event_id))
-                        last_spoken_time = frame.elapsed_time
-                    except Full:
-                        dropped_events+=1
-                        print(f"[queue full line dropped: {spoken_event.kind}@{spoken_event.corner}]")
-                        pass
-            
-            drain_spoken(conn)
+            # ... and the radio decides what goes on air, on sim time only
+            in_corner = corner_at(current_corners, real_lap_distance) is not None or frame.brake > 0.2
+            on_air = governor.step(frame.elapsed_time, in_corner)
+            if on_air is not None:
+                if on_air.urgent:
+                    played = voice.play_urgent(on_air.kind, on_air.template)
+                    save_radio(conn, session_id, on_air, "spoken" if played else "no_bank_line",
+                               on_air.template, latency_ms=0)
+                elif not desk.submit(on_air):
+                    save_radio(conn, session_id, on_air, "queue_full")
+            desk.latest_sim_time = frame.elapsed_time
+            log_dropped_calls()
+            log_finished_lines()
 
             if not REPLAY:
                 # race lines go first: on replay each one belongs to the car frame after it
@@ -701,19 +674,20 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
                     tele_recorder.record(source.near)
                 tele_recorder.record(frame)
 
+            # the session ends itself: no Ctrl+C needed at the chequered flag
+            if source.race is not None:
+                if source.race.session.game_phase == GAME_PHASE_OVER:
+                    end_reason = "session_over"
+                    break
+                if session_type is not None and source.race.session.session != session_type:
+                    end_reason = "session_changed"
+                    break
+
     except KeyboardInterrupt:
-        pass
+        end_reason = "stopped_by_driver"
 
     finally:
-        SHUTDOWN_GRACE=3*5
-        speak_queue.put(None)
-        worker.join(timeout=SHUTDOWN_GRACE)
-        if conn:
-            drain_spoken(conn)
-            
-        print(dropped_events)
-        
-        
+        desk.stop()
         if not REPLAY:
             tele_recorder.stop()
         if learning_track and track:
@@ -722,15 +696,19 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
                 laps_used = len(track_learner.complete_laps(lap_counter.lap_count))
                 save_map(track, learned, laps_used)
                 print(f"[saved the corner map for {track}, learned from {laps_used} laps]")
-        serialized = json.dumps([asdict(e) for e in hash_events])
-        event_hash = hashlib.sha256(serialized.encode()).hexdigest()
-        if session_id:
-            finish_session(conn,session_id,event_hash)
-            print_corner_report(conn,session_id)
+        decision_hash = governor.decision_hash()
+        if conn is not None and session_id:
+            log_dropped_calls()
+            log_finished_lines()
+            ended_at = datetime.now().isoformat(timespec="seconds")
+            finish_session(conn, session_id, decision_hash, end_reason, ended_at)
+            print_corner_report(conn, session_id)
+            print(f"session {session_id} ended: {end_reason}   LLM spend ~Rs {budget.spent_rs:.2f}")
+        if conn is not None:
             conn.close()
-        else:
-            conn.close()
-        print(event_hash)
+        print(decision_hash)
+    return session_id
+
 
 if __name__ == "__main__":
     run_session(True,1)

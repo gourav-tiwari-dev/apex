@@ -9,6 +9,7 @@ from live_telemetry import ReplaySource, LapCounter, LapDistance
 from race_state import read_race_snapshot
 from test_race_state import fake_game
 from track_map import TrackMapLearner, MONZA_CORNERS, borrow_names, corner_at
+from test_determinism import FakePersona
 
 ELEVEN_LAPS = "tape_20260821_232642.jsonl.gz"
 
@@ -53,10 +54,8 @@ def test_a_new_track_is_learned_while_driving_and_saved(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
     monkeypatch.setattr(track_map, "MAPS_FOLDER", str(tmp_path / "maps"))
     monkeypatch.setattr(live_telemetry, "connect_db", lambda: memory.connect_db(db_path))
-    monkeypatch.setattr(live_telemetry, "phrase_event", lambda event: None)
-    monkeypatch.setattr(live_telemetry, "radio_check", lambda: None)
 
-    live_telemetry.run_session(True, None, tape)
+    live_telemetry.run_session(True, None, tape, out_loud=False, persona=FakePersona())
 
     saved = track_map.load_map("Test Ring")
     assert saved is not None

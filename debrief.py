@@ -183,14 +183,13 @@ def verdict_line(contract, grade):
         return f"You moved at {corner}, from {before} km/h to {after} km/h, but the target was {target} km/h."
     return f"No real change at {corner}, {before} km/h before and {after} km/h now."
 
-def run_debrief():
+def run_debrief(session_id=None):
 
     conn = connect_db("apex.db")
 
     # Grade the latest session unless one is named, for example: python debrief.py 11
-    session_id = latest_session_id(conn)
-    if len(sys.argv) > 1:
-        session_id = int(sys.argv[1])
+    if session_id is None:
+        session_id = latest_session_id(conn)
     print(f"session {session_id}")
 
    
@@ -228,4 +227,8 @@ def run_debrief():
             print(f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps")
 
 if __name__ == "__main__":
-    run_debrief()
+    # the command line is read here only: apex.py has its own flags
+    named_session = None
+    if len(sys.argv) > 1:
+        named_session = int(sys.argv[1])
+    run_debrief(named_session)
