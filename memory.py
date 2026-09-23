@@ -446,9 +446,15 @@ def load_reference(path):
     data = json.load(f)
     return data 
 
+def reference_of(reference):
+  # a reference is a file (the Monza hand-checked lap) or a dict built from a race
+  if isinstance(reference, str):
+    return load_reference(reference)
+  return reference
+
 def compare_to_reference(conn,reference_path,session_id):
   report = corner_report(conn,session_id)
-  reference_report = load_reference(reference_path)
+  reference_report = reference_of(reference_path)
   reference = reference_report["corners"]
   comparison = []
 
@@ -466,7 +472,10 @@ def compare_to_reference(conn,reference_path,session_id):
     
     time_lost = zone/(your_min_speed/3.6) - zone/(ref_min_speed/3.6)
     gap = your_min_speed - ref_min_speed
-    braking_gap = ref_brake - brake
+    # no reference brake point on tracks referenced by another car: not measured, never guessed
+    braking_gap = None
+    if ref_brake is not None and brake is not None:
+      braking_gap = ref_brake - brake
     comparison.append({"corner": current_corner, "yours": your_min_speed,"ref": ref_min_speed, "gap": gap, "confidence": reference[current_corner]["confidence"] , "time_lost": time_lost, "slow_zone": zone, "coast": coast, "brake_point":brake, "technique":technique, "braking_difference":braking_gap})
   
   return comparison
@@ -478,7 +487,7 @@ def rank_by_time_lost(comparison):
   return comparison
 
 def build_evidence_pack(conn,reference, session_id):
-  reference_report = load_reference(reference)
+  reference_report = reference_of(reference)
   ranked = rank_by_time_lost(compare_to_reference(conn,reference,session_id))
   corners = []
   for row in ranked:
@@ -491,7 +500,7 @@ def build_evidence_pack(conn,reference, session_id):
             "your_slow_zone_m":   round(row["slow_zone"], 1),
             "your_coast_m":       round(row["coast"], 1),
             "hymo_technique":     row["technique"],
-            "braking_pt_difference_m":  round(row["braking_difference"],1)
+            "braking_pt_difference_m":  None if row["braking_difference"] is None else round(row["braking_difference"],1)
         })
 
   pack = {                        
@@ -506,6 +515,34 @@ def build_evidence_pack(conn,reference, session_id):
   return pack
     
 
+
+REFERENCE_LAPS = 2    # one lap of another car is not a reference
+
+def reference_from_race(conn, session_id, car_class=None):
+  """For tracks with no hand-checked reference lap: the fastest same-class car of this
+  race, corner by corner (its median min speed over its laps). None if nobody qualifies."""
+  rows = conn.execute("SELECT driver, car_class, corner, min_speed FROM opponent_corners WHERE session_id = ?",
+                      (session_id,)).fetchall()
+  speeds = {}
+  for driver, row_class, corner, speed in rows:
+    if car_class is not None and row_class != car_class:
+      continue
+    speeds.setdefault((corner, driver), []).append(speed)
+  corners = {}
+  drivers = set()
+  for (corner, driver), values in speeds.items():
+    if len(values) < REFERENCE_LAPS:
+      continue
+    typical = round(median(values), 1)
+    if corner not in corners or typical > corners[corner]["min_speed"]:
+      corners[corner] = {"min_speed": typical, "brake_point": None, "technique": "",
+                         "confidence": f"{driver}'s own telemetry, 5 Hz, good to 1-2 km/h"}
+      drivers.add(driver)
+  if not corners:
+    return None
+  return {"source": "the fastest car in your class in this race: " + ", ".join(sorted(drivers)),
+          "brake_point_note": "not measured on this track",
+          "corners": corners}
 
 MIN_TARGET_STEP_KMH = 1.5
 CONTRACT_MIN_LAPS = 8

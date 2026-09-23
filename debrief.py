@@ -4,6 +4,9 @@ load_dotenv()
 from openai import OpenAI
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
 from memory import latest_session_id, load_latest_contract, evaluate_contract
+from memory import reference_from_race, save_radio
+from radio import Call, PERFORMANCE, MEMORY
+from seats.setup_engineer import advice_for
 from tts import speak
 
 DEBRIEF_PROMPT = (
@@ -41,6 +44,8 @@ DEBRIEF_PROMPT = (
     "It was measured by finding the reference driver's described landmarks in the "
     "simulator and is accurate to about 15 metres. Treat any value smaller than 15 as "
     "'both brake in the same place'. It says nothing about brake pressure or release. "
+    "When braking_pt_difference_m is null it was not measured on this track: never guess it "
+    "and never mention brake points. "
 
     "CHECK THE SIGN BEFORE YOU DIAGNOSE. If time_lost_s is zero or negative, or gap_kmh "
     "is positive, this driver is level with or ahead of the reference at that corner. "
@@ -183,6 +188,40 @@ def verdict_line(contract, grade):
         return f"You moved at {corner}, from {before} km/h to {after} km/h, but the target was {target} km/h."
     return f"No real change at {corner}, {before} km/h before and {after} km/h now."
 
+def say_and_log(conn, session_id, seat, kind, line):
+    # every debrief line is logged, so the DONE check can see which seat spoke
+    print(line)
+    speak(for_speaking(line))
+    call = Call(seat=seat, kind=kind, sim_time=0.0, priority=MEMORY, ttl=0.0, conclusion=line)
+    save_radio(conn, session_id, call, "spoken", line)
+
+def reference_for(conn, session_id):
+    track = conn.execute("SELECT track FROM sessions WHERE id = ?", (session_id,)).fetchone()[0]
+    # Monza keeps the hand-checked reference lap; old sessions have no track and were Monza
+    if track is None or "monza" in track.lower():
+        return "reference_hymo.json"
+    return reference_from_race(conn, session_id)
+
+def incident_review(conn, session_id):
+    """E13: every contact of the race, where and with whom, and the pass attempts."""
+    contacts = conn.execute("SELECT corner, lap_count, conclusion FROM events WHERE session_id = ? AND kind = 'CONTACT' ORDER BY sim_time",
+                            (session_id,)).fetchall()
+    attempts = conn.execute("SELECT outcome FROM pass_attempts WHERE session_id = ?", (session_id,)).fetchall()
+    offs = conn.execute("SELECT COUNT(*) FROM events WHERE session_id = ? AND kind IN ('OFF_TRACK','SPIN')", (session_id,)).fetchone()[0]
+    strikes = conn.execute("SELECT track_limit_strikes FROM sessions WHERE id = ?", (session_id,)).fetchone()[0] or 0
+    parts = []
+    if contacts:
+        where = ", ".join(f"lap {lap} {corner}" for corner, lap, _ in contacts[:3])
+        parts.append(f"{len(contacts)} contact{'s' if len(contacts) > 1 else ''}: {where}.")
+    else:
+        parts.append("No contact all race.")
+    if attempts:
+        passes = sum(1 for (o,) in attempts if o == "pass")
+        touched = sum(1 for (o,) in attempts if o == "contact")
+        parts.append(f"{len(attempts)} passing attempts, {passes} made it, {touched} ended in contact.")
+    parts.append(f"{offs} offs, {strikes} track limit steps.")
+    return " ".join(parts)
+
 def run_debrief(session_id=None):
 
     conn = connect_db("apex.db")
@@ -199,7 +238,7 @@ def run_debrief(session_id=None):
         grade = evaluate_contract(conn, previous, session_id)
         line = verdict_line(previous, grade)
         print(f"verdict: {grade['verdict']} - {line}")
-        speak(for_speaking(line))
+        say_and_log(conn, session_id, "performance", "VERDICT", line)
       
         last_contract = {
             "corner":   previous["corner"],
@@ -211,20 +250,31 @@ def run_debrief(session_id=None):
             "laps":     grade["laps"],
         }
 
-    pack = build_evidence_pack(conn, "reference_hymo.json", session_id)
-    pack["last_contract"] = last_contract
-    answer = debrief(pack)
+    reference = reference_for(conn, session_id)
+    answer = None
+    pack = None
+    if reference is None:
+        print("[no reference on this track yet: nobody in your class did 2 clean laps]")
+    else:
+        pack = build_evidence_pack(conn, reference, session_id)
+        pack["last_contract"] = last_contract
+        answer = debrief(pack)
     if answer is None:
         print("[no debrief]")
     else:
         print(answer["analysis"])
-        speak(for_speaking(answer["spoken"]))
+        say_and_log(conn, session_id, "performance", "DEBRIEF", answer["spoken"])
         contract = make_contract(pack, answer["spoken"])
         if contract is None:
             print("[no contract: the gap is too small to coach]")
         else:
             save_contract(conn, session_id, contract)
             print(f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps")
+    # the setup engineer (M8) and the incident review (E13), after the coach
+    for advice in advice_for(conn, session_id):
+        say_and_log(conn, session_id, "setup", "DEBRIEF_" + advice["kind"], advice["conclusion"])
+    say_and_log(conn, session_id, "memory", "DEBRIEF_INCIDENTS", incident_review(conn, session_id))
+    conn.close()
 
 if __name__ == "__main__":
     # the command line is read here only: apex.py has its own flags

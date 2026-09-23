@@ -20,6 +20,7 @@ from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
+from seats.memory_recall import MemoryRecall
 from team_memory import facts as memory_facts
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
 from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map
@@ -700,7 +701,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     # the seats that watch the whole race (the performance seat rides on the detectors)
     performance = PerformanceEngineer()
     racecraft = Racecraft(performance)
-    seats = [Spotter(), RaceEngineer(), Strategist(), performance, racecraft]
+    recall = MemoryRecall()
+    seats = [Spotter(), RaceEngineer(), Strategist(), performance, racecraft, recall]
 
     governor = Governor()
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
@@ -731,6 +733,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         session_started = datetime.now().isoformat(timespec="seconds")
         session_id = start_session(conn, session_started, tape_out, REPLAY_SPEED)
         # what team memory knows about every rival, for the racecraft plans
+        lap_one_facts = memory_facts(conn, "lap_one")
+        if lap_one_facts:
+            recall.lap_one = lap_one_facts[0]
         for rival_fact in memory_facts(conn, "rival"):
             racecraft.rivals[rival_fact["subject"]] = rival_fact["summary"]
         voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
@@ -748,6 +753,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 session_type = source.race.session.session
                 set_session_track(conn, session_id, track, session_type)
                 current_corners = corners_for_track(track)
+                # team memory for this track: the habits worth a reminder
+                for habit in memory_facts(conn, "corner_habit", track) + memory_facts(conn, "contact_corner", track):
+                    recall.corner_habits.setdefault(habit["subject"], habit)
                 learning_track = current_corners is None
                 if learning_track:
                     print(f"[track: {track} - new track, learning its corners from your laps]")
