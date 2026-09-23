@@ -16,6 +16,7 @@ from coach import phrase_event
 from coach import radio_check
 from memory import connect_db,start_session,save_event,save_spoken,finish_session,save_lap,save_corner_stat,print_corner_report
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
+from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map
 
 @dataclass
 class CarState:
@@ -85,18 +86,9 @@ def match_opponents():
     return opponents
 
 
-# windows measured from my own laps (tape 20260821, laps 1-11):
-# start = earliest braking - 25 m, end = back to full throttle and straight (lateral g < 0.5) + 25 m
-# Curva Grande is taken flat, so it keeps its old hand-picked window
-MONZA_CORNERS = [
-    {"name": "T1 Rettifilo",   "start":  747, "end": 1088},
-    {"name": "T3 Curva Grande","start": 1250, "end": 1760},
-    {"name": "T4 Roggia",      "start": 1974, "end": 2321},
-    {"name": "T6 Lesmo 1",     "start": 2431, "end": 2742},
-    {"name": "T7 Lesmo 2",     "start": 2768, "end": 2998},
-    {"name": "T8 Ascari",      "start": 3795, "end": 4318},
-    {"name": "T11 Parabolica", "start": 4992, "end": 5584},
-]
+# Corners come from track_map.py, the one place that decides where they are.
+# Monza uses the hand-measured windows; other tracks are learned from my laps.
+current_corners = MONZA_CORNERS
 
 radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
 class LiveSource:
@@ -267,11 +259,7 @@ class CornerStats:
         self.prev_time = None
 
     def current_corner(self, real_lap_distance):
-        corner = None
-        for monza_corner in MONZA_CORNERS:
-            if real_lap_distance >= monza_corner["start"] and real_lap_distance < monza_corner["end"]:
-                corner = monza_corner["name"]
-        return corner
+        return corner_at(current_corners, real_lap_distance)
 
     def update(self, frame, lap_count,real_lap_distance):
         now = self.current_corner(real_lap_distance)
@@ -330,11 +318,7 @@ class Detector:
         self.debounce_frames=2
 
     def current_corner(self,frame):
-        corner= "the straight"
-        for x in MONZA_CORNERS:
-            if x["start"]<=frame.lap_dist<x["end"]:
-                corner = x["name"]
-        return corner
+        return corner_at(current_corners, frame.lap_dist) or "the straight"
 
     def build_event(self,frame):
         return Event(kind=self.kind,sim_time=frame.elapsed_time,speed_kmh=frame.speed_kmh,corner=self.current_corner(frame),lap_dist=frame.lap_dist)
@@ -467,11 +451,8 @@ class CornerEntryDetection:
 
 
     def update(self,frame):
-        current_corner= None
         event = None
-        for x in MONZA_CORNERS:
-            if x["start"]<=frame.lap_dist<x["end"]:
-                current_corner = x["name"]
+        current_corner = corner_at(current_corners, frame.lap_dist)
         
         
         if current_corner is not None and current_corner!=self.previous_corner:
@@ -546,6 +527,7 @@ class Recorder:
         self.writer_thread.join()
 
 def run_session(replay,replay_speed,tape_path=TAPE_PATH):
+    global current_corners
     REPLAY = replay
     REPLAY_SPEED=replay_speed
     info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
@@ -580,6 +562,12 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
     lap_counter = LapCounter()
     lap_distance = LapDistance()
     corner_stats = CornerStats()
+
+    # Old tapes carry no track name, so they keep the Monza map they were driven on.
+    current_corners = MONZA_CORNERS
+    track = None
+    learning_track = False
+    track_learner = TrackMapLearner()
 
     speak_queue = Queue(maxsize=1)
     spoken_results = Queue()
@@ -637,6 +625,23 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
         for frame in source:
             lap_count = lap_counter.update(frame)
             real_lap_distance = lap_distance.update(frame)
+
+            # the track decides where the corners are, so it must be settled before
+            # anything below tags a corner onto a stat or an event
+            if track is None and source.race is not None:
+                track = source.race.session.track
+                current_corners = corners_for_track(track)
+                learning_track = current_corners is None
+                if learning_track:
+                    print(f"[track: {track} - new track, learning its corners from your laps]")
+                else:
+                    print(f"[track: {track} - corner map loaded]")
+            track_learner.add(lap_count, real_lap_distance, frame.brake, frame.throttle, frame.accel_lat)
+            if learning_track and lap_counter.wrapped:
+                learned = track_learner.corners(lap_count)
+                if learned is not None:
+                    current_corners = learned
+
             stat = corner_stats.update(frame, lap_count,real_lap_distance)
             if stat:
                 print(stat)
@@ -711,6 +716,12 @@ def run_session(replay,replay_speed,tape_path=TAPE_PATH):
         
         if not REPLAY:
             tele_recorder.stop()
+        if learning_track and track:
+            learned = track_learner.corners(lap_counter.lap_count)
+            if learned is not None:
+                laps_used = len(track_learner.complete_laps(lap_counter.lap_count))
+                save_map(track, learned, laps_used)
+                print(f"[saved the corner map for {track}, learned from {laps_used} laps]")
         serialized = json.dumps([asdict(e) for e in hash_events])
         event_hash = hashlib.sha256(serialized.encode()).hexdigest()
         if session_id:
