@@ -155,11 +155,10 @@ class LiveSource:
             print("Closed connection.")
 
 
-REPLAY = True
-REPLAY_SPEED=2
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 class ReplaySource:
-    def __init__(self):
+    def __init__(self, speed):
+        self.speed = speed
         print("Connected.")
         print("Press Ctrl+C to stop.\n")
 
@@ -173,8 +172,8 @@ class ReplaySource:
                     as_data = CarState(**as_dict)
                     if start_sim is None:
                         start_sim=as_data.elapsed_time
-                    if REPLAY_SPEED:
-                        target=start_wall+(as_data.elapsed_time-start_sim)/REPLAY_SPEED
+                    if self.speed:
+                        target=start_wall+(as_data.elapsed_time-start_sim)/self.speed
                         delay = target - time.perf_counter()
                         if delay<0:
                             yield as_data
@@ -504,7 +503,9 @@ class Recorder:
         self.q.put(None)
         self.writer_thread.join()
 
-if __name__ == "__main__":
+def run_session(replay,replay_speed):
+    REPLAY = replay
+    REPLAY_SPEED=replay_speed
     info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
     info.create(0)
 
@@ -512,7 +513,7 @@ if __name__ == "__main__":
     telemetry = info.data.telemetry.telemInfo  
 
     if(REPLAY):
-        source = ReplaySource()
+        source = ReplaySource(REPLAY_SPEED)
         tape_out = TAPE_PATH
     else:
         source= LiveSource(info)
@@ -672,4 +673,7 @@ if __name__ == "__main__":
         else:
             conn.close()
         print(event_hash)
+
+if __name__ == "__main__":
+    run_session(True,1)
 

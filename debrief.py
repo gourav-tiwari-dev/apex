@@ -183,7 +183,8 @@ def verdict_line(contract, grade):
         return f"You moved at {corner}, from {before} km/h to {after} km/h, but the target was {target} km/h."
     return f"No real change at {corner}, {before} km/h before and {after} km/h now."
 
-if __name__ == "__main__":
+def run_debrief():
+
     conn = connect_db("apex.db")
 
     # Grade the latest session unless one is named, for example: python debrief.py 11
@@ -225,3 +226,6 @@ if __name__ == "__main__":
         else:
             save_contract(conn, session_id, contract)
             print(f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps")
+
+if __name__ == "__main__":
+    run_debrief()
