@@ -19,3 +19,7 @@ architect and decides, and Claude (AI) implements. This file is the map for lear
 | 2026-09-23 | Build all of v2 first, learn it afterwards in the v1 style | Gourav | a finished coach to race with sooner |
 | 2026-09-23 | apex.db and new tapes are no longer tracked in git | Claude | the db is a cache and conflicts on merge; race tapes are tens of MB |
 | 2026-09-23 | Extras E1-E19 and DONE upgrades D1-D5 added to the plan | Claude proposed, Gourav approved | he asked for anything a real team has that the 7-seat list missed |
+| 2026-09-23 | Tape v2 = one file: 60 Hz car frames with a "race" line (every scoring update, ~5/s) and a "near" line (cars within 60 m, every frame) written just before the car frame they belong to | Claude | the spotter needs positions far faster than scoring gives them; recording far cars at 60 Hz would make tapes huge |
+| 2026-09-23 | New CarState fields default to None | Claude | Gourav's rule: old tapes must keep working |
+| 2026-09-23 | Opponents matched by mID over the whole telemetry array, never by position | Claude (measured 19 Aug) | the telemetry order differs from the scoring order; matching by position pairs the wrong cars silently |
+| 2026-09-23 | audit_tape.py marks every new field LIVE / CONSTANT / DEAD before any seat relies on it | Claude | several LMU fields are known dead (forces, load); find out from data, not in a race |

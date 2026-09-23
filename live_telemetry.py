@@ -15,6 +15,7 @@ from datetime import datetime
 from coach import phrase_event
 from coach import radio_check
 from memory import connect_db,start_session,save_event,save_spoken,finish_session,save_lap,save_corner_stat,print_corner_report
+from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
 
 @dataclass
 class CarState:
@@ -33,6 +34,14 @@ class CarState:
     surface: list            # 4x mWheels[i].mSurfaceType
     yaw_rate: float          # mLocalRot
     elapsed_time: float
+    # v2 fields. They default to None so tapes recorded before 23 Sep 2026 still load.
+    steering: float | None = None           # mUnfilteredSteering, -1 left .. 1 right (my input)
+    steering_filtered: float | None = None  # mFilteredSteering (what the car got)
+    pos: list | None = None                 # mPos, world x/y/z in metres (the spotter needs it)
+    ori: list | None = None                 # mOri, 3 rows of the orientation matrix
+    delta_best: float | None = None         # mDeltaBest, seconds against my best lap
+    last_impact_time: float | None = None   # mLastImpactET
+    last_impact_magnitude: float | None = None
 
 # Wheel radii in metres (from mStaticUndeflectedRadius: 34cm front, 36cm rear).
 # Constant — no need to read them every frame.
@@ -93,6 +102,9 @@ radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
 class LiveSource:
     def __init__(self,info):
         self.info=info
+        self.race = None        # the latest RaceSnapshot
+        self.new_race = False   # True on the frame a new snapshot arrived
+        self.near = None        # NearCars for this frame, or None when nobody is close
         print("Connected.")
         print("Press Ctrl+C to stop.\n")
         
@@ -132,20 +144,35 @@ class LiveSource:
             accel_long= my_car.mLocalAccel.z,
             surface=[my_car.mWheels[i].mSurfaceType for i in range(4)],
             yaw_rate=my_car.mLocalRot.y,
-            elapsed_time=my_car.mElapsedTime
+            elapsed_time=my_car.mElapsedTime,
+            steering=round(my_car.mUnfilteredSteering, 4),
+            steering_filtered=round(my_car.mFilteredSteering, 4),
+            pos=[round(my_car.mPos.x, 3), round(my_car.mPos.y, 3), round(my_car.mPos.z, 3)],
+            ori=[round(v, 4) for row in my_car.mOri for v in (row.x, row.y, row.z)],
+            delta_best=round(my_car.mDeltaBest, 3),
+            last_impact_time=round(my_car.mLastImpactET, 3),
+            last_impact_magnitude=round(my_car.mLastImpactMagnitude, 2),
         )
     
 
 
     def __iter__(self):
         last_time= None
+        last_scoring_time = None
         try:
-            
+
             while True:
                 self.info.update()
                 state = self.read_state()
                 if state.elapsed_time!=last_time:
                     last_time= state.elapsed_time
+                    # scoring updates about 5 times a second; only take a snapshot when it did
+                    scoring_time = self.info.data.scoring.scoringInfo.mCurrentET
+                    self.new_race = scoring_time != last_scoring_time
+                    if self.new_race:
+                        last_scoring_time = scoring_time
+                        self.race = read_race_snapshot(self.info.data)
+                    self.near = read_near_cars(self.info.data, state.pos)
                     yield state
                 time.sleep(0.002)
 
@@ -157,31 +184,46 @@ class LiveSource:
 
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 class ReplaySource:
-    def __init__(self, speed):
+    def __init__(self, speed, tape_path=TAPE_PATH):
         self.speed = speed
+        self.tape_path = tape_path
+        self.race = None
+        self.new_race = False
+        self.near = None
         print("Connected.")
         print("Press Ctrl+C to stop.\n")
 
     def __iter__(self):
         try:
-            with gzip.open(TAPE_PATH,"rt") as f:
+            with gzip.open(self.tape_path,"rt") as f:
                 start_wall=time.perf_counter()
                 start_sim=None
                 for line in f:
                     as_dict = json.loads(line)
+                    # v2 tapes interleave race lines with the car frames; each one belongs
+                    # to the car frame written right after it. Old tapes have only car frames.
+                    kind = as_dict.get("t")
+                    if kind == "race":
+                        self.race = race_snapshot_from_dict(as_dict)
+                        self.new_race = True
+                        continue
+                    if kind == "near":
+                        self.near = near_cars_from_dict(as_dict)
+                        continue
                     as_data = CarState(**as_dict)
                     if start_sim is None:
                         start_sim=as_data.elapsed_time
                     if self.speed:
                         target=start_wall+(as_data.elapsed_time-start_sim)/self.speed
                         delay = target - time.perf_counter()
-                        if delay<0:
-                            yield as_data
-                            continue
-                        else:
+                        # running late: never skip the frame, just don't wait for it
+                        if delay > 0:
                             time.sleep(delay)
                     yield as_data
-                    
+                    # a snapshot is "new" for one frame only, and near cars belong to one frame
+                    self.new_race = False
+                    self.near = None
+
 
         except KeyboardInterrupt:
             print("\nStopping...")
@@ -503,7 +545,7 @@ class Recorder:
         self.q.put(None)
         self.writer_thread.join()
 
-def run_session(replay,replay_speed):
+def run_session(replay,replay_speed,tape_path=TAPE_PATH):
     REPLAY = replay
     REPLAY_SPEED=replay_speed
     info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
@@ -513,8 +555,8 @@ def run_session(replay,replay_speed):
     telemetry = info.data.telemetry.telemInfo  
 
     if(REPLAY):
-        source = ReplaySource(REPLAY_SPEED)
-        tape_out = TAPE_PATH
+        source = ReplaySource(REPLAY_SPEED, tape_path)
+        tape_out = tape_path
     else:
         source= LiveSource(info)
         # wall-clock is correct HERE: this names a file for a human, it is not
@@ -647,6 +689,11 @@ def run_session(replay,replay_speed):
             drain_spoken(conn)
 
             if not REPLAY:
+                # race lines go first: on replay each one belongs to the car frame after it
+                if source.new_race:
+                    tele_recorder.record(source.race)
+                if source.near is not None:
+                    tele_recorder.record(source.near)
                 tele_recorder.record(frame)
 
     except KeyboardInterrupt:
