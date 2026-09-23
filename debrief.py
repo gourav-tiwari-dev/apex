@@ -192,7 +192,7 @@ if __name__ == "__main__":
         session_id = int(sys.argv[1])
     print(f"session {session_id}")
 
-    # First the receipt: did last session's contract come true in this one?
+   
     previous = load_latest_contract(conn, session_id)
     last_contract = None
     if previous is not None:
@@ -200,7 +200,7 @@ if __name__ == "__main__":
         line = verdict_line(previous, grade)
         print(f"verdict: {grade['verdict']} - {line}")
         speak(for_speaking(line))
-        # the same facts, handed to the LLM so the debrief knows how last time's job went
+      
         last_contract = {
             "corner":   previous["corner"],
             "baseline": previous["baseline"],
