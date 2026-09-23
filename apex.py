@@ -14,20 +14,46 @@ from memory import latest_session_id, load_latest_contract, connect_db
 from tts import speak
 from debrief import for_speaking, run_debrief
 from live_telemetry import run_session, TAPE_PATH
-from team_memory import build_profile
+from team_memory import build_profile, facts as memory_facts
+from memory import save_radio
+from radio import Call, MEMORY
+from seats.setup_engineer import advice_for
+from datetime import datetime
 
 RACE_SESSIONS = range(10, 14)      # mSession 10-13 are race sessions
 
 
 def brief(conn):
-    session = latest_session_id(conn)
+    """Before driving: the job, what the team remembers, and the setup call.
+    Returns the lines said, so they can be logged under the first session of the night."""
+    said = []
+    session = latest_session_id(conn) or 0
     contract = load_latest_contract(conn, session+1)
     if contract is not None:
         line = f"Today's job: {contract['corner']}. Minimum speed from {contract['baseline']} km/h up to {contract['target']} km/h. {contract['focus']}"
     else:
         line = "No job yet. Just Drive I m Watching"
-    print(line)
-    speak(for_speaking(line))
+    said.append(("performance", "BRIEF_CONTRACT", line))
+
+    habits = memory_facts(conn, "lap_one") + memory_facts(conn, "pass_attempts")
+    if habits:
+        said.append(("memory", "BRIEF_HABIT", f"From your last races: {habits[0]['summary']}."))
+
+    last_race = conn.execute("SELECT MAX(id) FROM sessions WHERE session_type BETWEEN 10 AND 13").fetchone()[0]
+    if last_race is not None:
+        for advice in advice_for(conn, last_race)[:1]:
+            said.append(("setup", "BRIEF_" + advice["kind"], advice["conclusion"]))
+
+    for seat, kind, text in said:
+        print(text)
+        speak(for_speaking(text))
+    return said
+
+
+def log_brief(conn, session_id, said):
+    for seat, kind, text in said:
+        call = Call(seat=seat, kind=kind, sim_time=0.0, priority=MEMORY, ttl=0.0, conclusion=text)
+        save_radio(conn, session_id, call, "spoken", text)
 
 
 def how_it_ended(conn, session_id):
@@ -37,9 +63,14 @@ def how_it_ended(conn, session_id):
 
 def race_night(clean):
     conn = connect_db("apex.db")
-    brief(conn)
+    said = brief(conn)
+    launch_id = datetime.now().isoformat(timespec="seconds")
+    first = True
     while True:
-        session_id = run_session(False, None, clean=clean)
+        session_id = run_session(False, None, clean=clean, launch_id=launch_id)
+        if first:
+            log_brief(conn, session_id, said)
+            first = False
         # every drive teaches the team memory, before anything reads from it
         build_profile(conn)
         end_reason, session_type = how_it_ended(conn, session_id)
@@ -53,10 +84,11 @@ def race_night(clean):
 
 def replay_night(tape, speed, clean):
     conn = connect_db("apex.db")
-    brief(conn)
+    said = brief(conn)
     conn.close()
-    run_session(True, speed, tape, clean=clean)
+    session_id = run_session(True, speed, tape, clean=clean)
     conn = connect_db("apex.db")
+    log_brief(conn, session_id, said)
     build_profile(conn)
     conn.close()
     run_debrief()

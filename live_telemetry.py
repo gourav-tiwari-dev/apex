@@ -643,7 +643,7 @@ class Recorder:
 GAME_PHASE_OVER = 8      # mGamePhase: the session has finished
 
 
-def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None):
+def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None, launch_id=None):
     """One LMU session, start to finish. Returns the database id of the session.
 
     out_loud: speak through the speakers (default) or print lines (fast replays, tests).
@@ -731,7 +731,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     try:
         conn = connect_db()
         session_started = datetime.now().isoformat(timespec="seconds")
-        session_id = start_session(conn, session_started, tape_out, REPLAY_SPEED)
+        session_id = start_session(conn, session_started, tape_out, REPLAY_SPEED, launch_id)
         # what team memory knows about every rival, for the racecraft plans
         lap_one_facts = memory_facts(conn, "lap_one")
         if lap_one_facts:
@@ -751,7 +751,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             if track is None and source.race is not None:
                 track = source.race.session.track
                 session_type = source.race.session.session
-                set_session_track(conn, session_id, track, session_type)
+                set_session_track(conn, session_id, track, session_type, source.race.session.game_phase)
                 current_corners = corners_for_track(track)
                 # team memory for this track: the habits worth a reminder
                 for habit in memory_facts(conn, "corner_habit", track) + memory_facts(conn, "contact_corner", track):

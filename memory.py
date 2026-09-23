@@ -178,7 +178,9 @@ NEW_COLUMNS = {
     "sessions": [("track", "TEXT"), ("session_type", "INTEGER"),
                  ("end_reason", "TEXT"), ("ended_at", "TEXT"),
                  ("grid", "INTEGER"), ("final_place", "INTEGER"),
-                 ("track_limit_strikes", "INTEGER")],
+                 ("track_limit_strikes", "INTEGER"),
+                 ("first_phase", "INTEGER"),     # race phase when Apex first saw the session
+                 ("launch_id", "TEXT")],         # one apex.py launch: practice, quali and race share it
     "events":   [("other_car", "TEXT"), ("magnitude", "REAL")],
 }
 
@@ -203,8 +205,8 @@ def latest_session_id(conn):
   row = conn.execute("SELECT MAX(id) FROM sessions").fetchone()
   return row[0]
 
-def start_session(conn,started_at,tape_path,replay_speed):
-  cur = conn.execute("INSERT INTO sessions (started_at,tape_path,replay_speed) VALUES (?,?,?)",(started_at,tape_path,replay_speed))
+def start_session(conn,started_at,tape_path,replay_speed,launch_id=None):
+  cur = conn.execute("INSERT INTO sessions (started_at,tape_path,replay_speed,launch_id) VALUES (?,?,?,?)",(started_at,tape_path,replay_speed,launch_id))
   conn.commit()
   return cur.lastrowid
 
@@ -269,8 +271,8 @@ def save_pass_attempts(conn,session_id,attempts):
       (session_id,steam_id,driver,corner,lap_count,outcome))
   conn.commit()
 
-def set_session_track(conn,session_id,track,session_type):
-  conn.execute("UPDATE sessions SET track = ?, session_type = ? WHERE id = ?",(track,session_type,session_id))
+def set_session_track(conn,session_id,track,session_type,first_phase=None):
+  conn.execute("UPDATE sessions SET track = ?, session_type = ?, first_phase = ? WHERE id = ?",(track,session_type,first_phase,session_id))
   conn.commit()
 
 def save_radio(conn,session_id,call,status,line=None,reason=None,latency_ms=None):
