@@ -472,7 +472,7 @@ class CornerEntryDetection:
         return event
 
 CONTACT_NEAR_M = 10.0   # a car this close at the moment of impact is the car you touched
-SAME_INCIDENT_S = 3.0   # hits closer together than this are one incident
+SAME_INCIDENT_S = 5.0   # a hit within 5 s of the last one is the same incident (LMU: 266, 266.4, 270.9 s)
 
 class ContactDetection:
     """An impact is when the game's last-impact time moves forward.
