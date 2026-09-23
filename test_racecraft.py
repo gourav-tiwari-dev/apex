@@ -47,7 +47,7 @@ def test_a_fight_with_no_data_yet_says_stay_close_no_lunges():
     calls = step(seat, 1.0, opponents=[rival(4, 7.4)])
     assert kinds(calls) == ["ATTACK_PLAN"]
     assert "No lunges" in calls[0].conclusion
-    assert calls[0].facts["gap_s"] == 0.6
+    assert calls[0].facts["driver"] == "Ann"
 
 
 def test_attack_plan_uses_the_exit_of_your_strong_corner():

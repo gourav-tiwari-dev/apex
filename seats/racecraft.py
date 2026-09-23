@@ -95,7 +95,8 @@ class Racecraft:
     # ---- the plans ------------------------------------------------------------------------
     def attack_plan(self, opponent, gap, corners, now):
         edges = self.edges_against(opponent.steam_id)
-        facts = {"driver": opponent.driver, "gap_s": gap}
+        # the gap is for the log, not the line: a plan is where, not how far
+        facts = {"driver": opponent.driver}
         history = self.history_with(opponent.steam_id)
         if history:
             facts["history"] = history
@@ -104,14 +105,13 @@ class Racecraft:
             if edge >= EDGE_WORTH_USING_KMH and (best is None or edge > edges[best]):
                 best = corner
         if best is None:
-            conclusion = (f"Fight with {opponent.driver}, {gap} seconds ahead. No corner where you are clearly "
-                          f"faster yet. Stay within a second and wait for his mistake. No lunges.")
-            template = f"{opponent.driver} ahead. Stay close. Wait for his mistake."
+            facts["stay_within_s"] = 1
+            conclusion = f"Stay within 1 second of {opponent.driver} and wait for the mistake. No lunges."
+            template = f"{opponent.driver} ahead. Stay close. Wait for the mistake."
         else:
             pass_at = self.corner_after(best, corners)
             facts.update({"strong_corner": best, "edge_kmh": edges[best], "pass_corner": pass_at})
-            conclusion = (f"Fight with {opponent.driver}, {gap} seconds ahead. You are {edges[best]} km/h faster "
-                          f"through {best}. Get the exit there and pass into {pass_at}. Not before.")
+            conclusion = f"Faster out of {best}: pass {opponent.driver} into {pass_at}, not before."
             template = f"You're faster out of {best}. Pass into {pass_at}. Not before."
         if history:
             conclusion += f" History: {history}."
@@ -121,21 +121,19 @@ class Racecraft:
 
     def defend_plan(self, opponent, gap, corners, now):
         edges = self.edges_against(opponent.steam_id)
-        facts = {"driver": opponent.driver, "gap_s": gap}
+        facts = {"driver": opponent.driver}
         danger = None
         for corner, edge in edges.items():
             if -edge >= EDGE_WORTH_USING_KMH and (danger is None or edge < edges[danger]):
                 danger = corner
         if danger is None:
-            conclusion = (f"{opponent.driver} behind, {gap} seconds. He is not faster than you anywhere. "
-                          f"Clean lines, no weaving, make him earn it.")
-            template = f"{opponent.driver} behind. He's got nothing. Clean lines."
+            conclusion = f"{opponent.driver} behind has nothing on you. Clean lines, no weaving."
+            template = f"{opponent.driver} behind. Nothing on you. Clean lines."
         else:
             cover = self.corner_after(danger, corners)
             facts.update({"his_corner": danger, "his_edge_kmh": -edges[danger], "cover_corner": cover})
-            conclusion = (f"{opponent.driver} behind, {gap} seconds. He is {-edges[danger]} km/h faster through "
-                          f"{danger}. Cover the inside into {cover}. Everywhere else he has nothing.")
-            template = f"He's quicker out of {danger}. Cover the inside into {cover}."
+            conclusion = f"{opponent.driver} is quicker out of {danger}: cover the inside into {cover}."
+            template = f"{opponent.driver}'s quicker out of {danger}. Cover the inside into {cover}."
         return Call(seat="racecraft", kind="DEFEND_PLAN", sim_time=now, priority=RACECRAFT,
                     ttl=PLAN_TTL_S, conclusion=conclusion, facts=facts, template=template,
                     evidence={"steam_id": str(opponent.steam_id)})
@@ -172,8 +170,8 @@ class Racecraft:
                     calls.append(plan)
             # composure when a place is lost (E5)
             if self.last_place is not None and me.place > self.last_place:
-                calls.append(self.reset("PASSED", "He got past. Calm him down: stay within a second, the plan still works, no lunge to get it straight back.",
-                                        {}, "He's past. Stay on him. No lunge.", now))
+                calls.append(self.reset("PASSED", "Lost the place. Calm him down: stay within 1 second, the plan still works, no lunge to get it straight back.",
+                                        {"stay_within_s": 1}, "Lost it. Stay close. No lunge.", now))
             self.last_place = me.place
             self.resolve_attempt(me, now)
 

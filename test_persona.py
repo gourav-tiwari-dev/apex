@@ -29,7 +29,7 @@ def test_back_off_is_only_allowed_for_physics_abort():
 def test_numbers_must_come_from_the_facts():
     facts = {"corner": "T11 Parabolica", "speed_kmh": 170, "gap_s": 0.3}
     assert gate("Wide at T11 Parabolica, 170. Fix it.", call(facts=facts)) == (True, "ok")
-    assert gate("He's 3 tenths back. Hold it.", call(facts=facts)) == (True, "ok")
+    assert gate("3 tenths back. Hold it.", call(facts=facts)) == (True, "ok")
     assert gate("Wide at 185. Fix it.", call(facts=facts))[0] is False
 
 
@@ -96,3 +96,9 @@ def test_the_model_is_told_the_message_not_asked_to_invent_one():
     text = facts_text(call(facts={"gap_s": 0.3}))
     assert text.startswith("tell him: ")
     assert "gap_s: 0.3" in text
+
+
+def test_the_radio_never_guesses_a_rivals_gender():
+    assert gate("Take her into Parabolica.", call())[0] is False
+    assert gate("His tyres are gone. Go.", call())[0] is False
+    assert gate("Take Ann into Parabolica.", call(facts={"driver": "Ann"})) == (True, "ok")
