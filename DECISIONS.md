@@ -54,3 +54,5 @@ architect and decides, and Claude (AI) implements. This file is the map for lear
 | 2026-09-23 | The gate refuses he/she/him/her/his: rivals are named or "the car ahead" | Claude | the model gendered a rival from the name alone, even when told not to; they are real people |
 | 2026-09-23 | Racecraft plan lines carry the plan only (where), not the gap | Claude (measured) | with gap + edge + two corners the model overran 12 words on every attack plan; short messages passed 6/6 |
 | 2026-09-23 | Push-to-talk button = R1 | Gourav | his pick; to confirm in M9 that R1 is not also bound in LMU |
+| 2026-09-23 | Setup engineer advises only on cockpit adjustables (brake bias, TC, ABS) and only past 3 occurrences, naming the corners and the events; "no change" needs 5+ clean laps | Claude | ranked races are fixed setup; his rule "no weakness without evidence" applies to the car too. TC/ABS/bias directions GUESSED until checked in LMU |
+| 2026-09-23 | Wheelspin detector (rear slip > 15% on the throttle), v2 tapes only | Claude | feeds TC advice; gated so old tapes keep their exact detector golden |

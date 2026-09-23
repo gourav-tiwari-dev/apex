@@ -575,6 +575,28 @@ class RearSnapDetector(Detector):
         explained = abs(frame.accel_lat) / speed_ms
         return abs(frame.yaw_rate) > SNAP_RATIO * explained + SNAP_MARGIN
 
+# Wheelspin on exit: a rear wheel turning much faster than the car moves, on the throttle.
+# Only on v2 tapes (steering recorded), so the detector golden of the old tapes stays exact.
+SPIN_SLIP = 0.15             # rear tyre 15% faster than the ground (see slip_ratio)
+SPIN_THROTTLE = 0.5
+
+class WheelspinDetector(Detector):
+    def __init__(self):
+        super().__init__()
+        self.kind = "WHEELSPIN"
+
+    def build_event(self, frame):
+        e = super().build_event(frame)
+        e.conclusion = f"wheelspin on the exit of {e.corner}"
+        return e
+
+    def is_triggered(self, frame):
+        if frame.steering is None or frame.throttle < SPIN_THROTTLE or frame.speed_kmh < 30:
+            return False
+        speed_ms = frame.speed_kmh / 3.6
+        rear = [slip_ratio(frame.wheel_rot[i], radii[i], speed_ms) for i in (2, 3)]
+        return max(rear) > SPIN_SLIP
+
 class SpinDetector(Detector):
     def __init__(self):
         super().__init__()
@@ -653,7 +675,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         ThrottleLift(),
         OffTrackDetector(),
         SpinDetector(),
-        RearSnapDetector()]
+        RearSnapDetector(),
+        WheelspinDetector()]
 
     lap_counter = LapCounter()
     lap_distance = LapDistance()
