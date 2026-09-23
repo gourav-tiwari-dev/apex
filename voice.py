@@ -146,7 +146,10 @@ class RadioDesk:
     def cook(self, call):
         line = None
         reason = None
-        if self.budget.allows_llm():
+        if not call.phrase:
+            # code's own words (push-to-talk answers): no model, so no 1.8 s wait and no cost
+            line = call.template
+        elif self.budget.allows_llm():
             text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
             if tokens_in or tokens_out:
                 cost = self.budget.charge(tokens_in, tokens_out)

@@ -10,6 +10,9 @@ The rules, like a real pit wall:
   - one line at a time: the radio is busy for about as long as a line takes to say
   - each seat has a cooldown, so no seat can talk over and over
   - a call that waited too long is dropped, not said late (stale advice is wrong advice)
+  - an answer to a question he asked on the radio (push-to-talk) goes out as soon as nothing
+    else is playing: he asked, so he is ready to listen, corner or not
+  - "quiet for N laps" holds everything except urgent calls and answers (E17)
 """
 import hashlib
 import json
@@ -48,6 +51,8 @@ class Call:
     urgent: bool = False      # time-critical: goes out at once, from the pre-rendered voice bank
     template: str | None = None                    # exact words; urgent calls always have one
     evidence: dict = field(default_factory=dict)   # database ids this call rests on
+    asked: bool = False       # an answer to his push-to-talk question
+    phrase: bool = True       # False: say the template as it is, no model in the loop
 
 
 def words_in(text):
@@ -69,6 +74,8 @@ class Governor:
         self.last_spoken_by_seat = {}
         self.admitted = []        # (seat, kind, sim_time) of every call put on air - hashed
         self.dropped = []         # (call, reason) - calls that never went out, for the log
+        self.lap = 0              # the lap he is on, kept up to date by the session loop
+        self.quiet_until_lap = None
 
     def offer(self, call):
         self.pending.append(call)
@@ -110,9 +117,23 @@ class Governor:
         self.admitted.append((call.seat, call.kind, round(call.sim_time, 4)))
         return call
 
+    def quiet(self):
+        return self.quiet_until_lap is not None and self.lap < self.quiet_until_lap
+
+    def drop_while_quiet(self):
+        kept = []
+        for call in self.pending:
+            if call.urgent or call.asked:
+                kept.append(call)
+            else:
+                self.dropped.append((call, "quiet"))
+        self.pending = kept
+
     def step(self, now, in_corner):
         """Call once per frame. Returns the call to put on air now, or None."""
         self.drop_stale(now)
+        if self.quiet():
+            self.drop_while_quiet()
         if not self.pending:
             return None
 
@@ -122,6 +143,9 @@ class Governor:
 
         if now < self.busy_until:
             return None
+        asked = [c for c in self.pending if c.asked]
+        if asked:
+            return self.put_on_air(self.best(asked), now)
         # flow-state rule: no talking to the driver in the middle of a corner
         if in_corner:
             return None

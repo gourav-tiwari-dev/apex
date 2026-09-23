@@ -18,3 +18,4 @@ voice_bank/
 _fallback/
 # LMU telemetry converted to Apex tapes: tens of MB, regenerate with lmu_import.py
 tapes_lmu/
+ptt_button.json

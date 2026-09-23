@@ -349,12 +349,11 @@ class PerformanceEngineer:
             conclusion=f"{corner} this lap was {loss} s slower than your best there today. {advice}",
             facts=facts, template=f"{corner}: {tenths_words(loss)} off your best. {advice}")
 
-    def rival_call(self, now, skip_corner):
-        """The corner where the fastest car of my model gains most on me, once per corner."""
-        biggest = None
+    def rival_gaps(self):
+        """Every corner where the fastest car of my model gains a tenth or more on me and the
+        measurements say why: (gap, corner, fastest, change), biggest first."""
+        found = []
         for corner, passes in self.my_passes.items():
-            if corner in self.fastest_said or corner == skip_corner:
-                continue
             timed = [p for p in passes if p.time_s is not None]
             if len(timed) < LAPS_FOR_A_REFERENCE:
                 continue
@@ -371,8 +370,27 @@ class PerformanceEngineer:
             change = what_to_change(mine, fastest, BRAKE_DIFF_THEIRS_M)
             if change is None:
                 continue
-            if biggest is None or gap > biggest[0]:
-                biggest = (gap, corner, fastest, change)
+            found.append((gap, corner, fastest, change))
+        found.sort(key=lambda item: item[0], reverse=True)
+        return found
+
+    def focus(self):
+        """For "where am I losing time?": the biggest measured gap, or None."""
+        gaps = self.rival_gaps()
+        if not gaps:
+            return None
+        gap, corner, fastest, (change, lengths) = gaps[0]
+        return {"corner": corner, "gap_s": gap, "driver": fastest["driver"],
+                "advice": advice_text(change, lengths), "car_lengths": lengths}
+
+    def rival_call(self, now, skip_corner):
+        """The corner where the fastest car of my model gains most on me, once per corner."""
+        biggest = None
+        for item in self.rival_gaps():
+            if item[1] in self.fastest_said or item[1] == skip_corner:
+                continue
+            biggest = item
+            break
         if biggest is None:
             return None
         gap, corner, fastest, (change, lengths) = biggest

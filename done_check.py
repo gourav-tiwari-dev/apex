@@ -100,8 +100,11 @@ def check(conn, session_id, answers):
     refused = conn.execute(
         "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND reason IS NOT NULL AND reason != 'ok' AND reason != 'over budget'",
         (session_id,)).fetchone()[0]
-    quiet = conn.execute("SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND status = 'quiet'",
+    # D5: how often he asked for quiet on push-to-talk, and how many lines it held back
+    quiet = conn.execute("SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND kind = 'ANSWER_QUIET'",
                          (session_id,)).fetchone()[0]
+    held_by_quiet = conn.execute("SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND status = 'quiet'",
+                                 (session_id,)).fetchone()[0]
 
     # his own verdict: did he switch it off, and was any seat wrong (D1)
     if answers.get("switched_off"):
@@ -123,6 +126,7 @@ def check(conn, session_id, answers):
         "latency": latency,
         "lines_refused_by_the_gate": refused,
         "quiet_used": quiet,
+        "lines_held_by_quiet": held_by_quiet,
         "qualifying_in_launch": quali,
     }
 
@@ -145,7 +149,7 @@ def print_report(result):
     print(f"  cost of the race: Rs {result['cost_rs']}  (cap Rs 5)")
     if result["latency"]:
         print(f"  reflective line latency: p50 {result['latency']['p50_ms']} ms, p95 {result['latency']['p95_ms']} ms")
-    print(f"  lines the gate refused: {result['lines_refused_by_the_gate']}   'quiet' used: {result['quiet_used']}")
+    print(f"  lines the gate refused: {result['lines_refused_by_the_gate']}   'quiet' asked: {result['quiet_used']} ({result['lines_held_by_quiet']} lines held)")
     print("-" * 60)
     print(f"  VERDICT: {result['verdict']}")
     for problem in result["problems"]:

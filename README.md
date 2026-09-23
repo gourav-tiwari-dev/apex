@@ -59,6 +59,20 @@ python team_memory.py            # rebuild and print what the team remembers
 python -m pytest                 # the test suite, no LLM calls, no sound
 ```
 
+### Push-to-talk
+
+Hold R1, ask, let go. Apex matches the question to a fixed list and answers from the live
+race in code, no model in the loop: gap ahead / behind, lap time to catch the car ahead,
+fuel, laps left, where you are losing time, position, lap times, "quiet for N laps" (urgent
+calls and the spotter stay on) and "radio back on". Speech-to-text is Whisper base.en on the
+GPU: 51-179 ms per question, measured.
+
+```
+pip install faster-whisper sounddevice
+python ptt.py --learn            # once, controller plugged in: press R1
+python ptt.py --test             # hold R1 and talk: what it heard, how fast, which question
+```
+
 ## How this was built
 
 - **v1 (July - September 2026, tag `v1.0`) was hand-built by me.** I learned Python on it and

@@ -35,6 +35,7 @@ class Strategist:
         self.tyre_called = set()
         self.rain_called = False
         self.last_lap_called = False
+        self.fuel_now = None           # the latest fuel picture, for "how's the fuel?" on the radio
 
     def laps_left(self, race):
         lap_time = None
@@ -64,6 +65,7 @@ class Strategist:
             self.energy_at_line.append(me.virtual_energy)
             if me.last_lap > 0:
                 self.lap_times.append(me.last_lap)
+            self.fuel_now = self.fuel_picture(race)
             fuel_call = self.fuel_check(race, moment.lap_count, now)
             if fuel_call is not None:
                 calls.append(fuel_call)
@@ -82,6 +84,23 @@ class Strategist:
                 calls.append(call("RAIN", f"Rain is starting, severity {race.session.raining}. Grip will drop.",
                                   now, {"rain": race.session.raining}, "Rain's coming. Grip's going away."))
         return calls
+
+    def fuel_picture(self, race):
+        """Laps of fuel (or virtual energy, whichever runs out first) spare at the flag, measured
+        at the line. None until two laps are measured."""
+        per_lap = self.usage_per_lap(self.fuel_at_line)
+        laps_left = self.laps_left(race)
+        if per_lap is None or laps_left is None or per_lap <= 0:
+            return None
+        spare = round(race.me.fuel / per_lap - laps_left, 1)
+        limit = "fuel"
+        energy_per_lap = self.usage_per_lap(self.energy_at_line)
+        if energy_per_lap is not None and energy_per_lap > 0:
+            energy_spare = round(race.me.virtual_energy / energy_per_lap - laps_left, 1)
+            if energy_spare < spare:
+                spare = energy_spare
+                limit = "energy"
+        return {"spare_laps": spare, "laps_left": laps_left, "limit": limit}
 
     def fuel_check(self, race, lap, now):
         if lap < self.last_fuel_check_lap + RECHECK_EVERY_LAPS and self.last_fuel_state is not None:

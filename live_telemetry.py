@@ -21,6 +21,8 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
+from answers import Answers
+import ptt as push_to_talk
 from team_memory import facts as memory_facts
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict, identity
 from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map, TURNING
@@ -737,9 +739,16 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     performance = PerformanceEngineer()
     racecraft = Racecraft(performance)
     recall = MemoryRecall()
-    seats = [Spotter(), RaceEngineer(), Strategist(), performance, racecraft, recall]
+    engineer = RaceEngineer()
+    strategist = Strategist()
+    seats = [Spotter(), engineer, strategist, performance, racecraft, recall]
 
     governor = Governor()
+    # push-to-talk (M9): only live, and Apex races on without it if it is not set up
+    answers = Answers(governor, engineer, strategist, performance)
+    talk = None
+    if not REPLAY:
+        talk = push_to_talk.start_if_set_up()
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
     voice = Voice(out_loud)
     if persona is None:
@@ -865,6 +874,14 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             # before, and at Le Mans they are long (Porsche Curves 1.4 km): 14 calls expired
             # waiting for a straight in the first live race (23 Sep 2026)
             in_corner = frame.brake > 0.2 or abs(frame.accel_lat) >= TURNING
+            governor.lap = lap_count
+            if talk is not None:
+                for heard in talk.poll():
+                    answer = answers.answer(heard.text, source.race, lap_count, frame.elapsed_time)
+                    answer.facts["transcribe_ms"] = heard.transcribe_ms
+                    print(f"[asked: {heard.text!r} -> {answer.kind}: {answer.template}]")
+                    governor.offer(answer)
+                    desk.prepare(answer)
             on_air = governor.step(frame.elapsed_time, in_corner)
             if on_air is not None:
                 if on_air.urgent:
@@ -909,6 +926,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         end_reason = "stopped_by_driver"
 
     finally:
+        if talk is not None:
+            talk.close()
         desk.stop()
         if not REPLAY:
             tele_recorder.stop()
