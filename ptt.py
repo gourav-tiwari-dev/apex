@@ -181,30 +181,39 @@ class Ears:
 class PushToTalk:
     """Poll it once per frame; it returns what he said, when he has said it."""
 
-    def __init__(self, button):
+    def __init__(self, button, verbose=False):
         self.controller = Controller(button)
         self.mic = Mic()
         self.ears = Ears()
         self.pressed_at = None
+        self.verbose = verbose     # --test prints every step, so a silent failure shows where
 
     def poll(self):
         change = self.controller.poll()
         if change == "pressed":
             self.pressed_at = time.perf_counter()
             self.mic.start()
+            if self.verbose:
+                print("  [button down]")
         elif change == "released" and self.pressed_at is not None:
             held = time.perf_counter() - self.pressed_at
             audio = self.mic.stop()
             self.pressed_at = None
+            if self.verbose:
+                loudest = float(abs(audio).max()) if len(audio) else 0.0
+                print(f"  [button up: held {held:.1f} s, recorded {len(audio) / SAMPLE_RATE:.1f} s, loudest {loudest:.3f} (0 = silence, 1 = full scale)]")
             if SHORTEST_PRESS_S <= held <= LONGEST_PRESS_S:
                 self.ears.listen(audio)
-        return [heard for heard in self.ears.finished() if heard.text]
+        heard = self.ears.finished()
+        if self.verbose:
+            return heard
+        return [h for h in heard if h.text]
 
     def close(self):
         self.mic.close()
 
 
-def start_if_set_up():
+def start_if_set_up(verbose=False):
     """PushToTalk, or None (with the reason printed) when it cannot run: no button learned
     yet, or the speech packages missing. Apex races on without it either way."""
     button = load_button()
@@ -212,7 +221,7 @@ def start_if_set_up():
         print("[push-to-talk off: run  python ptt.py --learn  once, with the controller plugged in]")
         return None
     try:
-        return PushToTalk(button)
+        return PushToTalk(button, verbose)
     except Exception as error:
         print(f"[push-to-talk off: {error.__class__.__name__}: {error}]")
         return None
@@ -238,7 +247,9 @@ def learn():
 
 def test():
     from answers import intent_of
-    ptt = start_if_set_up()
+    import sounddevice
+    print(f"mic: {sounddevice.query_devices(kind='input')['name']}")
+    ptt = start_if_set_up(verbose=True)
     if ptt is None:
         return
     print("Loading speech-to-text... then hold the button and ask something. Ctrl+C to stop.")
