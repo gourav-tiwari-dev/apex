@@ -720,6 +720,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
 
     conn = None
     session_id = None
+    saw_running = False
     end_reason = "tape_end" if REPLAY else "stopped_by_driver"
 
     def log_finished_lines():
@@ -845,9 +846,12 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     tele_recorder.record(source.near)
                 tele_recorder.record(frame)
 
-            # the session ends itself: no Ctrl+C needed at the chequered flag
+            # the session ends itself: no Ctrl+C needed at the chequered flag. Only a session
+            # Apex saw running: started on a results screen, it would end, restart and end again
             if source.race is not None:
-                if source.race.session.game_phase == GAME_PHASE_OVER:
+                if source.race.session.game_phase < GAME_PHASE_OVER:
+                    saw_running = True
+                if source.race.session.game_phase == GAME_PHASE_OVER and saw_running:
                     end_reason = "session_over"
                     break
                 if session_type is not None and source.race.session.session != session_type:
