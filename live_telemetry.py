@@ -126,6 +126,10 @@ class LiveSource:
         speed_kmh = speed_ms * 3.6
 
         my_scoring = self.find_player_scoring()
+        # between sessions (quali loading into the race) the game briefly has no row for
+        # me at all: that frame is not a frame (crashed the first live run, 23 Sep 2026)
+        if my_scoring is None:
+            return None
         
 
         return CarState(
@@ -163,6 +167,9 @@ class LiveSource:
             while True:
                 self.info.update()
                 state = self.read_state()
+                if state is None:
+                    time.sleep(0.05)
+                    continue
                 if state.elapsed_time!=last_time:
                     last_time= state.elapsed_time
                     # scoring updates about 5 times a second; only take a snapshot when it did
