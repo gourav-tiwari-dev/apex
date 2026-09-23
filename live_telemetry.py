@@ -22,8 +22,8 @@ from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
 from team_memory import facts as memory_facts
-from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
-from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map
+from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict, identity
+from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map, TURNING
 
 @dataclass
 class CarState:
@@ -533,7 +533,7 @@ class ContactDetection:
             for opponent in race.opponents:
                 if opponent.id == other.id:
                     driver = opponent.driver
-                    steam_id = str(opponent.steam_id)
+                    steam_id = identity(opponent)
         return Event(kind="CONTACT", sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,
                      corner=corner, lap_dist=frame.lap_dist, magnitude=magnitude,
                      other_car=steam_id, conclusion=f"contact with {driver} at {corner}")
@@ -733,13 +733,15 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     def log_finished_lines():
         for result in desk.drain():
             call = result["call"]
+            if result.get("llm_only"):
+                save_llm_call(conn, session_id, call.seat, result["llm"])
+                continue
             save_radio(conn, session_id, call, result["status"], result["line"],
                        result["reason"], result["latency_ms"])
-            if result["llm"] is not None:
-                save_llm_call(conn, session_id, call.seat, result["llm"])
 
     def log_dropped_calls():
         for call, reason in governor.dropped:
+            desk.forget(call)
             save_radio(conn, session_id, call, reason)
         governor.dropped = []
 
@@ -821,6 +823,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     call = performance.call_for_event(event, event_id)
                     if call is not None:
                         governor.offer(call)
+                        desk.prepare(call)
 
             corner_now = corner_at(current_corners, real_lap_distance)
             moment = Moment(frame=frame, race=source.race, new_race=source.new_race, near=source.near,
@@ -830,9 +833,13 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             for seat in seats:
                 for call in seat.update(moment):
                     governor.offer(call)
+                    desk.prepare(call)
 
             # ... and the radio decides what goes on air, on sim time only
-            in_corner = corner_now is not None or frame.brake > 0.2
+            # quiet while actually braking or cornering hard. The map windows were the rule
+            # before, and at Le Mans they are long (Porsche Curves 1.4 km): 14 calls expired
+            # waiting for a straight in the first live race (23 Sep 2026)
+            in_corner = frame.brake > 0.2 or abs(frame.accel_lat) >= TURNING
             on_air = governor.step(frame.elapsed_time, in_corner)
             if on_air is not None:
                 if on_air.urgent:

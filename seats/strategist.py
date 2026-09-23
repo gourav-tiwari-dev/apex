@@ -128,7 +128,8 @@ class Strategist:
     def tyre_check(self, me, now):
         calls = []
         for index, zones in enumerate(me.tyre_temps):
-            if not zones:
+            # 0 Kelvin (-273 C) means the game has no reading (pits, garage), 23 Sep
+            if not zones or min(zones) < -200:
                 continue
             average = round(sum(zones) / len(zones))
             name = TYRE_NAMES[index]

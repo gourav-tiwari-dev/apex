@@ -31,6 +31,18 @@ def side_and_overlap(my_pos, my_ori, car):
     return LEFT_SIGN * local_x, local_z
 
 
+MOVING_KMH = 30.0
+
+
+def on_track(moment):
+    if moment.frame.speed_kmh < MOVING_KMH:
+        return False
+    race = moment.race
+    if race is not None and race.me is not None and race.me.in_pits:
+        return False
+    return True
+
+
 def sides_taken(moment):
     left = False
     right = False
@@ -61,6 +73,12 @@ class Spotter:
 
     def update(self, moment):
         now = moment.now
+        # in the garage the cars in the next stalls are "alongside" (23 Sep: "car right,
+        # three wide" while waiting for the race): the spotter only works on track, moving
+        if not on_track(moment):
+            self.left = self.right = self.three_wide = False
+            self.empty_since = None
+            return []
         left, right = sides_taken(moment)
         calls = []
 

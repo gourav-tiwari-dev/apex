@@ -14,6 +14,7 @@ import io
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from queue import Queue, Full, Empty
 
 from persona import gate
@@ -50,6 +51,9 @@ async def render(text, voice):
 
 
 class Voice:
+    """The one owner of the speaker. Everything Apex says goes through here, so nothing can
+    talk over anything else by accident (23 Sep: the brief, a yellow and the spotter overlapped)."""
+
     def __init__(self, out_loud=True):
         self.out_loud = out_loud
         self.bank = {}
@@ -72,103 +76,150 @@ class Voice:
             print(f"[voice bank: {len(missing)} lines missing - run  python build_voice_bank.py]")
 
     def play_urgent(self, key, fallback_text):
-        """Returns immediately. Cuts off the engineer if he is mid-sentence."""
+        """Returns immediately. Cuts off EVERYTHING else, like a real spotter keying the radio."""
         if not self.out_loud:
             print(f"  URGENT: {fallback_text}")
             return True
         sound = self.bank.get(key)
         if sound is None:
             return False
-        self.pygame.mixer.music.stop()
+        self.pygame.mixer.stop()          # any other urgent clip
+        self.pygame.mixer.music.stop()    # the engineer mid-sentence
         sound.play()
         return True
 
-    def say(self, text, voice=ENGINEER_VOICE):
-        """Blocks until the line has been spoken. Only ever called from the radio worker."""
+    def render(self, text, voice=ENGINEER_VOICE):
+        """Text to audio bytes (edge-tts, about 1.3 s). None when printing instead of speaking."""
+        if not self.out_loud:
+            return None
+        return asyncio.run(render(text, voice))
+
+    def play(self, audio, text):
+        """Blocks until the line is done. Waits for an urgent clip to finish first, never talks
+        over it. Returns the moment the audio actually started (perf_counter)."""
         if not self.out_loud:
             print(f"  RADIO: {text}")
-            return
-        audio = asyncio.run(render(text, voice))
+            return time.perf_counter()
+        while self.pygame.mixer.get_busy():
+            self.pygame.time.wait(20)
         self.pygame.mixer.music.load(io.BytesIO(audio), "mp3")
         self.pygame.mixer.music.play()
+        started = time.perf_counter()
         while self.pygame.mixer.music.get_busy():
             self.pygame.time.wait(20)
+        return started
+
+    def say(self, text, voice=ENGINEER_VOICE):
+        return self.play(self.render(text, voice), text)
 
 
 class RadioDesk:
-    """The worker that phrases, checks and speaks reflective calls, one at a time.
+    """Phrases, checks, renders and speaks the non-urgent calls.
 
-    It never touches the database (the main thread owns it): it reports what happened
-    through `results`, and the main loop writes the log."""
+    Cooking starts the moment a seat raises a call (prepare), while the call is still waiting
+    for a straight. When the governor puts it on air (submit), the audio is usually ready, so it
+    plays at once. On 23 Sep, doing all of it only after the governor said "go" put lines about
+    11 s behind the moment (LLM 1.8 s + voice render 1.3 s + queueing + saying it).
+
+    It never touches the database (the main thread owns it): everything is reported through
+    `results`, and the main loop writes the log."""
 
     def __init__(self, voice, persona, budget, clean=False):
         self.voice = voice
         self.persona = persona
         self.budget = budget
         self.clean = clean
+        self.kitchen = ThreadPoolExecutor(max_workers=2)
+        self.orders = {}                  # id(call) -> future of the cooked line
+        self.admitted_at = {}             # id(call) -> when the governor put it on air
         self.inbox = Queue(maxsize=1)
         self.results = Queue()
         self.latest_sim_time = 0.0
         self.thread = threading.Thread(target=self.work, daemon=True)
         self.thread.start()
 
+    def prepare(self, call):
+        if call.urgent or id(call) in self.orders:
+            return
+        self.orders[id(call)] = self.kitchen.submit(self.cook, call)
+
+    def cook(self, call):
+        line = None
+        reason = None
+        if self.budget.allows_llm():
+            text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
+            if tokens_in or tokens_out:
+                cost = self.budget.charge(tokens_in, tokens_out)
+                # cost is logged even if the line never goes on air
+                self.results.put({"llm_only": True, "call": call,
+                                  "llm": {"tokens_in": tokens_in, "tokens_out": tokens_out,
+                                          "seconds": round(seconds, 3), "cost_rs": round(cost, 5)}})
+            if text is not None:
+                ok, reason = gate(text, call, self.clean)
+                if ok:
+                    line = text
+        else:
+            reason = "over budget"
+        # the gate failed or the model is away: fall back to code's own words
+        if line is None and call.template:
+            line = call.template
+        audio = None
+        if line is not None:
+            try:
+                audio = self.voice.render(line)
+            except Exception as error:
+                return {"line": line, "audio": None, "reason": f"voice render failed: {error.__class__.__name__}"}
+        return {"line": line, "audio": audio, "reason": reason}
+
     def submit(self, call):
+        self.prepare(call)
         try:
+            self.admitted_at[id(call)] = time.perf_counter()
             self.inbox.put_nowait(call)
             return True
         except Full:
+            self.admitted_at.pop(id(call), None)
             return False
 
-    def report(self, call, status, line=None, reason=None, llm=None, started=None):
-        latency_ms = None
-        if started is not None:
-            latency_ms = round((time.perf_counter() - started) * 1000)
+    def report(self, call, status, line=None, reason=None, latency_ms=None):
         self.results.put({"call": call, "status": status, "line": line, "reason": reason,
-                          "llm": llm, "latency_ms": latency_ms})
+                          "latency_ms": latency_ms})
 
     def work(self):
         while True:
             call = self.inbox.get()
             if call is None:
                 break
-            started = time.perf_counter()
-            line = None
-            reason = None
-            llm = None
-
-            if self.budget.allows_llm():
-                text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
-                if tokens_in or tokens_out:
-                    cost = self.budget.charge(tokens_in, tokens_out)
-                    llm = {"tokens_in": tokens_in, "tokens_out": tokens_out,
-                           "seconds": round(seconds, 3), "cost_rs": round(cost, 5)}
-                if text is not None:
-                    ok, reason = gate(text, call, self.clean)
-                    if ok:
-                        line = text
-            else:
-                reason = "over budget"
-
-            # the gate failed or the model is away: fall back to code's own words
-            if line is None and call.template:
-                line = call.template
-            if line is None:
-                self.report(call, "no_line", reason=reason, llm=llm)
+            order = self.orders.pop(id(call), None)
+            admitted = self.admitted_at.pop(id(call), time.perf_counter())
+            try:
+                cooked = order.result(timeout=max(call.ttl, 1.0))
+            except Exception:
+                self.report(call, "no_line", reason="not ready in time")
                 continue
-
+            if cooked["line"] is None:
+                self.report(call, "no_line", reason=cooked["reason"])
+                continue
             if self.latest_sim_time - call.sim_time > call.ttl:
-                self.report(call, "stale", line=line, reason=reason, llm=llm)
+                self.report(call, "stale", line=cooked["line"], reason=cooked["reason"])
                 continue
             try:
-                self.voice.say(line)
+                started = self.voice.play(cooked["audio"], cooked["line"])
             except Exception as error:
-                self.report(call, "voice_failed", line=line, reason=error.__class__.__name__, llm=llm)
+                self.report(call, "voice_failed", line=cooked["line"], reason=error.__class__.__name__)
                 continue
-            self.report(call, "spoken", line=line, reason=reason, llm=llm, started=started)
+            # latency = from "go on air" to the first sound, which is what the driver feels
+            self.report(call, "spoken", line=cooked["line"], reason=cooked["reason"],
+                        latency_ms=round((started - admitted) * 1000))
+
+    def forget(self, call):
+        """A call the governor dropped: its cooking (if any) is no longer needed."""
+        self.orders.pop(id(call), None)
 
     def stop(self, grace_s=15):
         self.inbox.put(None)
         self.thread.join(timeout=grace_s)
+        self.kitchen.shutdown(wait=False, cancel_futures=True)
 
     def drain(self):
         finished = []

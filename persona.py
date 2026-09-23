@@ -163,6 +163,9 @@ def gate(line, call, clean=False):
         return False, "asks a question"
     if "*" in line:
         return False, "asterisks would be read aloud"
+    # a coach never tells a driver not to brake (23 Sep: "No fucking braking at Arnage")
+    if re.search(r"\b(no|don'?t|never|stop)\b(\s+\w+)?\s+brak", lowered):
+        return False, "tells him not to brake"
     for word in GENDERED:
         if has_phrase(lowered, word):
             return False, f"guessed a gender: {word}"

@@ -64,8 +64,9 @@ def test_the_plan_upgrades_once_when_real_data_arrives_then_stays_quiet():
     assert step(seat, 2.0, opponents=[rival(4, 7.4)]) == []
     seat.performance.my_speeds["T8 Ascari"] = [130.0, 130.0]
     seat.performance.opponents.rows += [("111", "Ann", "GT3", "T8 Ascari", 1, 125.0)] * 2
-    assert kinds(step(seat, 3.0, opponents=[rival(4, 7.4)])) == ["ATTACK_PLAN"]
-    assert step(seat, 4.0, opponents=[rival(4, 7.4)]) == []
+    assert step(seat, 3.0, opponents=[rival(4, 7.4)]) == []          # one plan a minute
+    assert kinds(step(seat, 70.0, opponents=[rival(4, 7.4)])) == ["ATTACK_PLAN"]
+    assert step(seat, 140.0, opponents=[rival(4, 7.4)]) == []
 
 
 def test_other_classes_are_not_a_fight():

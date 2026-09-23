@@ -36,7 +36,8 @@ class MemoryRecall:
                 evidence={"fact_id": self.lap_one["fact_id"]}))
 
         corners = moment.corners or []
-        if moment.corner is None and corners:
+        in_pits = race is not None and race.me is not None and race.me.in_pits
+        if moment.corner is None and corners and not in_pits and moment.lap_count >= 1:
             distance = moment.frame.lap_dist
             for corner in sorted(corners, key=lambda c: c["start"]):
                 name = corner["name"]

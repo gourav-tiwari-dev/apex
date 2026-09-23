@@ -169,6 +169,15 @@ class NearCars:
     t: str = "near"
 
 
+def identity(opponent):
+    """Who a rival is, across races. Online, LMU gives every Steam ID as 0 (measured 23 Sep
+    2026), so the driver's name stands in: names can change, but 0 would make all 19 cars
+    one rival."""
+    if opponent.steam_id not in (0, "0", None, ""):
+        return str(opponent.steam_id)
+    return "name:" + opponent.driver
+
+
 def telemetry_by_id(data):
     rows = {}
     for row in data.telemetry.telemInfo:

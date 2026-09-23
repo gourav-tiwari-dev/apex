@@ -10,6 +10,13 @@ FORMATION = 3                 # mGamePhase values
 GREEN = 5
 SAFETY_CAR = 6
 BLUE_FLAG = 6                 # mFlag value
+# mSectorFlag read 11 in every sector for a whole green session (23 Sep 2026): 11 and 0 are
+# "no yellow". GUESSED: any other value is a local yellow; the first real yellow will confirm.
+NO_YELLOW = {0, 11}
+# Measured in the race of 23 Sep: 1 (and sometimes 3) = a local yellow, lasting 10-20 s, 13
+# times in 27 minutes around a 13.6 km lap. Only the yellow in my sector or the next matters.
+# GUESSED: the flag list uses the game's own sector numbering (index 0 = sector 3), like mSector.
+NEXT_SECTOR = {1: 2, 2: 0, 0: 1}
 REPORT_EVERY_LAPS = 3
 REPORT_TTL_S = 20.0           # a gap report can wait for a straight, but not for ever
 
@@ -71,7 +78,8 @@ class RaceEngineer:
         if me.flag == BLUE_FLAG and not self.blue_flag:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
-        yellow_now = any(flag != 0 for flag in session.sector_flags)
+        yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag not in NO_YELLOW]
+        yellow_now = me.sector in yellow_sectors or NEXT_SECTOR.get(me.sector) in yellow_sectors
         if yellow_now and not self.yellow and phase == GREEN:
             calls.append(urgent("YELLOW", "Yellow flag. Yellow.", now))
         self.yellow = yellow_now

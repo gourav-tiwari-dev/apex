@@ -1,4 +1,5 @@
 import sqlite3, json
+from race_state import identity
 from statistics import median
 from time import time
 
@@ -256,7 +257,7 @@ def save_session_result(conn,session_id,grid,final_place,track_limit_strikes):
 def save_rivals(conn,session_id,opponents):
   for o in opponents:
     conn.execute("INSERT OR REPLACE INTO rivals_seen (session_id,steam_id,driver,car_class,best_lap,final_place) VALUES (?,?,?,?,?,?)",
-      (session_id,str(o.steam_id),o.driver,o.car_class,o.best_lap,o.place))
+      (session_id,identity(o),o.driver,o.car_class,o.best_lap,o.place))
   conn.commit()
 
 def save_opponent_corners(conn,session_id,rows):

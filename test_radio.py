@@ -72,8 +72,13 @@ class FakeVoice:
     def __init__(self):
         self.said = []
 
-    def say(self, text, voice=None):
+    def render(self, text, voice=None):
+        return text
+
+    def play(self, audio, text):
+        import time
         self.said.append(text)
+        return time.perf_counter()
 
 
 class FakePersona:
@@ -91,33 +96,66 @@ def run_desk(line, the_call, budget=None):
     desk.latest_sim_time = the_call.sim_time
     desk.submit(the_call)
     desk.stop()
-    return voice, desk.drain()
+    results = desk.drain()
+    spoken = [r for r in results if not r.get("llm_only")]
+    costs = [r for r in results if r.get("llm_only")]
+    return voice, spoken, costs
 
 
 def test_a_good_line_is_spoken_and_its_cost_logged():
     the_call = call(facts={"corner": "T11 Parabolica", "speed_kmh": 170})
-    voice, results = run_desk("Wide at Parabolica. 170. Tidy it.", the_call)
+    voice, spoken, costs = run_desk("Wide at Parabolica. 170. Tidy it.", the_call)
     assert voice.said == ["Wide at Parabolica. 170. Tidy it."]
-    assert results[0]["status"] == "spoken"
-    assert results[0]["llm"]["tokens_out"] == 10
+    assert spoken[0]["status"] == "spoken"
+    assert costs[0]["llm"]["tokens_out"] == 10
 
 
 def test_an_invented_number_is_refused_and_code_words_used_instead():
     the_call = call(template="Ran wide at T11 Parabolica.", facts={"speed_kmh": 170})
-    voice, results = run_desk("Wide at 185. Idiot.", the_call)
+    voice, spoken, costs = run_desk("Wide at 185. Idiot.", the_call)
     assert voice.said == ["Ran wide at T11 Parabolica."]
-    assert "invented number" in results[0]["reason"]
+    assert "invented number" in spoken[0]["reason"]
 
 
 def test_no_template_and_a_refused_line_means_silence():
-    voice, results = run_desk("You should maybe try braking later.", call())
+    voice, spoken, costs = run_desk("You should maybe try braking later.", call())
     assert voice.said == []
-    assert results[0]["status"] == "no_line"
+    assert spoken[0]["status"] == "no_line"
 
 
 def test_over_budget_uses_template_without_asking_the_model():
     budget = Budget(cap_rs=0.0)
-    voice, results = run_desk("never asked", call(template="Ran wide."), budget)
+    voice, spoken, costs = run_desk("never asked", call(template="Ran wide."), budget)
     assert voice.said == ["Ran wide."]
-    assert results[0]["reason"] == "over budget"
-    assert results[0]["llm"] is None
+    assert spoken[0]["reason"] == "over budget"
+    assert costs == []
+
+
+def test_cooking_starts_when_the_call_is_raised_not_when_it_goes_on_air():
+    import time
+    class SlowPersona(FakePersona):
+        def phrase(self, call):
+            time.sleep(0.3)
+            return "Wide at Parabolica. Tidy it.", 100, 10, 0.3
+    voice = FakeVoice()
+    desk = RadioDesk(voice, SlowPersona(""), Budget(), clean=False)
+    the_call = call(facts={"corner": "T11 Parabolica"})
+    desk.prepare(the_call)
+    time.sleep(0.5)                  # waiting for a straight while the line cooks
+    desk.latest_sim_time = the_call.sim_time
+    desk.submit(the_call)
+    desk.stop()
+    spoken = [r for r in desk.drain() if not r.get("llm_only")]
+    assert spoken[0]["status"] == "spoken"
+    assert spoken[0]["latency_ms"] < 100      # ready the moment it went on air
+
+
+def test_the_llm_cost_is_logged_even_when_the_call_never_goes_on_air():
+    import time
+    voice = FakeVoice()
+    desk = RadioDesk(voice, FakePersona("Tidy it."), Budget(), clean=False)
+    desk.prepare(call())
+    time.sleep(0.2)
+    desk.stop()
+    costs = [r for r in desk.drain() if r.get("llm_only")]
+    assert len(costs) == 1

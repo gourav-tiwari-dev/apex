@@ -14,9 +14,13 @@ import statistics
 
 from radio import Call, ENGINEER, PERFORMANCE, MEMORY
 from track_map import corner_at
+from race_state import identity
 
-# the kinds v1 spoke; HARD_BRAKING and CORNER_ENTRY are recorded, never said
-SPOKEN_KINDS = {"SPIN", "OFF_TRACK", "LOCKUP", "THROTTLE_LIFT"}
+# the kinds said on the radio. HARD_BRAKING, CORNER_ENTRY and THROTTLE_LIFT are recorded, never
+# said: v1's "coasting" is any throttle under 50% with no brake, which is correct part-throttle
+# driving through the Porsche Curves, and on 23 Sep the model turned its "no braking" into
+# "No fucking braking at Arnage" - an instruction not to brake into a hairpin.
+SPOKEN_KINDS = {"SPIN", "OFF_TRACK", "LOCKUP"}
 INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
 STALE_AFTER_S = 6.0      # v1's STALE_THRESHOLD: advice about a corner 6 s ago is useless
 
@@ -27,6 +31,8 @@ LAPS_FOR_A_REFERENCE = 2     # one lap of another car is not a reference
 MAX_PRAISE_PER_SESSION = 2
 CORNER_CALL_TTL_S = 15.0
 QUALIFYING = range(5, 9)
+# 11 fastest-car calls in one race (one per corner) on 23 Sep: at most one every 2 minutes
+FASTEST_CAR_GAP_S = 120.0
 
 
 def call_from_event(event, event_id):
@@ -64,7 +70,7 @@ class OpponentCorners:
             corner = corner_at(corners, opponent.lap_dist)
             current = self.inside.get(opponent.id)
             if current is not None and current[0] != corner:
-                self.rows.append((str(opponent.steam_id), opponent.driver, opponent.car_class,
+                self.rows.append((identity(opponent), opponent.driver, opponent.car_class,
                                   current[0], current[1], round(current[2], 1)))
                 current = None
                 del self.inside[opponent.id]
@@ -100,6 +106,20 @@ class PerformanceEngineer:
         self.best_lap_seen = None
         self.praise_given = 0
         self.opponents = OpponentCorners()
+        self.lift_said = set()       # corners already told about coasting this session
+        self.last_fastest_time = None
+
+    def call_for_event(self, event, event_id):
+        """v1's detector lines, with one v2 rule: a coasting line is said once per corner per
+        session. On 23 Sep a Le Mans race produced 74 of them in 27 minutes: v1's "throttle
+        under 50%" counts every part-throttle corner as coasting."""
+        call = call_from_event(event, event_id)
+        if call is None or event.kind != "THROTTLE_LIFT":
+            return call
+        if event.corner in self.lift_said:
+            return None
+        self.lift_said.add(event.corner)
+        return call
 
     def update(self, moment):
         calls = []
@@ -130,6 +150,8 @@ class PerformanceEngineer:
         # how the fastest car in my class takes this corner, once per corner per session
         if corner in self.fastest_said or len(self.my_speeds[corner]) < LAPS_FOR_A_REFERENCE:
             return
+        if self.last_fastest_time is not None and now - self.last_fastest_time < FASTEST_CAR_GAP_S:
+            return
         fastest = self.opponents.fastest_through(corner)
         if fastest is None:
             return
@@ -139,6 +161,7 @@ class PerformanceEngineer:
         if gap < FASTEST_GAP_WORTH_SAYING_KMH:
             return
         self.fastest_said.add(corner)
+        self.last_fastest_time = now
         calls.append(Call(
             seat="performance", kind="FASTEST_CAR", sim_time=now, priority=PERFORMANCE,
             ttl=CORNER_CALL_TTL_S,
