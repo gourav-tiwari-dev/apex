@@ -187,6 +187,24 @@ def clean_races(conn, drive_ids):
     return made
 
 
+def pass_attempts(conn, drive_ids):
+    """The hasty-commit habit, measured: how many of my pass attempts ended in contact."""
+    if not drive_ids:
+        return 0
+    marks = ",".join("?" * len(drive_ids))
+    rows = conn.execute(f"SELECT session_id, outcome FROM pass_attempts WHERE session_id IN ({marks})",
+                        list(drive_ids)).fetchall()
+    if len(rows) < HABIT_MIN:
+        return 0
+    contacts = sum(1 for _, outcome in rows if outcome == "contact")
+    passes = sum(1 for _, outcome in rows if outcome == "pass")
+    sessions = sorted({session_id for session_id, _ in rows})
+    summary = f"pass attempts: {len(rows)}, {passes} passes, {contacts} ended in contact"
+    save_fact(conn, "pass_attempts", None, "me", contacts / len(rows), len(rows), len(sessions),
+              summary, session_ids=sessions)
+    return 1
+
+
 def build_profile(conn):
     """Throw the old profile away and rebuild it from every drive. Returns what was found."""
     conn.execute("DELETE FROM profile_evidence")
@@ -198,6 +216,7 @@ def build_profile(conn):
         "lap_one": lap_one(conn, drive_ids),
         "rivals": rivals(conn, drive_ids),
         "clean_races": clean_races(conn, drive_ids),
+        "pass_attempts": pass_attempts(conn, drive_ids),
     }
     conn.commit()
     return found
@@ -230,7 +249,8 @@ def rival(conn, steam_id):
 
 def brief_facts(conn, track):
     """What the team-memory seat brings to the pre-race brief, most important first."""
-    return facts(conn, "lap_one") + facts(conn, "contact_corner", track) + facts(conn, "corner_habit", track)
+    return (facts(conn, "lap_one") + facts(conn, "pass_attempts") + facts(conn, "contact_corner", track)
+            + facts(conn, "corner_habit", track))
 
 
 def clean_race_trend(conn, last=5):

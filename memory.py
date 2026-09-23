@@ -123,6 +123,18 @@ SCHEMA = """
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
 
+  -- v2: every pass I tried and how it ended - the hasty-commit habit, measured
+  CREATE TABLE IF NOT EXISTS pass_attempts (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    steam_id      TEXT,
+    driver        TEXT,
+    corner        TEXT,
+    lap_count     INTEGER,
+    outcome       TEXT    NOT NULL,          -- pass / no_pass / contact
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
+
   -- v2 TEAM MEMORY. A cache rebuilt from the drives by team_memory.build_profile().
   -- A fact exists only with evidence: at least one row in profile_evidence (checked in code,
   -- and every evidence row must point at a real event / lap / session - foreign keys).
@@ -249,6 +261,12 @@ def save_opponent_corners(conn,session_id,rows):
   for steam_id, driver, car_class, corner, lap_count, min_speed in rows:
     conn.execute("INSERT INTO opponent_corners (session_id,steam_id,driver,car_class,corner,lap_count,min_speed) VALUES (?,?,?,?,?,?,?)",
       (session_id,steam_id,driver,car_class,corner,lap_count,min_speed))
+  conn.commit()
+
+def save_pass_attempts(conn,session_id,attempts):
+  for steam_id, driver, corner, lap_count, outcome in attempts:
+    conn.execute("INSERT INTO pass_attempts (session_id,steam_id,driver,corner,lap_count,outcome) VALUES (?,?,?,?,?,?)",
+      (session_id,steam_id,driver,corner,lap_count,outcome))
   conn.commit()
 
 def set_session_track(conn,session_id,track,session_type):

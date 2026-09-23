@@ -10,7 +10,7 @@ from lmu_data import LMUObjectOut, LMUConstants
 from dataclasses import dataclass,asdict
 from queue import Full, Empty, Queue
 from datetime import datetime
-from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners
+from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners,save_pass_attempts
 from radio import Governor, Budget
 from persona import Persona
 from voice import Voice, RadioDesk
@@ -19,6 +19,8 @@ from seats import Moment
 from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
+from seats.racecraft import Racecraft
+from team_memory import facts as memory_facts
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
 from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map
 
@@ -674,7 +676,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
 
     # the seats that watch the whole race (the performance seat rides on the detectors)
     performance = PerformanceEngineer()
-    seats = [Spotter(), RaceEngineer(), Strategist(), performance]
+    racecraft = Racecraft(performance)
+    seats = [Spotter(), RaceEngineer(), Strategist(), performance, racecraft]
 
     governor = Governor()
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
@@ -704,6 +707,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         conn = connect_db()
         session_started = datetime.now().isoformat(timespec="seconds")
         session_id = start_session(conn, session_started, tape_out, REPLAY_SPEED)
+        # what team memory knows about every rival, for the racecraft plans
+        for rival_fact in memory_facts(conn, "rival"):
+            racecraft.rivals[rival_fact["subject"]] = rival_fact["summary"]
         voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
 
         # GUESSED — mLapInvalidated never observed True (n=33485)
@@ -752,17 +758,20 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 validity = 0
 
             # the seats raise calls ...
+            frame_events = []
             contact = contacts.update(frame, source.near, source.race)
             if contact is not None:
                 contact.lap_count = lap_count
                 print(contact)
                 save_event(conn, session_id, contact)
+                frame_events.append(contact)
             for detector in detectors:
                 event = detector.update(frame)
                 if event:
                     event.lap_count = lap_count
                     print(event)
                     event_id = save_event(conn, session_id, event)
+                    frame_events.append(event)
                     call = call_from_event(event, event_id)
                     if call is not None:
                         governor.offer(call)
@@ -771,7 +780,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             moment = Moment(frame=frame, race=source.race, new_race=source.new_race, near=source.near,
                             lap_count=lap_count, lap_wrapped=lap_counter.wrapped, corner=corner_now,
                             track=track, corner_stat=stat, session_type=session_type,
-                            corners=current_corners)
+                            corners=current_corners, events=frame_events)
             for seat in seats:
                 for call in seat.update(moment):
                     governor.offer(call)
@@ -833,6 +842,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 save_session_result(conn, session_id, grid, final_place, strikes)
                 save_rivals(conn, session_id, last_opponents)
             save_opponent_corners(conn, session_id, performance.opponents.rows)
+            save_pass_attempts(conn, session_id, racecraft.attempts)
             print_corner_report(conn, session_id)
             print(f"session {session_id} ended: {end_reason}   LLM spend ~Rs {budget.spent_rs:.2f}")
         if conn is not None:

@@ -1,6 +1,6 @@
 """The seats of the race team. Each one looks at the same Moment every frame and may raise
 Calls; the radio decides what actually goes on air."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -16,6 +16,7 @@ class Moment:
     corner_stat: object | None = None   # the CornerStat of a corner I just left, this frame only
     session_type: int | None = None     # mSession: 5-8 qualifying, 10-13 race
     corners: list | None = None         # this track's corner map, to place other cars too
+    events: list = field(default_factory=list)   # events detected this frame (contacts, offs...)
 
     @property
     def now(self):

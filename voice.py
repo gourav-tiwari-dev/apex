@@ -34,6 +34,7 @@ BANK_LINES = {
     "GREEN":          (ENGINEER_VOICE, "Green, green, green."),
     "BLUE_FLAG":      (ENGINEER_VOICE, "Blue flag. Let him by on the exit."),
     "LIGHTS_OUT":     (ENGINEER_VOICE, "Lights out. Go."),
+    "NOT_HERE":       (ENGINEER_VOICE, "Not here. Wait for it."),
     "RADIO_CHECK":    (ENGINEER_VOICE, "Radio check. I'm with you."),
     "LLM_OFFLINE":    (ENGINEER_VOICE, "Engineer's gone quiet. You know what to do."),
 }
