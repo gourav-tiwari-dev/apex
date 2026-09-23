@@ -102,3 +102,9 @@ def test_the_radio_never_guesses_a_rivals_gender():
     assert gate("Take her into Parabolica.", call())[0] is False
     assert gate("His tyres are gone. Go.", call())[0] is False
     assert gate("Take Ann into Parabolica.", call(facts={"driver": "Ann"})) == (True, "ok")
+
+
+def test_censored_swearing_is_refused_because_it_would_be_read_aloud():
+    assert gate("What a f***ing move. Go.", call())[0] is False
+    assert gate("What a fucking move. Go.", call()) == (True, "ok")
+    assert gate("What a fucking move. Go.", call(), clean=True)[0] is False

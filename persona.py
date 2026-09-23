@@ -33,7 +33,10 @@ MAX'S ATTITUDE
   or "the car ahead" / "the car behind". Never guess he or she: they are real people.
 - Understatement when it's perfect: "Simply lovely." When it's bad, dry sarcasm about the
   situation or the other car, never about Gourav.
-- Swearing is natural when it adds force ("what a f***ing move"), never in every line.
+- SWEAR. It is how Max talks on the radio: "what a fucking idiot", "the fucking tyre is dead".
+  Use it in most lines: fuck, fucking, shit, bloody hell, damn. Aim it at the situation or the
+  other drivers, NEVER at Gourav. Calm-down lines can swear too ("Forget that shit. Next lap.").
+  Write the words in full, never with asterisks: the line is read aloud.
 - Aggressive but TIMED, like Max picking his moment: never tell him to back down from
   racing, tell him WHERE the move works. "Not here, mate. He's slow out of Ascari. Parabolica."
 
@@ -61,11 +64,11 @@ BANNED WORDS: think, maybe, try, consider, perhaps, "you should", "I think",
 
 Examples of the voice:
 "Not here, mate. He's slow out of Ascari. Parabolica."
-"Car ahead brakes like a grandma. Inside. Take it."
+"Car ahead brakes like a fucking grandma. Inside. Take it."
 "Hold the inside, mate. He's got nothing on you."
-"Calm down for the moment. Car's fine. Next lap."
+"Forget that shit, mate. Car's fine. Next lap."
 "Simply lovely. That's your lap."
-"Fuel's fine. Push, mate. No saving."
+"Fuel's fine. Push, mate. No fucking saving."
 """
 
 CLEAN_RULE = "\nThis is a recording for other people: NO swearing at all. Keep the attitude."
@@ -158,6 +161,8 @@ def gate(line, call, clean=False):
                 return False, f"profanity in clean mode: {word}"
     if "?" in line:
         return False, "asks a question"
+    if "*" in line:
+        return False, "asterisks would be read aloud"
     for word in GENDERED:
         if has_phrase(lowered, word):
             return False, f"guessed a gender: {word}"
@@ -173,8 +178,15 @@ def gate(line, call, clean=False):
     return True, "ok"
 
 
-def facts_text(call):
+# pure number reports stay clean so the numbers are easy to hear; everything else swears
+# (Gourav, 23 Sep 2026: "that part is what makes it closer to Verstappen")
+CLEAN_KINDS = {"GAP_REPORT", "QUALI_LAP", "TRACK_LIMITS", "PENALTY"}
+
+
+def facts_text(call, clean=False):
     parts = [f"tell him: {call.conclusion}"]
+    if not clean and call.kind not in CLEAN_KINDS:
+        parts.append("swear in this line: YES, one full swear word, aimed at the situation or the other car")
     for name, value in call.facts.items():
         parts.append(f"{name}: {value}")
     return "\n".join(parts)
@@ -218,7 +230,7 @@ class Persona:
             response = self.llm().chat.completions.create(
                 model=MODEL,
                 messages=[{"role": "system", "content": self.system_prompt()},
-                          {"role": "user", "content": facts_text(call)}],
+                          {"role": "user", "content": facts_text(call, self.clean)}],
                 max_tokens=60,
                 # thinking OFF: measured 23 Sep, thinking was 96% of a live line's tokens
                 extra_body={"thinking": {"type": "disabled"}},
