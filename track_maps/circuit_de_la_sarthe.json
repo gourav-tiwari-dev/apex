@@ -1,0 +1,62 @@
+{
+ "track": "Circuit de la Sarthe",
+ "learned_from_laps": 35,
+ "names_from": "lemansultimate.wiki.gg Track Guide, lap order; No Name corner is inside Porsche Curves",
+ "corners": [
+  {
+   "name": "Dunlop Chicane",
+   "start": 445,
+   "end": 990
+  },
+  {
+   "name": "Esses",
+   "start": 1025,
+   "end": 1775
+  },
+  {
+   "name": "Tertre Rouge",
+   "start": 1795,
+   "end": 2060
+  },
+  {
+   "name": "Mulsanne Chicane 1",
+   "start": 3880,
+   "end": 4340
+  },
+  {
+   "name": "Mulsanne Chicane 2",
+   "start": 5850,
+   "end": 6325
+  },
+  {
+   "name": "Mulsanne Corner",
+   "start": 7470,
+   "end": 7810
+  },
+  {
+   "name": "Indianapolis",
+   "start": 9480,
+   "end": 9940
+  },
+  {
+   "name": "Arnage",
+   "start": 10045,
+   "end": 10235
+  },
+  {
+   "name": "Porsche Curves",
+   "start": 11160,
+   "end": 12585
+  },
+  {
+   "name": "Karting",
+   "start": 12590,
+   "end": 12930
+  },
+  {
+   "name": "Ford Chicanes",
+   "start": 13110,
+   "end": 13520
+  }
+ ]
+}

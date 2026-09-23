@@ -179,8 +179,9 @@ def clean_races(conn, drive_ids):
                 "SELECT COUNT(*) FROM events WHERE session_id = ? AND kind = ?", (session_id, kind)).fetchone()[0]
         strikes = conn.execute("SELECT track_limit_strikes FROM sessions WHERE id = ?", (session_id,)).fetchone()[0] or 0
         marks = counts["CONTACT"] + counts["IMPACT"] + counts["OFF_TRACK"] + counts["SPIN"] + strikes
-        summary = (f"race {session_id}: {counts['CONTACT']} contacts, {counts['OFF_TRACK']} offs, "
-                   f"{counts['SPIN']} spins, {strikes} track-limit steps")
+        summary = (f"race {session_id}: {counts['CONTACT']} contacts with a known car, "
+                   f"{counts['IMPACT']} other impacts (a wall, or a car Apex could not see), "
+                   f"{counts['OFF_TRACK']} offs, {counts['SPIN']} spins, {strikes} track-limit steps")
         save_fact(conn, "clean_race", track_of(conn, session_id), f"race {session_id}", marks,
                   marks, 1, summary, session_ids=[session_id])
         made += 1

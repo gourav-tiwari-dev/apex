@@ -4,7 +4,7 @@ load_dotenv()
 from openai import OpenAI
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
 from memory import latest_session_id, load_latest_contract, evaluate_contract
-from memory import reference_from_race, save_radio
+from memory import reference_from_race, reference_from_self, save_radio
 from radio import Call, PERFORMANCE, MEMORY
 from seats.setup_engineer import advice_for
 from tts import speak
@@ -200,7 +200,11 @@ def reference_for(conn, session_id):
     # Monza keeps the hand-checked reference lap; old sessions have no track and were Monza
     if track is None or "monza" in track.lower():
         return "reference_hymo.json"
-    return reference_from_race(conn, session_id)
+    reference = reference_from_race(conn, session_id)
+    if reference is None:
+        # no other cars recorded (e.g. LMU's own telemetry): measure against your own best
+        reference = reference_from_self(conn, track)
+    return reference
 
 def incident_review(conn, session_id):
     """E13: every contact of the race, where and with whom, and the pass attempts."""
@@ -214,11 +218,14 @@ def incident_review(conn, session_id):
         where = ", ".join(f"lap {lap} {corner}" for corner, lap, _ in contacts[:3])
         parts.append(f"{len(contacts)} contact{'s' if len(contacts) > 1 else ''}: {where}.")
     else:
-        parts.append("No contact all race.")
+        parts.append("No contact with a known car.")
     if attempts:
         passes = sum(1 for (o,) in attempts if o == "pass")
         touched = sum(1 for (o,) in attempts if o == "contact")
         parts.append(f"{len(attempts)} passing attempts, {passes} made it, {touched} ended in contact.")
+    impacts = conn.execute("SELECT COUNT(*) FROM events WHERE session_id = ? AND kind = 'IMPACT'", (session_id,)).fetchone()[0]
+    if impacts:
+        parts.append(f"{impacts} other impact{'s' if impacts > 1 else ''}: a wall, or a car Apex could not see.")
     parts.append(f"{offs} offs, {strikes} track limit steps.")
     return " ".join(parts)
 

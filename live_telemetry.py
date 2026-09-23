@@ -472,6 +472,7 @@ class CornerEntryDetection:
         return event
 
 CONTACT_NEAR_M = 10.0   # a car this close at the moment of impact is the car you touched
+SAME_INCIDENT_S = 3.0   # hits closer together than this are one incident
 
 class ContactDetection:
     """An impact is when the game's last-impact time moves forward.
@@ -479,6 +480,7 @@ class ContactDetection:
 
     def __init__(self):
         self.last_seen = None
+        self.first_frame = True
 
     def nearest_car(self, frame, near):
         if near is None or frame.pos is None:
@@ -496,15 +498,20 @@ class ContactDetection:
         return nearest
 
     def update(self, frame, near, race):
-        if frame.last_impact_time is None:
-            return None                     # an old tape: no impact data at all
-        if self.last_seen is None:
-            # whatever impact the game remembers happened before this session started
+        if self.first_frame:
+            # whatever impact the game remembers on the first frame happened before this session
+            self.first_frame = False
             self.last_seen = frame.last_impact_time
             return None
-        if frame.last_impact_time == self.last_seen:
+        # None = no impact yet (and old tapes carry no impact data at all)
+        if frame.last_impact_time is None or frame.last_impact_time == self.last_seen:
             return None
+        previous = self.last_seen
         self.last_seen = frame.last_impact_time
+        # one incident fires several hits within seconds (LMU logged 266, 266 and 271 s for one
+        # moment at Le Mans): hits that close together are the same incident
+        if previous is not None and frame.last_impact_time - previous < SAME_INCIDENT_S:
+            return None
 
         corner = corner_at(current_corners, frame.lap_dist) or "the straight"
         magnitude = frame.last_impact_magnitude
@@ -803,7 +810,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     print(event)
                     event_id = save_event(conn, session_id, event)
                     frame_events.append(event)
-                    call = call_from_event(event, event_id)
+                    call = performance.call_for_event(event, event_id)
                     if call is not None:
                         governor.offer(call)
 

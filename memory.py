@@ -546,6 +546,28 @@ def reference_from_race(conn, session_id, car_class=None):
           "brake_point_note": "not measured on this track",
           "corners": corners}
 
+def reference_from_self(conn, track):
+  """Last resort, for a track with no reference lap and no other cars recorded (LMU's own
+  telemetry files): your own best, corner by corner, across every drive there. The best is
+  the 90th percentile of your min speeds, so one freak lap does not set it."""
+  rows = conn.execute("SELECT cs.corner, cs.min_speed FROM corner_stats cs JOIN sessions s ON s.id = cs.session_id "
+                      "WHERE s.track = ? AND cs.lap_count > 0 AND cs.min_speed IS NOT NULL", (track,)).fetchall()
+  speeds = {}
+  for corner, speed in rows:
+    speeds.setdefault(corner, []).append(speed)
+  corners = {}
+  for corner, values in speeds.items():
+    if len(values) < 5:
+      continue
+    values.sort()
+    best = values[int(len(values) * 0.9) - 1]
+    corners[corner] = {"min_speed": round(best, 1), "brake_point": None, "technique": "",
+                       "confidence": f"your own best (90th percentile of {len(values)} laps)"}
+  if not corners:
+    return None
+  return {"source": "your own best laps at this track (no faster car recorded here yet)",
+          "brake_point_note": "not measured on this track", "corners": corners}
+
 MIN_TARGET_STEP_KMH = 1.5
 CONTRACT_MIN_LAPS = 8
 

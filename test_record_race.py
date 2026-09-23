@@ -39,3 +39,16 @@ def test_recording_stops_at_session_end_and_replays(tmp_path):
     assert snapshots >= 9                # about 5 scoring updates a second
     assert source.race.session.game_phase == 8
     assert source.race.opponents[0].driver == "Ann"
+
+
+def test_one_incident_with_several_hits_counts_once():
+    from dataclasses import replace
+    from live_telemetry import ContactDetection
+    from test_seats import frame
+    detector = ContactDetection()
+    seen = []
+    for t, hit in ((0.0, None), (1.0, None), (266.0, 266.0), (266.5, 266.4), (271.0, 270.9), (500.0, 499.8)):
+        event = detector.update(replace(frame(t), last_impact_time=hit, last_impact_magnitude=1.0), None, None)
+        if event:
+            seen.append(event.kind)
+    assert seen == ["IMPACT", "IMPACT"]      # the 266-271 burst is one incident, 500 is another
