@@ -16,7 +16,7 @@ import statistics
 
 from radio import Call, RACECRAFT, ENGINEER, SPOTTER
 from seats.spotter import side_and_overlap, CAR_LENGTH_M, LANE_MIN_M, LANE_MAX_M
-from race_state import identity
+from race_state import identity, same_class_neighbours
 
 FIGHT_GAP_S = 1.0             # a same-class car within a second ahead is a fight
 DEFEND_GAP_S = 0.8            # and this close behind
@@ -29,6 +29,7 @@ PLAN_TTL_S = 20.0
 # as much as a driver can use
 PLAN_GAP_S = 60.0
 RACE_SESSIONS = range(10, 14)
+GREEN = 5                     # no plans on the formation lap or behind the safety car
 RESET_TTL_S = 15.0
 
 
@@ -56,31 +57,15 @@ class Racecraft:
 
     # ---- who is around me, same class only -------------------------------------------------
     def neighbours(self, race):
-        me = race.me
-        ahead = None
-        behind = None
-        for opponent in race.opponents:
-            if opponent.car_class != me.car_class or opponent.laps_behind_leader != me.laps_behind_leader:
-                continue
-            if opponent.place < me.place and (ahead is None or opponent.place > ahead.place):
-                ahead = opponent
-            if opponent.place > me.place and (behind is None or opponent.place < behind.place):
-                behind = opponent
-        gap_ahead = None
-        gap_behind = None
-        if ahead is not None:
-            gap_ahead = round(me.time_behind_leader - ahead.time_behind_leader, 2)
-        if behind is not None:
-            gap_behind = round(behind.time_behind_leader - me.time_behind_leader, 2)
-        return ahead, gap_ahead, behind, gap_behind
+        return same_class_neighbours(race)
 
     # ---- where each of us is faster --------------------------------------------------------
     def edges_against(self, steam_id):
         """corner -> my typical min speed minus his, where both are measured."""
         his_speeds = {}
-        for row_steam_id, driver, car_class, corner, lap, speed in self.performance.opponents.rows:
-            if row_steam_id == steam_id:
-                his_speeds.setdefault(corner, []).append(speed)
+        for row in self.performance.opponents.rows:
+            if row.who == steam_id:
+                his_speeds.setdefault(row.corner, []).append(row.min_speed)
         edges = {}
         for corner, my_speeds in self.performance.my_speeds.items():
             mine = median_or_none(my_speeds)
@@ -116,7 +101,7 @@ class Racecraft:
             template = f"{opponent.driver} ahead. Stay close. Wait for the mistake."
         else:
             pass_at = self.corner_after(best, corners)
-            facts.update({"strong_corner": best, "edge_kmh": edges[best], "pass_corner": pass_at})
+            facts.update({"strong_corner": best, "pass_corner": pass_at})
             conclusion = f"Faster out of {best}: pass {opponent.driver} into {pass_at}, not before."
             template = f"You're faster out of {best}. Pass into {pass_at}. Not before."
         if history:
@@ -137,7 +122,7 @@ class Racecraft:
             template = f"{opponent.driver} behind. Nothing on you. Clean lines."
         else:
             cover = self.corner_after(danger, corners)
-            facts.update({"his_corner": danger, "his_edge_kmh": -edges[danger], "cover_corner": cover})
+            facts.update({"his_corner": danger, "cover_corner": cover})
             conclusion = f"{opponent.driver} is quicker out of {danger}: cover the inside into {cover}."
             template = f"{opponent.driver}'s quicker out of {danger}. Cover the inside into {cover}."
         return Call(seat="racecraft", kind="DEFEND_PLAN", sim_time=now, priority=RACECRAFT,
@@ -160,7 +145,7 @@ class Racecraft:
         # fired 7 times in quali on 23 Sep. Fights and composure are for races.
         if moment.session_type is not None and moment.session_type not in RACE_SESSIONS:
             return []
-        if race.me.in_pits:
+        if race.me.in_pits or race.session.game_phase != GREEN:
             return []
         me = race.me
         now = moment.now

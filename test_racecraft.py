@@ -3,7 +3,7 @@ from dataclasses import replace
 import memory
 from live_telemetry import Event
 from race_state import Opponent
-from seats.performance import PerformanceEngineer
+from seats.performance import PerformanceEngineer, CornerPass
 from seats.racecraft import Racecraft
 from team_memory import build_profile, facts
 from test_seats import moment, race, near, kinds
@@ -29,8 +29,9 @@ def seat_with_data(my_speeds, his_speeds, steam_id="111"):
     for corner, speed in my_speeds.items():
         performance.my_speeds[corner] = [speed, speed]
     for corner, speed in his_speeds.items():
-        performance.opponents.rows.append((steam_id, "Ann", "GT3", corner, 1, speed))
-        performance.opponents.rows.append((steam_id, "Ann", "GT3", corner, 2, speed))
+        for lap in (1, 2):
+            performance.opponents.rows.append(CornerPass(who=steam_id, driver="Ann", car_class="GT3",
+                                                         car_model=None, corner=corner, lap=lap, min_speed=speed))
     return Racecraft(performance)
 
 
@@ -63,7 +64,8 @@ def test_the_plan_upgrades_once_when_real_data_arrives_then_stays_quiet():
     assert kinds(step(seat, 1.0, opponents=[rival(4, 7.4)])) == ["ATTACK_PLAN"]
     assert step(seat, 2.0, opponents=[rival(4, 7.4)]) == []
     seat.performance.my_speeds["T8 Ascari"] = [130.0, 130.0]
-    seat.performance.opponents.rows += [("111", "Ann", "GT3", "T8 Ascari", 1, 125.0)] * 2
+    seat.performance.opponents.rows += [CornerPass(who="111", driver="Ann", car_class="GT3", car_model=None,
+                                                   corner="T8 Ascari", lap=1, min_speed=125.0)] * 2
     assert step(seat, 3.0, opponents=[rival(4, 7.4)]) == []          # one plan a minute
     assert kinds(step(seat, 70.0, opponents=[rival(4, 7.4)])) == ["ATTACK_PLAN"]
     assert step(seat, 140.0, opponents=[rival(4, 7.4)]) == []

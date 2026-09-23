@@ -4,10 +4,10 @@ weather turning, and the last lap.
 Fuel is measured, never assumed: litres used per lap come from my own laps in this session,
 so the first call waits until two full laps are done.
 """
-import math
 import statistics
 
 from radio import Call, STRATEGY, ENGINEER
+from race_state import laps_to_go
 
 FIRST_CALL_AFTER_LAPS = 2      # need two measured laps before saying anything about fuel
 RECHECK_EVERY_LAPS = 3
@@ -37,15 +37,10 @@ class Strategist:
         self.last_lap_called = False
 
     def laps_left(self, race):
-        me = race.me
-        session = race.session
-        if 0 < session.max_laps < 1000:
-            return max(0, session.max_laps - me.laps)
-        if not self.lap_times:
-            return None
-        lap_time = statistics.median(self.lap_times[-3:])
-        # a timed race: when the clock runs out, the lap you are on is still finished
-        return math.ceil(session.time_remaining / lap_time) + 1
+        lap_time = None
+        if self.lap_times:
+            lap_time = statistics.median(self.lap_times[-3:])
+        return laps_to_go(race, lap_time)
 
     def usage_per_lap(self, readings):
         used = []
@@ -73,17 +68,19 @@ class Strategist:
             if fuel_call is not None:
                 calls.append(fuel_call)
             calls.extend(self.tyre_check(me, now))
+            # laps to go is exact only at the line: mid-lap it would say "last lap" a lap early.
+            # A last lap that starts mid-lap (the leader's flag) is the race engineer's call.
+            laps_left = self.laps_left(race)
+            if laps_left is not None and laps_left <= 1 and not self.last_lap_called:
+                self.last_lap_called = True
+                calls.append(call("LAST_LAP", "Last lap. Bring it home.", now, {}, "Last lap. Bring it home.",
+                                  priority=ENGINEER))
 
         if moment.new_race:
             if race.session.raining >= 0.1 and not self.rain_called:
                 self.rain_called = True
                 calls.append(call("RAIN", f"Rain is starting, severity {race.session.raining}. Grip will drop.",
                                   now, {"rain": race.session.raining}, "Rain's coming. Grip's going away."))
-            laps_left = self.laps_left(race)
-            if laps_left is not None and laps_left <= 1 and not self.last_lap_called and me.laps >= 1:
-                self.last_lap_called = True
-                calls.append(call("LAST_LAP", "Last lap. Bring it home.", now, {}, "Last lap. Bring it home.",
-                                  priority=ENGINEER))
         return calls
 
     def fuel_check(self, race, lap, now):

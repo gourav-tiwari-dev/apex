@@ -260,8 +260,11 @@ class CornerStat:
     min_speed: float|None 
     slow_zone: float|None
     coast: float|None
+    time_s: float|None = None        # time from entering the corner window to leaving it
+    throttle_on: float|None = None   # lap distance where he is back on the power after the slowest point
 
 BRAKE_ON = 0.4
+THROTTLE_ON = 0.5     # "on the power": half throttle after the slowest point (a controller trigger)
 SLOW_ZONE_X = 10
 PEDAL_OFF = 0.05
 
@@ -283,19 +286,32 @@ class CornerStats:
         was = self.corner
         stat = None
         step = 0.0
+        seconds = 0.0
         coast = 0.0
         slow_zone = 0
         if self.prev_time is not None:
-            step = frame.speed_kmh/3.6 * (frame.elapsed_time - self.prev_time)
+            seconds = frame.elapsed_time - self.prev_time
+            step = frame.speed_kmh/3.6 * seconds
         if now is None and was is not None:
             # LEAVING - hand back the row, then forget everything
-            for speed,meters,throttle,brake in self.frames:
+            time_s = 0.0
+            slowest = 0
+            for index, (speed,meters,throttle,brake,seconds,distance) in enumerate(self.frames):
                 if speed <= self.min_speed + SLOW_ZONE_X:
                     slow_zone+= meters
                 if brake <PEDAL_OFF and throttle < PEDAL_OFF:
                     coast+=meters
+                time_s += seconds
+                if speed == self.min_speed:
+                    slowest = index
+            throttle_on = None
+            for speed,meters,throttle,brake,seconds,distance in self.frames[slowest:]:
+                if throttle >= THROTTLE_ON:
+                    throttle_on = distance
+                    break
             stat = CornerStat(self.lap_count, self.corner,
-                              self.brake_onset, self.min_speed,slow_zone,coast)
+                              self.brake_onset, self.min_speed,slow_zone,coast,
+                              round(time_s, 3), throttle_on)
             self.corner = None
             self.lap_count = None
             self.brake_onset = None
@@ -315,7 +331,7 @@ class CornerStats:
             if self.min_speed is None or frame.speed_kmh < self.min_speed:
                 self.min_speed = frame.speed_kmh
             
-            self.frames.append((frame.speed_kmh, step,frame.throttle,frame.brake))
+            self.frames.append((frame.speed_kmh, step,frame.throttle,frame.brake,seconds,real_lap_distance))
             # brake just crossed BRAKE_ON this frame: below it last frame, at or above it now
             brake_crossed = self.prev_brake < BRAKE_ON and frame.brake >= BRAKE_ON
             if self.brake_onset is None and brake_crossed:
@@ -655,6 +671,11 @@ class Recorder:
         self.writer_thread.join()
 
 GAME_PHASE_OVER = 8      # mGamePhase: the session has finished
+# Phase 8 comes when the LEADER takes the flag. On 23 Sep Apex stopped right there, with
+# Gourav still 400 m from his own finish line: every non-leader lost the end of the race.
+# So Apex waits for my own car to finish, then leaves the engineer time to call the result.
+FINISHED_GRACE_S = 10.0
+FLAG_TIMEOUT_S = 420.0   # a car that never takes the flag (parked, crashed out): stop anyway
 
 
 def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None, launch_id=None):
@@ -728,6 +749,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     conn = None
     session_id = None
     saw_running = False
+    flag_seen_at = None
+    finished_at = None
     end_reason = "tape_end" if REPLAY else "stopped_by_driver"
 
     def log_finished_lines():
@@ -768,7 +791,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             if track is None and source.race is not None:
                 track = source.race.session.track
                 session_type = source.race.session.session
-                set_session_track(conn, session_id, track, session_type, source.race.session.game_phase)
+                me = source.race.me
+                set_session_track(conn, session_id, track, session_type, source.race.session.game_phase,
+                                  me.car_class if me else None, me.car_model if me else None)
                 current_corners = corners_for_track(track)
                 # team memory for this track: the habits worth a reminder
                 for habit in memory_facts(conn, "corner_habit", track) + memory_facts(conn, "contact_corner", track):
@@ -866,8 +891,16 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 if source.race.session.game_phase < GAME_PHASE_OVER:
                     saw_running = True
                 if source.race.session.game_phase == GAME_PHASE_OVER and saw_running:
-                    end_reason = "session_over"
-                    break
+                    if flag_seen_at is None:
+                        flag_seen_at = frame.elapsed_time
+                    me = source.race.me
+                    my_race_done = me is None or me.finish_status != 0 or me.in_pits
+                    if my_race_done and finished_at is None:
+                        finished_at = frame.elapsed_time
+                    grace_over = finished_at is not None and frame.elapsed_time - finished_at >= FINISHED_GRACE_S
+                    if grace_over or frame.elapsed_time - flag_seen_at >= FLAG_TIMEOUT_S:
+                        end_reason = "session_over"
+                        break
                 if session_type is not None and source.race.session.session != session_type:
                     end_reason = "session_changed"
                     break

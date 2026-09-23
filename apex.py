@@ -30,7 +30,11 @@ def brief(conn):
     session = latest_session_id(conn) or 0
     contract = load_latest_contract(conn, session+1)
     if contract is not None:
-        line = f"Today's job: {contract['corner']}. Minimum speed from {contract['baseline']} km/h up to {contract['target']} km/h. {contract['focus']}"
+        # no speeds on the radio: he drives by feel (24 Sep). Jobs written before that day
+        # carry a speed in their text, so those get the plain version.
+        line = f"Today's job: {contract['corner']}. Carry more speed through it."
+        if "km/h" not in contract["focus"]:
+            line = f"Today's job: {contract['corner']}. {contract['focus']}"
     else:
         line = "No job yet. Just Drive I m Watching"
     said.append(("performance", "BRIEF_CONTRACT", line))

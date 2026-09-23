@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from openai import OpenAI
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
-from memory import latest_session_id, load_latest_contract, evaluate_contract
+from memory import latest_session_id, load_latest_contract, evaluate_contract, track_of
 from memory import reference_from_race, reference_from_self, save_radio
 from radio import Call, PERFORMANCE, MEMORY
 from seats.setup_engineer import advice_for
@@ -89,7 +89,10 @@ DEBRIEF_PROMPT = (
 
     "'spoken' is read aloud to the driver as he takes his helmet off. Exactly two sentences. "
     "Write numbers as plain digits exactly as they appear in the box, with their unit, for "
-    "example '0.35 s' or '6.3 km/h'. Do not spell numbers out as words and do not round them. "
+    "example '0.35 s'. Do not spell numbers out as words and do not round them. "
+    "NEVER SAY A SPEED in 'spoken': no km/h, no speed values at all. He drives by feel and "
+    "never looks at the speedometer, so a speed means nothing to him. The one number is a "
+    "time from time_lost_s. "
     "No markdown, no brackets, no dashes, no other symbols. Name the corner by its tag, for "
     "example 'Turn 1'. Include exactly one number, so he has a sense of the scale, and no "
     "more. Say what to do in terms of the track and the car, never in terms of a measurement: "
@@ -179,14 +182,14 @@ def verdict_line(contract, grade):
     corner = contract["corner"]
     before = contract["baseline"]
     target = contract["target"]
+    # no speeds: he drives by feel and never looks at the speedo (24 Sep)
     if grade["verdict"] == "insufficient":
-        return f"Not enough clean laps at {corner} to grade last session's job, {grade['laps']} of {contract['min_laps']}."
-    after = grade["result"]
+        return f"The job at {corner} has {grade['laps']} clean laps of {contract['min_laps']} so far. It carries over to the next race."
     if grade["verdict"] == "hit":
-        return f"Last session's job at {corner} is done. You went from {before} km/h to {after} km/h."
+        return f"The job at {corner} is done. You carry the speed through there now."
     if grade["verdict"] == "moved":
-        return f"You moved at {corner}, from {before} km/h to {after} km/h, but the target was {target} km/h."
-    return f"No real change at {corner}, {before} km/h before and {after} km/h now."
+        return f"{corner} is better, not there yet. Keep working it."
+    return f"No real change at {corner} yet. Same job."
 
 def say_and_log(conn, session_id, seat, kind, line):
     # every debrief line is logged, so the DONE check can see which seat spoke
@@ -200,7 +203,8 @@ def reference_for(conn, session_id):
     # Monza keeps the hand-checked reference lap; old sessions have no track and were Monza
     if track is None or "monza" in track.lower():
         return "reference_hymo.json"
-    reference = reference_from_race(conn, session_id)
+    car_class, car_model = conn.execute("SELECT car_class, car_model FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    reference = reference_from_race(conn, session_id, car_class, car_model)
     if reference is None:
         # no other cars recorded (e.g. LMU's own telemetry): measure against your own best
         reference = reference_from_self(conn, track)
@@ -239,13 +243,17 @@ def run_debrief(session_id=None):
     print(f"session {session_id}")
 
    
-    previous = load_latest_contract(conn, session_id)
+    previous = load_latest_contract(conn, session_id, track_of(conn, session_id))
     last_contract = None
+    job_still_open = False
     if previous is not None:
         grade = evaluate_contract(conn, previous, session_id)
         line = verdict_line(previous, grade)
         print(f"verdict: {grade['verdict']} - {line}")
         say_and_log(conn, session_id, "performance", "VERDICT", line)
+        # a job keeps collecting laps across races until it can be graded: replacing it
+        # every race meant it could never be judged
+        job_still_open = grade["verdict"] == "insufficient"
       
         last_contract = {
             "corner":   previous["corner"],
@@ -271,8 +279,12 @@ def run_debrief(session_id=None):
     else:
         print(answer["analysis"])
         say_and_log(conn, session_id, "performance", "DEBRIEF", answer["spoken"])
-        contract = make_contract(pack, answer["spoken"])
-        if contract is None:
+        contract = None
+        if not job_still_open:
+            contract = make_contract(pack, answer["spoken"])
+        if job_still_open:
+            print(f"[job at {previous['corner']} still open: it keeps collecting laps]")
+        elif contract is None:
             print("[no contract: the gap is too small to coach]")
         else:
             save_contract(conn, session_id, contract)

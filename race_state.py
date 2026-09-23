@@ -139,6 +139,7 @@ class Opponent:
     fuel: float | None = None
     last_impact_time: float | None = None
     last_impact_magnitude: float | None = None
+    car_model: str | None = None     # "BMW M4 LMGT3"; tapes before 24 Sep 2026 have none
 
 
 @dataclass
@@ -306,7 +307,46 @@ def read_opponent(scoring, car):
         opponent.fuel = round(car.mFuel, 3)
         opponent.last_impact_time = round(car.mLastImpactET, 3)
         opponent.last_impact_magnitude = round(car.mLastImpactMagnitude, 2)
+        opponent.car_model = text(car.mVehicleModel)
     return opponent
+
+
+def same_class_neighbours(race):
+    """The same-class cars just ahead of and behind me in the race, and the time gaps to them.
+    Only cars on my lap: a lapped car is not a fight."""
+    me = race.me
+    ahead = None
+    behind = None
+    for opponent in race.opponents:
+        if opponent.car_class != me.car_class or opponent.laps_behind_leader != me.laps_behind_leader:
+            continue
+        if opponent.place < me.place and (ahead is None or opponent.place > ahead.place):
+            ahead = opponent
+        if opponent.place > me.place and (behind is None or opponent.place < behind.place):
+            behind = opponent
+    gap_ahead = None
+    gap_behind = None
+    if ahead is not None:
+        gap_ahead = round(me.time_behind_leader - ahead.time_behind_leader, 2)
+    if behind is not None:
+        gap_behind = round(behind.time_behind_leader - me.time_behind_leader, 2)
+    return ahead, gap_ahead, behind, gap_behind
+
+
+def laps_to_go(race, lap_time):
+    """Laps still to drive, counted at the line. A lap race: max laps minus laps done.
+    A timed race: the flag drops when the LEADER first crosses the line after the clock runs
+    out, and I finish when I next cross after that, so the count is
+    ceil((time left + my gap to the leader) / lap time).
+    (23 Sep: the old count added one more lap on top, told him fuel was tight with 1.4 laps
+    of energy spare, and he was told to lift and coast for nothing.)"""
+    me = race.me
+    session = race.session
+    if 0 < session.max_laps < 1000:
+        return max(0, session.max_laps - me.laps)
+    if lap_time is None or lap_time <= 0:
+        return None
+    return math.ceil((session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time)
 
 
 def read_race_snapshot(data):

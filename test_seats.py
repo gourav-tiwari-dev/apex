@@ -188,4 +188,5 @@ def test_fuel_speaks_again_only_when_the_picture_changes():
 def test_last_lap_call():
     strategist = Strategist()
     snapshot = race(10.0, {"max_laps": 10}, {"laps": 9})
-    assert kinds(strategist.update(moment(10.0, snapshot))) == ["LAST_LAP"]
+    assert strategist.update(moment(10.0, snapshot)) == []                 # mid-lap: not counted
+    assert kinds(strategist.update(moment(11.0, snapshot, lap=9, wrapped=True))) == ["LAST_LAP"]

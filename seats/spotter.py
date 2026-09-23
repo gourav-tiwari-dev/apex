@@ -32,6 +32,8 @@ def side_and_overlap(my_pos, my_ori, car):
 
 
 MOVING_KMH = 30.0
+GREEN = 5                     # mGamePhase: racing. The formation lap (3) runs at 70-75 km/h in
+                              # a tight line, and "car left" there is pure noise (24 Sep)
 
 
 def on_track(moment):
@@ -39,6 +41,8 @@ def on_track(moment):
         return False
     race = moment.race
     if race is not None and race.me is not None and race.me.in_pits:
+        return False
+    if race is not None and race.session.game_phase != GREEN:
         return False
     return True
 

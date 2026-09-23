@@ -181,7 +181,11 @@ NEW_COLUMNS = {
                  ("grid", "INTEGER"), ("final_place", "INTEGER"),
                  ("track_limit_strikes", "INTEGER"),
                  ("first_phase", "INTEGER"),     # race phase when Apex first saw the session
-                 ("launch_id", "TEXT")],         # one apex.py launch: practice, quali and race share it
+                 ("launch_id", "TEXT"),          # one apex.py launch: practice, quali and race share it
+                 ("car_class", "TEXT"), ("car_model", "TEXT")],
+    # time through the corner and how it was driven, so a reference can say what to DO
+    "opponent_corners": [("car_model", "TEXT"), ("time_s", "REAL"),
+                         ("brake_onset", "REAL"), ("throttle_on", "REAL")],
     "events":   [("other_car", "TEXT"), ("magnitude", "REAL")],
 }
 
@@ -231,8 +235,15 @@ def save_contract(conn,session_id,contract):
   return cur.lastrowid
 
 
-def load_latest_contract(conn,before_session_id):
-  row = conn.execute("SELECT session_id,corner,focus,metric,baseline,target,min_laps FROM focus_contracts WHERE session_id < ? ORDER BY session_id DESC LIMIT 1",(before_session_id,)).fetchone()
+def load_latest_contract(conn,before_session_id,track=None):
+  """The newest job set before this session. With a track, only a job set at that track:
+  an Arnage job means nothing at Monza."""
+  rows = conn.execute("SELECT session_id,corner,focus,metric,baseline,target,min_laps FROM focus_contracts WHERE session_id < ? ORDER BY session_id DESC",(before_session_id,)).fetchall()
+  row = None
+  for candidate in rows:
+    if track is None or track_of(conn, candidate[0]) == track_key(track):
+      row = candidate
+      break
   if row is None:
     return None
   return {
@@ -261,9 +272,9 @@ def save_rivals(conn,session_id,opponents):
   conn.commit()
 
 def save_opponent_corners(conn,session_id,rows):
-  for steam_id, driver, car_class, corner, lap_count, min_speed in rows:
-    conn.execute("INSERT INTO opponent_corners (session_id,steam_id,driver,car_class,corner,lap_count,min_speed) VALUES (?,?,?,?,?,?,?)",
-      (session_id,steam_id,driver,car_class,corner,lap_count,min_speed))
+  for row in rows:
+    conn.execute("INSERT INTO opponent_corners (session_id,steam_id,driver,car_class,car_model,corner,lap_count,min_speed,time_s,brake_onset,throttle_on) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      (session_id,row.who,row.driver,row.car_class,row.car_model,row.corner,row.lap,row.min_speed,row.time_s,row.brake_onset,row.throttle_on))
   conn.commit()
 
 def save_pass_attempts(conn,session_id,attempts):
@@ -272,9 +283,23 @@ def save_pass_attempts(conn,session_id,attempts):
       (session_id,steam_id,driver,corner,lap_count,outcome))
   conn.commit()
 
-def set_session_track(conn,session_id,track,session_type,first_phase=None):
-  conn.execute("UPDATE sessions SET track = ?, session_type = ?, first_phase = ? WHERE id = ?",(track,session_type,first_phase,session_id))
+def set_session_track(conn,session_id,track,session_type,first_phase=None,car_class=None,car_model=None):
+  conn.execute("UPDATE sessions SET track = ?, session_type = ?, first_phase = ?, car_class = ?, car_model = ? WHERE id = ?",(track,session_type,first_phase,car_class,car_model,session_id))
   conn.commit()
+
+
+def track_key(track):
+  # v1 sessions have no track name: they were all Monza
+  if track is None or "monza" in track.lower():
+    return "monza"
+  return track
+
+
+def track_of(conn, session_id):
+  row = conn.execute("SELECT track FROM sessions WHERE id = ?", (session_id,)).fetchone()
+  if row is None:
+    return track_key(None)
+  return track_key(row[0])
 
 def save_radio(conn,session_id,call,status,line=None,reason=None,latency_ms=None):
   cur = conn.execute("INSERT INTO radio_log (session_id,sim_time,seat,kind,priority,urgent,status,line,reason,conclusion,facts,evidence,latency_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -521,13 +546,21 @@ def build_evidence_pack(conn,reference, session_id):
 
 REFERENCE_LAPS = 2    # one lap of another car is not a reference
 
-def reference_from_race(conn, session_id, car_class=None):
-  """For tracks with no hand-checked reference lap: the fastest same-class car of this
-  race, corner by corner (its median min speed over its laps). None if nobody qualifies."""
-  rows = conn.execute("SELECT driver, car_class, corner, min_speed FROM opponent_corners WHERE session_id = ?",
+def reference_from_race(conn, session_id, car_class=None, car_model=None):
+  """For tracks with no hand-checked reference lap: the fastest car of MY MODEL in this race
+  (else of my class), corner by corner (its median min speed over its laps). A Porsche and
+  a BMW take a hairpin differently (23 Sep). None if nobody qualifies."""
+  rows = conn.execute("SELECT driver, car_class, car_model, corner, min_speed FROM opponent_corners WHERE session_id = ?",
                       (session_id,)).fetchall()
+  same_model = []
+  for row in rows:
+    if car_model is not None and row[2] == car_model:
+      same_model.append(row)
+  pool = rows
+  if same_model:
+    pool = same_model
   speeds = {}
-  for driver, row_class, corner, speed in rows:
+  for driver, row_class, row_model, corner, speed in pool:
     if car_class is not None and row_class != car_class:
       continue
     speeds.setdefault((corner, driver), []).append(speed)
@@ -596,8 +629,22 @@ def load_contract_laps(conn, session_id, corner):
   return [row[0] for row in cur.fetchall()]
 
 
+def contract_laps_so_far(conn, contract, session_id):
+  """Clean laps at the job's corner in EVERY session at that track since the job was set, up
+  to this one. A Le Mans daily race is 3-6 laps (24 Sep), so one race alone could never reach
+  8 and every job read "insufficient" for ever."""
+  track = track_of(conn, contract["session_id"])
+  speeds = []
+  sessions = conn.execute("SELECT id FROM sessions WHERE id > ? AND id <= ? ORDER BY id",
+                          (contract["session_id"], session_id)).fetchall()
+  for (later_session,) in sessions:
+    if track_of(conn, later_session) == track:
+      speeds.extend(load_contract_laps(conn, later_session, contract["corner"]))
+  return speeds
+
+
 def evaluate_contract(conn, contract, session_id):
-  speeds = load_contract_laps(conn, session_id, contract["corner"])
+  speeds = contract_laps_so_far(conn, contract, session_id)
 
   if len(speeds) < contract["min_laps"]:
     return {"verdict": "insufficient", "laps": len(speeds)}

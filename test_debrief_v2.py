@@ -1,4 +1,5 @@
 import debrief
+from seats.performance import CornerPass
 import memory
 from test_team_memory import add_session, add_event
 
@@ -12,7 +13,8 @@ def race_on_a_new_track(tmp_path, monkeypatch):
         memory.save_corner_stat(conn, session, type("S", (), {
             "lap_count": lap, "corner": "Turn 1", "brake_onset": 300.0, "min_speed": 70.0,
             "slow_zone": 40.0, "coast": 5.0})())
-    memory.save_opponent_corners(conn, session, [("111", "Ann", "GT3", "Turn 1", lap, 76.0) for lap in (1, 2, 3)])
+    memory.save_opponent_corners(conn, session, [CornerPass(who="111", driver="Ann", car_class="GT3", car_model=None,
+                                                            corner="Turn 1", lap=lap, min_speed=76.0) for lap in (1, 2, 3)])
     add_event(conn, session, "CONTACT", "Turn 1", lap=1, other_car="111")
     memory.save_pass_attempts(conn, session, [("111", "Ann", "Turn 1", 1, "contact")])
     conn.commit()

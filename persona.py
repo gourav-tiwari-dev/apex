@@ -163,6 +163,9 @@ def gate(line, call, clean=False):
         return False, "asks a question"
     if "*" in line:
         return False, "asterisks would be read aloud"
+    # he drives by feel and never looks at the speedo: a speed on the radio means nothing (24 Sep)
+    if re.search(r"km/h|\bkph\b|\bkmh\b|kilomet|\bmph\b|miles an hour", lowered):
+        return False, "says a speed"
     # a coach never tells a driver not to brake (23 Sep: "No fucking braking at Arnage")
     if re.search(r"\b(no|don'?t|never|stop)\b(\s+\w+)?\s+brak", lowered):
         return False, "tells him not to brake"
@@ -183,7 +186,7 @@ def gate(line, call, clean=False):
 
 # pure number reports stay clean so the numbers are easy to hear; everything else swears
 # (Gourav, 23 Sep 2026: "that part is what makes it closer to Verstappen")
-CLEAN_KINDS = {"GAP_REPORT", "QUALI_LAP", "TRACK_LIMITS", "PENALTY"}
+CLEAN_KINDS = {"GAP_REPORT", "QUALI_LAP", "TRACK_LIMITS", "PENALTY", "PACE_TARGET"}
 
 
 def facts_text(call, clean=False):
