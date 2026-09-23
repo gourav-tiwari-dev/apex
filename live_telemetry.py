@@ -10,7 +10,7 @@ from lmu_data import LMUObjectOut, LMUConstants
 from dataclasses import dataclass,asdict
 from queue import Full, Empty, Queue
 from datetime import datetime
-from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call
+from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals
 from radio import Governor, Budget
 from persona import Persona
 from voice import Voice, RadioDesk
@@ -235,6 +235,8 @@ class Event:
     conclusion: str | None = None
     lap_dist: float=0.0
     lap_count: int=0
+    other_car: str | None = None     # steam id of the other car in a contact
+    magnitude: float | None = None   # how hard an impact was
 
 @dataclass
 class CornerStat:
@@ -462,6 +464,59 @@ class CornerEntryDetection:
 
         return event
 
+CONTACT_NEAR_M = 10.0   # a car this close at the moment of impact is the car you touched
+
+class ContactDetection:
+    """An impact is when the game's last-impact time moves forward.
+    With a car within 10 m it is CONTACT (and we know who), otherwise IMPACT (a wall)."""
+
+    def __init__(self):
+        self.last_seen = None
+
+    def nearest_car(self, frame, near):
+        if near is None or frame.pos is None:
+            return None
+        nearest = None
+        nearest_distance = CONTACT_NEAR_M
+        for car in near.cars:
+            dx = car.x - frame.pos[0]
+            dy = car.y - frame.pos[1]
+            dz = car.z - frame.pos[2]
+            distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+            if distance <= nearest_distance:
+                nearest = car
+                nearest_distance = distance
+        return nearest
+
+    def update(self, frame, near, race):
+        if frame.last_impact_time is None:
+            return None                     # an old tape: no impact data at all
+        if self.last_seen is None:
+            # whatever impact the game remembers happened before this session started
+            self.last_seen = frame.last_impact_time
+            return None
+        if frame.last_impact_time == self.last_seen:
+            return None
+        self.last_seen = frame.last_impact_time
+
+        corner = corner_at(current_corners, frame.lap_dist) or "the straight"
+        magnitude = frame.last_impact_magnitude
+        other = self.nearest_car(frame, near)
+        if other is None:
+            return Event(kind="IMPACT", sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,
+                         corner=corner, lap_dist=frame.lap_dist, magnitude=magnitude,
+                         conclusion=f"hit something at {corner}, no car near")
+        driver = "a car"
+        steam_id = str(other.id)
+        if race is not None:
+            for opponent in race.opponents:
+                if opponent.id == other.id:
+                    driver = opponent.driver
+                    steam_id = str(opponent.steam_id)
+        return Event(kind="CONTACT", sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,
+                     corner=corner, lap_dist=frame.lap_dist, magnitude=magnitude,
+                     other_car=steam_id, conclusion=f"contact with {driver} at {corner}")
+
 class OffTrackDetector(Detector):
     def __init__(self):
         super().__init__()
@@ -575,6 +630,14 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     learning_track = False
     track_learner = TrackMapLearner()
 
+    contacts = ContactDetection()
+    # the result of the session, read from the race snapshots as they arrive
+    grid = None
+    final_place = None
+    first_limit_steps = None
+    last_limit_steps = None
+    last_opponents = []
+
     governor = Governor()
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
     voice = Voice(out_loud)
@@ -623,6 +686,15 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     print(f"[track: {track} - new track, learning its corners from your laps]")
                 else:
                     print(f"[track: {track} - corner map loaded]")
+            if source.new_race and source.race.me is not None:
+                me = source.race.me
+                if grid is None:
+                    grid = me.grid
+                if first_limit_steps is None:
+                    first_limit_steps = me.track_limit_steps
+                last_limit_steps = me.track_limit_steps
+                final_place = me.place
+                last_opponents = source.race.opponents
             track_learner.add(lap_count, real_lap_distance, frame.brake, frame.throttle, frame.accel_lat)
             if learning_track and lap_counter.wrapped:
                 learned = track_learner.corners(lap_count)
@@ -642,6 +714,11 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 validity = 0
 
             # the seats raise calls ...
+            contact = contacts.update(frame, source.near, source.race)
+            if contact is not None:
+                contact.lap_count = lap_count
+                print(contact)
+                save_event(conn, session_id, contact)
             for detector in detectors:
                 event = detector.update(frame)
                 if event:
@@ -702,6 +779,12 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             log_finished_lines()
             ended_at = datetime.now().isoformat(timespec="seconds")
             finish_session(conn, session_id, decision_hash, end_reason, ended_at)
+            if final_place is not None:
+                strikes = None
+                if first_limit_steps is not None:
+                    strikes = last_limit_steps - first_limit_steps
+                save_session_result(conn, session_id, grid, final_place, strikes)
+                save_rivals(conn, session_id, last_opponents)
             print_corner_report(conn, session_id)
             print(f"session {session_id} ended: {end_reason}   LLM spend ~Rs {budget.spent_rs:.2f}")
         if conn is not None:

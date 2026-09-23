@@ -96,6 +96,44 @@ SCHEMA = """
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
 
+  -- v2: every car I raced against, one row per session, for the rival dossier
+  CREATE TABLE IF NOT EXISTS rivals_seen (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    steam_id      TEXT,                      -- the stable identity; names can change
+    driver        TEXT    NOT NULL,
+    car_class     TEXT,
+    best_lap      REAL,
+    final_place   INTEGER,
+    UNIQUE (session_id, driver),
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
+
+  -- v2 TEAM MEMORY. A cache rebuilt from the drives by team_memory.build_profile().
+  -- A fact exists only with evidence: at least one row in profile_evidence (checked in code,
+  -- and every evidence row must point at a real event / lap / session - foreign keys).
+  CREATE TABLE IF NOT EXISTS profile_facts (
+    id            INTEGER PRIMARY KEY,
+    kind          TEXT    NOT NULL,          -- corner_habit, lap_one, contact_corner, rival, clean_race
+    track         TEXT,
+    subject       TEXT    NOT NULL,          -- a corner, a driver, or "me"
+    value         REAL,
+    occurrences   INTEGER NOT NULL,
+    drives        INTEGER NOT NULL,          -- how many separate drives it showed up in
+    summary       TEXT    NOT NULL           -- plain English, what a seat may say
+  );
+
+  CREATE TABLE IF NOT EXISTS profile_evidence (
+    id            INTEGER PRIMARY KEY,
+    fact_id       INTEGER NOT NULL,
+    event_id      INTEGER,
+    session_id    INTEGER,
+    CHECK (event_id IS NOT NULL OR session_id IS NOT NULL),
+    FOREIGN KEY (fact_id) REFERENCES profile_facts (id),
+    FOREIGN KEY (event_id) REFERENCES events (id),
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );
+
   -- v2: the cost of every LLM call, so the Rs 5 cap is checked against real numbers
   CREATE TABLE IF NOT EXISTS llm_calls (
     id            INTEGER PRIMARY KEY,
@@ -112,7 +150,10 @@ SCHEMA = """
 # v2 columns added to tables that already exist in older databases
 NEW_COLUMNS = {
     "sessions": [("track", "TEXT"), ("session_type", "INTEGER"),
-                 ("end_reason", "TEXT"), ("ended_at", "TEXT")],
+                 ("end_reason", "TEXT"), ("ended_at", "TEXT"),
+                 ("grid", "INTEGER"), ("final_place", "INTEGER"),
+                 ("track_limit_strikes", "INTEGER")],
+    "events":   [("other_car", "TEXT"), ("magnitude", "REAL")],
 }
 
 def connect_db(db_path='apex.db'):
@@ -142,7 +183,7 @@ def start_session(conn,started_at,tape_path,replay_speed):
   return cur.lastrowid
 
 def save_event(conn,session_id,event):
-  cur = conn.execute("INSERT INTO events (session_id,kind,sim_time,speed_kmh,corner,conclusion,lap_dist,lap_count) VALUES (?,?,?,?,?,?,?,?)",(session_id,event.kind,event.sim_time,event.speed_kmh,event.corner,event.conclusion,event.lap_dist,event.lap_count))
+  cur = conn.execute("INSERT INTO events (session_id,kind,sim_time,speed_kmh,corner,conclusion,lap_dist,lap_count,other_car,magnitude) VALUES (?,?,?,?,?,?,?,?,?,?)",(session_id,event.kind,event.sim_time,event.speed_kmh,event.corner,event.conclusion,event.lap_dist,event.lap_count,event.other_car,event.magnitude))
   conn.commit()
   return cur.lastrowid
 
@@ -178,6 +219,16 @@ def load_latest_contract(conn,before_session_id):
 
 def finish_session(conn,session_id,hash,end_reason=None,ended_at=None):
   cur = conn.execute("UPDATE sessions SET event_hash = ?, end_reason = ?, ended_at = ? WHERE id = ?",(hash,end_reason,ended_at,session_id))
+  conn.commit()
+
+def save_session_result(conn,session_id,grid,final_place,track_limit_strikes):
+  conn.execute("UPDATE sessions SET grid = ?, final_place = ?, track_limit_strikes = ? WHERE id = ?",(grid,final_place,track_limit_strikes,session_id))
+  conn.commit()
+
+def save_rivals(conn,session_id,opponents):
+  for o in opponents:
+    conn.execute("INSERT OR REPLACE INTO rivals_seen (session_id,steam_id,driver,car_class,best_lap,final_place) VALUES (?,?,?,?,?,?)",
+      (session_id,str(o.steam_id),o.driver,o.car_class,o.best_lap,o.place))
   conn.commit()
 
 def set_session_track(conn,session_id,track,session_type):

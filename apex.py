@@ -14,6 +14,7 @@ from memory import latest_session_id, load_latest_contract, connect_db
 from tts import speak
 from debrief import for_speaking, run_debrief
 from live_telemetry import run_session, TAPE_PATH
+from team_memory import build_profile
 
 RACE_SESSIONS = range(10, 14)      # mSession 10-13 are race sessions
 
@@ -39,6 +40,8 @@ def race_night(clean):
     brief(conn)
     while True:
         session_id = run_session(False, None, clean=clean)
+        # every drive teaches the team memory, before anything reads from it
+        build_profile(conn)
         end_reason, session_type = how_it_ended(conn, session_id)
         if session_type in RACE_SESSIONS and end_reason == "session_over":
             run_debrief()
@@ -53,6 +56,9 @@ def replay_night(tape, speed, clean):
     brief(conn)
     conn.close()
     run_session(True, speed, tape, clean=clean)
+    conn = connect_db("apex.db")
+    build_profile(conn)
+    conn.close()
     run_debrief()
 
 
