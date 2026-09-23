@@ -15,6 +15,10 @@ from radio import Governor, Budget
 from persona import Persona
 from voice import Voice, RadioDesk
 from seats.performance import call_from_event
+from seats import Moment
+from seats.spotter import Spotter
+from seats.race_engineer import RaceEngineer
+from seats.strategist import Strategist
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict
 from track_map import MONZA_CORNERS, corner_at, corners_for_track, TrackMapLearner, save_map
 
@@ -638,6 +642,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     last_limit_steps = None
     last_opponents = []
 
+    # the seats that watch the whole race (the performance seat rides on the detectors)
+    seats = [Spotter(), RaceEngineer(), Strategist()]
+
     governor = Governor()
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
     voice = Voice(out_loud)
@@ -729,8 +736,16 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     if call is not None:
                         governor.offer(call)
 
+            corner_now = corner_at(current_corners, real_lap_distance)
+            moment = Moment(frame=frame, race=source.race, new_race=source.new_race, near=source.near,
+                            lap_count=lap_count, lap_wrapped=lap_counter.wrapped, corner=corner_now,
+                            track=track)
+            for seat in seats:
+                for call in seat.update(moment):
+                    governor.offer(call)
+
             # ... and the radio decides what goes on air, on sim time only
-            in_corner = corner_at(current_corners, real_lap_distance) is not None or frame.brake > 0.2
+            in_corner = corner_now is not None or frame.brake > 0.2
             on_air = governor.step(frame.elapsed_time, in_corner)
             if on_air is not None:
                 if on_air.urgent:
