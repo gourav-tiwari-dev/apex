@@ -23,3 +23,4 @@ architect and decides, and Claude (AI) implements. This file is the map for lear
 | 2026-09-23 | New CarState fields default to None | Claude | Gourav's rule: old tapes must keep working |
 | 2026-09-23 | Opponents matched by mID over the whole telemetry array, never by position | Claude (measured 19 Aug) | the telemetry order differs from the scoring order; matching by position pairs the wrong cars silently |
 | 2026-09-23 | audit_tape.py marks every new field LIVE / CONSTANT / DEAD before any seat relies on it | Claude | several LMU fields are known dead (forces, load); find out from data, not in a race |
+| 2026-09-23 | record_race.py: tape-only recording (no voice, no LLM, no db), stops itself at session end | Claude | a 15-lap dev tape through apex.py would spend about Rs 3 on v1 coach lines nobody needs |
