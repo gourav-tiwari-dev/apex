@@ -76,6 +76,10 @@ HOW TO ANSWER
    say what you CAN see and answer from that.
 5. The race maths is DONE for you in race_picture ("race_maths", "fight"): use those numbers,
    never do your own arithmetic, so every answer in a race agrees with the last one.
+   In a fight, race_picture has a "team_call" for that car (DEFEND / LET BY / ATTACK / FOLLOW).
+   That is the pit wall's decision: say it first, then WHERE and WHY. Never reverse it, never
+   water it down, never argue against it in the same answer.
+   Never promise a later call ("I'll tell you where"): nothing will call him back. Say where NOW.
 6. A missing fact stays missing: if a pace or lap time says "not known", say you don't have it.
    Never fill it in ("same pace") from nothing.
 7. Answer the question he asked: asked for a lap time, give the lap time first. Mention the
@@ -192,6 +196,33 @@ def race_maths(side, gap, their_lap, my_lap, laps_to_go):
     return maths
 
 
+# The fight call is the team's decision, made by code; the model explains it and says where.
+# 24 Sep, his situation tests: on the LAST LAP with a car 0.2 s behind and only 0.3 s a lap
+# quicker, the model said "that fight is lost, let it go" - and in the sandwich it said "you
+# won't hold that" and "hold P5" in one breath. Left to itself it leans to "let it go".
+LET_BY_QUICKER_S = 1.0        # a car this much quicker a lap gets by anyway (when laps remain)
+ATTACK_QUICKER_S = 0.2        # this much quicker than the car ahead, in a fight: go
+
+
+def team_call(side, gap, their_lap, my_lap, laps_to_go):
+    """DEFEND / LET BY / ATTACK / FOLLOW for a car within a second, or None outside a fight."""
+    if gap >= NOT_A_FIGHT_S:
+        return None
+    last_lap = laps_to_go is not None and laps_to_go <= 1
+    if side == "behind":
+        if last_lap:
+            return "DEFEND: last lap, every place counts. One line, no weaving, no moving in the braking zone."
+        if their_lap is not None and my_lap is not None and my_lap - their_lap >= LET_BY_QUICKER_S:
+            quicker = round(my_lap - their_lap, 1)
+            return (f"LET BY: {quicker} s a lap quicker, it gets by anyway. Hold a predictable line, "
+                    "don't cover the inside, never lift in its path, then stay with it.")
+        return "DEFEND: similar pace, this place is yours to keep. One line into its strong corner, no weaving."
+    if their_lap is not None and my_lap is not None and their_lap - my_lap >= ATTACK_QUICKER_S:
+        return ("ATTACK: you are quicker. Set it up on the exit of a corner where you carry more speed "
+                "and pass into the next braking zone. One clean move, no lunge.")
+    return "FOLLOW: not quicker than this car. Stay close, pressure, wait for the mistake, no lunge."
+
+
 # Directions go to the model in WORDS, never as a signed number: on 24 Sep it read
 # "quicker_per_lap_s: -0.4" as "0.4 a lap quicker" when the car was 0.4 slower.
 def pace_words(their_lap, my_lap):
@@ -267,6 +298,9 @@ class Snapshot:
             if theirs is not None and mine is not None:
                 entry["their_pace"] = pace_words(theirs, mine)
                 entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
+            call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
+            if call is not None:
+                entry["team_call"] = call
             else:
                 entry["their_pace"] = "not known: no lap time posted yet. Say so, never guess it."
             if gap >= NOT_A_FIGHT_S:

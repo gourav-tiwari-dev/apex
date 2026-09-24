@@ -189,3 +189,15 @@ def test_a_judgment_anywhere_in_the_question_goes_to_the_agent():
     assert needs_agent("realistically which position can we get")     # 24 Sep: got a bare "P5."
     assert needs_agent("why am I slow at Arnage")
     assert not needs_agent("what position")
+
+
+def test_the_fight_call_is_made_by_code():
+    from agent import team_call
+    # 24 Sep: last lap, 0.2 s behind, only 0.3 s a lap quicker - the model said "let it go"
+    assert team_call("behind", 0.2, 239.7, 240.0, 1).startswith("DEFEND: last lap")
+    assert team_call("behind", 0.3, 239.8, 240.0, 3).startswith("DEFEND: similar pace")
+    assert team_call("behind", 0.5, 238.0, 240.0, 3).startswith("LET BY: 2.0 s a lap quicker")
+    assert team_call("behind", 0.5, 238.0, 240.0, 1).startswith("DEFEND")       # even quicker cars, last lap
+    assert team_call("ahead", 0.4, 240.6, 240.0, 3).startswith("ATTACK")
+    assert team_call("ahead", 0.4, 240.1, 240.0, 3).startswith("FOLLOW")
+    assert team_call("behind", 1.7, 239.0, 240.0, 3) is None                    # not a fight yet
