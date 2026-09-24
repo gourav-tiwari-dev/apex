@@ -28,6 +28,9 @@ PLAN_TTL_S = 20.0
 # replaying the 23 Sep race with the radio fixed gave 21 plans in 27 minutes: one a minute is
 # as much as a driver can use
 PLAN_GAP_S = 60.0
+# live 24 Sep: "lost the place" was raised 30 times in 6 minutes of lap 1, the start shuffle.
+# Lap 1 is the lap-one habit's job; after it, one composure call a minute at most.
+LOST_PLACE_GAP_S = 60.0
 RACE_SESSIONS = range(10, 14)
 GREEN = 5                     # no plans on the formation lap or behind the safety car
 RESET_TTL_S = 15.0
@@ -51,6 +54,7 @@ class Racecraft:
         self.gap_behind = None
         self.last_place = None
         self.last_plan_time = None
+        self.last_lost_place_time = None
         self.offs = []                     # sim times of my recent off-tracks
         self.attempts = []                 # finished: (steam_id, driver, corner, lap, outcome)
         self.open_attempt = None           # [steam_id, driver, corner, lap, started, place_then]
@@ -171,7 +175,11 @@ class Racecraft:
                     self.plans_said.add(key)
                     calls.append(plan)
             # composure when a place is lost (E5)
-            if self.last_place is not None and me.place > self.last_place:
+            lost_place = self.last_place is not None and me.place > self.last_place
+            settled = moment.lap_count >= 2 and (self.last_lost_place_time is None
+                                                 or now - self.last_lost_place_time >= LOST_PLACE_GAP_S)
+            if lost_place and settled:
+                self.last_lost_place_time = now
                 calls.append(self.reset("PASSED", "Lost the place. Calm him down: stay within 1 second, the plan still works, no lunge to get it straight back.",
                                         {"stay_within_s": 1}, "Lost it. Stay close. No lunge.", now))
             self.last_place = me.place

@@ -99,7 +99,7 @@ class CloneVoice:
             self.failed = True             # not set up on this machine: edge-tts, quietly
             return
         log = open(os.path.join(HERE, "voice_server.log"), "w", encoding="utf8")
-        env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1")
+        env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1", APEX_PARENT_PID=str(os.getpid()))
         self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=log, text=True, encoding="utf8", env=env, cwd=cwd)
         threading.Thread(target=self.listen, daemon=True).start()
@@ -251,13 +251,18 @@ class Voice:
     def render(self, text, voice=ENGINEER_VOICE, mood="dry"):
         """Text to audio bytes: the cloned voice if it is up and quick enough, else edge-tts
         (about 1.3 s). None when printing instead of speaking."""
+        return self.render_with_engine(text, voice, mood)[0]
+
+    def render_with_engine(self, text, voice=ENGINEER_VOICE, mood="dry"):
+        """(audio, which voice made it): "clone" or "standard". Logged per line (24 Sep: he
+        heard three different voices and nothing said how often each one spoke)."""
         if not self.out_loud:
-            return None
+            return None, None
         if self.clone is not None:
             audio = self.clone.render(speakable(text, clone=True), mood)
             if audio is not None:
-                return audio
-        return asyncio.run(render(speakable(text), voice))
+                return audio, "clone"
+        return asyncio.run(render(speakable(text), voice)), "standard"
 
     def play(self, audio, text):
         """Blocks until the line is done. Waits for an urgent clip to finish first, never talks
@@ -339,7 +344,12 @@ class RadioDesk:
         audio = None
         if line is not None:
             try:
-                audio = self.voice.render(line, mood=mood_of(call.kind))
+                if hasattr(self.voice, "render_with_engine"):
+                    audio, engine = self.voice.render_with_engine(line, mood=mood_of(call.kind))
+                else:
+                    audio, engine = self.voice.render(line, mood=mood_of(call.kind)), None
+                if engine:
+                    call.facts["voice"] = engine
             except Exception as error:
                 return {"line": line, "audio": None, "reason": f"voice render failed: {error.__class__.__name__}"}
         return {"line": line, "audio": audio, "reason": reason}

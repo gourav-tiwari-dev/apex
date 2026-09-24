@@ -419,6 +419,8 @@ class Snapshot:
                 entry["gap_trend"] = trend_words(side, before[1] - gap)
             theirs, source = recent_lap(car)
             mine, _ = recent_lap(me)
+            if mine is None:
+                mine = engineer.my_lap       # Apex's own clock when the game posts -1
             if theirs is not None:
                 entry["their_lap"] = f"{lap_text(theirs)} ({source})"
             if theirs is not None and mine is not None:
@@ -551,6 +553,11 @@ class Snapshot:
             for key, entry in self.corners.items():
                 if wanted and (wanted in key or key in wanted):
                     return entry
+            # a misheard name ("four chickens" for Ford Chicanes, 24 Sep) is still that corner
+            import difflib
+            close = difflib.get_close_matches(wanted, list(self.corners), n=1, cutoff=0.55)
+            if close:
+                return dict(self.corners[close[0]], heard_as=wanted)
             return {"error": f"no data for corner '{wanted}'", "known": sorted(self.corners)}
         return {"error": f"no tool {name}"}
 

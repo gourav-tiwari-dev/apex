@@ -159,6 +159,7 @@ class Ears:
         self.device = None
         self.jobs = Queue()
         self.results = Queue()
+        self.track_words = ""        # the corner names of the track he is on
         threading.Thread(target=self.work, daemon=True).start()
 
     def load(self):
@@ -176,8 +177,10 @@ class Ears:
         print(f"[push-to-talk ready on the {self.device}]")
         while True:
             audio, released_at = self.jobs.get()
-            segments, _ = self.model.transcribe(audio, language="en", beam_size=1,
-                                                vad_filter=False, initial_prompt=RADIO_WORDS)
+            # live 24 Sep: "Ford Chicanes" was heard as "four chickens". The track's own corner
+            # names go into the prompt, so Whisper expects them.
+            segments, _ = self.model.transcribe(audio, language="en", beam_size=1, vad_filter=False,
+                                                initial_prompt=(RADIO_WORDS + " " + self.track_words).strip())
             text = " ".join(segment.text for segment in segments).strip()
             took = round((time.perf_counter() - released_at) * 1000)
             self.results.put(Heard(text, round(len(audio) / SAMPLE_RATE, 1), took))
@@ -203,6 +206,9 @@ class PushToTalk:
         self.ears = Ears()
         self.pressed_at = None
         self.verbose = verbose     # --test prints every step, so a silent failure shows where
+
+    def set_track_words(self, corner_names):
+        self.ears.track_words = ", ".join(corner_names) + "." if corner_names else ""
 
     def poll(self):
         change = self.controller.poll()

@@ -41,7 +41,7 @@ SETTINGS = {"top_k": 5, "top_p": 1, "temperature": 0.9, "text_split_method": "cu
 # 24 Sep, live: "I can't even hear the Verstappen voice, it's so low compared to the game".
 # The clone comes out at about 0.08-0.10 RMS (edge-tts is mastered far louder), so every line
 # is lifted to a radio-loud level and a soft limiter keeps the peaks from cracking.
-TARGET_RMS = 0.25
+TARGET_RMS = 0.16            # 0.25 cracked ("Max's voice is cracking now"): the limiter was driven into distortion
 LIMIT = 0.98
 
 
@@ -53,7 +53,24 @@ def radio_loud(audio):
     return (numpy.tanh(audio / LIMIT) * LIMIT).astype("float32")      # soft limit, no hard clip
 
 
+def watch_parent():
+    """Live 24 Sep: two voice servers were still running after Apex had gone, holding GPU
+    memory the next race needed. The server now ends itself the moment its parent is gone."""
+    import psutil
+    import threading
+    parent = int(os.environ.get("APEX_PARENT_PID", "0"))
+    if not parent:
+        return
+
+    def watch():
+        while psutil.pid_exists(parent):
+            time.sleep(2)
+        os._exit(0)
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def main():
+    watch_parent()
     answers = sys.stdout
     sys.stdout = sys.stderr            # GPT-SoVITS prints a lot: keep stdout for answers only
     import numpy
@@ -99,6 +116,7 @@ def main():
             answer = {"id": request["id"], "error": f"{error.__class__.__name__}: {error}"}
         answers.write(json.dumps(answer) + "\n")
         answers.flush()
+    os._exit(0)                        # stdin closed: Apex is done; do not wait on library threads
 
 
 if __name__ == "__main__":

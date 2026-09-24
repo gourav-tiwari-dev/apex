@@ -1,7 +1,7 @@
 import time
 import math
 import threading
-import json,gzip,hashlib
+import json,gzip,hashlib,zlib
 
 
 
@@ -21,7 +21,7 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
-from answers import Answers, needs_agent
+from answers import Answers, needs_agent, intent_of
 from agent import RaceAgent, Snapshot
 import ptt as push_to_talk
 from team_memory import facts as memory_facts
@@ -235,6 +235,9 @@ class ReplaySource:
                     self.near = None
 
 
+        except (EOFError, zlib.error):
+            # a tape cut off when Apex was killed (24 Sep): everything up to the cut is real
+            print("[the tape ends early - it was cut off; replayed up to the cut]")
         except KeyboardInterrupt:
             print("\nStopping...")
             print("Closed connection.")
@@ -658,15 +661,21 @@ class Recorder:
         self.q.put(frame)
 
     def _writer_loop(self):
+        written = 0
         with gzip.open(self.path,"wt") as f:
             while True:
                 item = self.q.get()
                 if item is None:
                     break
-                
+
                 as_dict = asdict(item)
                 as_text= json.dumps(as_dict)
                 f.write(as_text + "\n")
+                written += 1
+                # every few seconds, a sync point: if Apex is killed, everything up to here
+                # still reads back (24 Sep: a force-stopped run left a tape cut mid-write)
+                if written % 600 == 0:
+                    f.flush()
 
     
     def stop(self):
@@ -827,6 +836,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 set_session_track(conn, session_id, track, session_type, source.race.session.game_phase,
                                   me.car_class if me else None, me.car_model if me else None)
                 current_corners = corners_for_track(track)
+                if talk is not None and current_corners:
+                    talk.set_track_words([c["name"] for c in current_corners])
                 # team memory for this track: the habits worth a reminder
                 for habit in memory_facts(conn, "corner_habit", track) + memory_facts(conn, "contact_corner", track):
                     recall.corner_habits.setdefault(habit["subject"], habit)
@@ -926,6 +937,14 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 for result in agent.finished():
                     for spent in result["costs"]:
                         save_llm_call(conn, session_id, "agent", spent)
+                    heard_text = result["call"].facts.get("heard", "")
+                    gave_up = result["call"].template.startswith(("No clean answer", "Radio's lagging, mate. Ask me again"))
+                    if gave_up and intent_of(heard_text) is not None and source.race is not None:
+                        # live 24 Sep: "what times do I need to catch the car ahead?" got "no clean
+                        # answer" while the quick lane had the lap time. It speaks instead.
+                        quick = answers.answer(heard_text, source.race, lap_count, frame.elapsed_time)
+                        quick.facts["agent_gave_up"] = result["call"].template
+                        result["call"] = quick
                     print(f"[agent: {result['call'].template}  ({result['call'].facts['seconds']} s)]")
                     governor.offer(result["call"])
                     desk.prepare(result["call"])

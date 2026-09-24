@@ -87,6 +87,8 @@ class RaceEngineer:
         self.gaps_at_line = {}        # "ahead" / "behind" -> (identity, gap) at the last line
         self.to_go_at_line = None     # laps to go as counted at the last line
         self.flag_called = False
+        self.line_time = None         # sim time of the last line crossing
+        self.my_lap = None            # his last lap, the game's or measured by Apex
         self.finish_called = False
         self.last_said_lap = {}       # kind -> lap it was last said
 
@@ -164,6 +166,10 @@ class RaceEngineer:
 
         # who is catching whom, and the lap times that matter, at every line in a race
         racing = moment.session_type in RACE_SESSIONS and phase == GREEN and not me.in_pits
+        if moment.lap_wrapped:
+            from seats.strategist import measured_lap
+            self.my_lap = measured_lap(me.last_lap, self.line_time, now) or self.my_lap
+            self.line_time = now
         if moment.lap_wrapped and racing and moment.lap_count >= 1:
             calls.extend(self.race_picture(race, moment.lap_count, now))
 
@@ -175,8 +181,7 @@ class RaceEngineer:
 
     def race_picture(self, race, lap, now):
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
-        my_lap = race.me.last_lap if race.me.last_lap > 0 else None
-        to_go = laps_to_go(race, my_lap)
+        to_go = laps_to_go(race, self.my_lap)
         self.to_go_at_line = to_go
         final_lap = None
         if to_go is not None:

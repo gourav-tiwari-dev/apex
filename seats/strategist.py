@@ -24,6 +24,24 @@ def call(kind, conclusion, now, facts, template, priority=STRATEGY):
                 conclusion=conclusion, facts=facts, template=template)
 
 
+SHORTEST_LAP_S = 30.0
+LONGEST_LAP_S = 900.0
+
+
+def measured_lap(game_lap, line_time, now):
+    """The lap he just finished: the game's time, or Apex's own clock between two line
+    crossings when the game posts -1 (an invalid lap). Live 24 Sep: laps 1-4 all came back
+    -1, so fuel and pace stayed "unknown" the whole race."""
+    if game_lap > 0:
+        return game_lap
+    if line_time is None:
+        return None
+    lap = now - line_time
+    if SHORTEST_LAP_S <= lap <= LONGEST_LAP_S:
+        return round(lap, 3)
+    return None
+
+
 class Strategist:
     def __init__(self):
         self.fuel_at_line = []         # fuel in the tank each time I crossed the line
@@ -36,6 +54,7 @@ class Strategist:
         self.rain_called = False
         self.last_lap_called = False
         self.fuel_now = None           # the latest fuel picture, for "how's the fuel?" on the radio
+        self.line_time = None          # sim time when he last crossed the line
 
     def laps_left(self, race):
         lap_time = None
@@ -63,8 +82,10 @@ class Strategist:
         if moment.lap_wrapped and moment.lap_count >= 1:
             self.fuel_at_line.append(me.fuel)
             self.energy_at_line.append(me.virtual_energy)
-            if me.last_lap > 0:
-                self.lap_times.append(me.last_lap)
+            lap_time = measured_lap(me.last_lap, self.line_time, now)
+            if lap_time is not None:
+                self.lap_times.append(lap_time)
+            self.line_time = now
             self.fuel_now = self.fuel_picture(race)
             fuel_call = self.fuel_check(race, moment.lap_count, now)
             if fuel_call is not None:
