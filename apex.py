@@ -19,6 +19,7 @@ from memory import save_radio
 from radio import Call, MEMORY
 from seats.setup_engineer import advice_for
 from datetime import datetime
+from voice import Voice
 
 RACE_SESSIONS = range(10, 14)      # mSession 10-13 are race sessions
 
@@ -65,13 +66,24 @@ def how_it_ended(conn, session_id):
     return row[0], row[1]
 
 
-def race_night(clean):
+def race_night(clean, record=False):
     conn = connect_db("apex.db")
+    # the cloned voice starts loading now, while the brief is said; --record keeps it off, so a
+    # clip never carries it (24 Sep, his condition: "just my laptop, for my racing")
+    voice = Voice(out_loud=True, clone=not record)
     said = brief(conn)
     launch_id = datetime.now().isoformat(timespec="seconds")
+    try:
+        race_sessions(conn, clean, launch_id, voice, said)
+    finally:
+        voice.close()
+        conn.close()
+
+
+def race_sessions(conn, clean, launch_id, voice, said):
     first = True
     while True:
-        session_id = run_session(False, None, clean=clean, launch_id=launch_id)
+        session_id = run_session(False, None, clean=clean, launch_id=launch_id, voice=voice)
         if first:
             log_brief(conn, session_id, said)
             first = False
@@ -83,7 +95,6 @@ def race_night(clean):
         if end_reason == "stopped_by_driver":
             break
         print("[waiting for the next session - Ctrl+C when you are done]")
-    conn.close()
 
 
 def replay_night(tape, speed, clean):
@@ -105,8 +116,10 @@ if __name__ == "__main__":
     parser.add_argument("--speed", type=float, default=None,
                         help="replay speed: 1 = real time, leave out for max speed")
     parser.add_argument("--clean", action="store_true", help="no swearing")
+    parser.add_argument("--record", action="store_true",
+                        help="recording a clip: the standard voice only, never the cloned one")
     args = parser.parse_args()
     if args.replay:
         replay_night(args.replay, args.speed, args.clean)
     else:
-        race_night(args.clean)
+        race_night(args.clean, args.record)

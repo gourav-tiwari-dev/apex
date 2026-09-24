@@ -690,7 +690,8 @@ def contacts_by_car(conn, session_id):
     return counts
 
 
-def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None, launch_id=None):
+def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None, launch_id=None,
+                voice=None):
     """One LMU session, start to finish. Returns the database id of the session.
 
     out_loud: speak through the speakers (default) or print lines (fast replays, tests).
@@ -763,7 +764,11 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     if talk is not None:
         agent = RaceAgent(budget, clean)
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
-    voice = Voice(out_loud)
+    # one voice for the whole launch when apex.py passes it in: the cloned voice takes about
+    # 30 s to load and warm up, which must not happen again between qualifying and the race
+    own_voice = voice is None
+    if own_voice:
+        voice = Voice(out_loud, clone=not REPLAY)
     if persona is None:
         persona = Persona(clean=clean)
     desk = RadioDesk(voice, persona, budget, clean)
@@ -963,6 +968,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         if talk is not None:
             talk.close()
         desk.stop()
+        if own_voice:
+            voice.close()
         if not REPLAY:
             tele_recorder.stop()
         if learning_track and track:

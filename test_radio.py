@@ -72,7 +72,8 @@ class FakeVoice:
     def __init__(self):
         self.said = []
 
-    def render(self, text, voice=None):
+    def render(self, text, voice=None, mood="dry"):
+        self.moods = getattr(self, "moods", []) + [mood]
         return text
 
     def play(self, audio, text):
