@@ -62,7 +62,9 @@ ALWAYS_FIXED = {"QUIET", "RADIO_ON"}
 
 # "can I catch him?" is a judgment, not a lookup: on 24 Sep the fixed list answered it with
 # the bare gap. Questions that ask what to DO go to the agent however short they are.
-JUDGMENT_STARTS = ("can i", "should i", "do i", "what do i", "how do i", "what should", "is it worth", "will i")
+# ...anywhere in the question: "realistically which position can we get" got a bare "P5"
+JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "how do i", "why",
+                  "is it worth", "will i", "will we", "realistic", "what if")
 
 
 def needs_agent(text):
@@ -71,8 +73,10 @@ def needs_agent(text):
         return False
     if intent is None:
         return True
-    if clean(text).startswith(JUDGMENT_STARTS):
-        return True
+    heard = " " + clean(text) + " "
+    for words in JUDGMENT_WORDS:
+        if " " + words + " " in heard:
+            return True
     return len(clean(text).split()) > FIXED_ANSWER_MAX_WORDS
 
 

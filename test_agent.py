@@ -183,3 +183,9 @@ def test_a_lap_the_game_did_not_post_falls_back_to_the_best_lap_and_says_so():
     picture = Snapshot(now, 5, 9000.0, [], RaceEngineer(), Strategist(), performance, Racecraft(performance),
                        Governor(), [], {}).picture
     assert picture["ahead"]["their_pace"].startswith("not known")
+
+
+def test_a_judgment_anywhere_in_the_question_goes_to_the_agent():
+    assert needs_agent("realistically which position can we get")     # 24 Sep: got a bare "P5."
+    assert needs_agent("why am I slow at Arnage")
+    assert not needs_agent("what position")
