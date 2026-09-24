@@ -237,3 +237,20 @@ def test_a_slow_model_still_gets_the_team_call_through():
             raise TimeoutError("provider took 60 s")      # 24 Sep: 60 s, 26 s, 1.3 s in a row
     result = ask(RaceAgent(Budget(), client=Slow()), "defend or let go?", snapshot_at_lap_4())
     assert result["call"].template.startswith("Radio's lagging, mate. Team says DEFEND: last lap")
+
+
+def test_the_fallback_states_the_facts_that_could_change_the_call():
+    from agent import fallback
+    snapshot = snapshot_at_lap_4()
+    snapshot.contacts_in_fight = 2                     # the car behind has hit him
+    assert fallback(snapshot).endswith("Careful: that car has already hit you.")
+
+
+def test_a_follow_up_carries_the_last_exchange():
+    model = ScriptedModel(Message(content="CALL: DEFEND\nDefend, mate. One line."),
+                          Message(content="CALL: DEFEND\nStill defend, mate. One line, no weaving."))
+    agent = RaceAgent(Budget(), client=model)
+    ask(agent, "The car behind is all over me, what do I do?", snapshot_at_lap_4())
+    ask(agent, "But it keeps hitting me.", snapshot_at_lap_4())
+    second_question = model.sent[1][1]["content"]
+    assert 'Just before this he asked: "The car behind is all over me' in second_question

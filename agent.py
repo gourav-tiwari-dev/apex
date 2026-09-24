@@ -42,6 +42,7 @@ MAX_TOKENS = 1500
 # and an answer came 38 s after the question. On track that is worse than no answer, so each
 # model call gets 10 s, and past that the team's own call is said at once (see fallback()).
 MODEL_TIMEOUT_S = 10
+FOLLOW_UP_WINDOW_S = 60.0     # a question within a minute of the last one may be a follow-up
 
 AGENT_PROMPT = """You are APEX, Gourav's race engineer. He just asked you something on the radio,
 mid-session, in an online ranked race in Le Mans Ultimate. He drives a GT3 on a controller.
@@ -167,12 +168,26 @@ HOT_TYRE_C = 105              # the strategist's "cooking" line
 OTHER_CLASS_NEAR_M = 400      # an other-class car this close behind is about to arrive
 
 
+FALLBACK_WARNINGS = {
+    "contact": "Careful: that car has already hit you.",
+    "damage": "And the car's damaged.",
+    "class": "Faster class coming through behind.",
+    "tyres": "Tyres are cooked.",
+}
+
+
 def fallback(snapshot):
-    """What the radio says when the model is too slow: the team's call, as it is."""
+    """What the radio says when the model is too slow: the team's call, plus the facts that
+    could change it - stated, not decided (24 Sep: "but he keeps hitting me" got a bare DEFEND
+    while the provider was down)."""
     for side in ("behind", "ahead"):
         call = snapshot.team_calls.get(side)
         if call:
-            return f"Radio's lagging, mate. Team says {call}"
+            words = f"Radio's lagging, mate. Team says {call}"
+            for reason in ("contact", "damage", "class", "tyres"):
+                if reason in snapshot.override_evidence():
+                    words += " " + FALLBACK_WARNINGS[reason]
+            return words
     return "Radio's lagging, mate. Ask me again."
 
 
@@ -600,6 +615,7 @@ class RaceAgent:
         self.budget = budget
         self.clean = clean
         self.thinking = thinking
+        self.last = None            # the last question and answer, for follow-ups
         self.client = client
         self.jobs = Queue()
         self.results = Queue()
@@ -617,6 +633,13 @@ class RaceAgent:
     def ask(self, question, snapshot, sim_time):
         self.jobs.put((question, snapshot, sim_time, time.perf_counter()))
 
+    def earlier(self, sim_time):
+        """The last exchange, if it was recent: "but he keeps hitting me" only makes sense after
+        the question before it (24 Sep)."""
+        if self.last is None or sim_time - self.last["sim_time"] > FOLLOW_UP_WINDOW_S:
+            return ""
+        return f'Just before this he asked: "{self.last["question"]}" and you answered: "{self.last["answer"]}"'
+
     def finished(self):
         done = []
         while True:
@@ -629,10 +652,11 @@ class RaceAgent:
         while True:
             question, snapshot, sim_time, asked_at = self.jobs.get()
             try:
-                answer, info = self.think(question, snapshot)
+                answer, info = self.think(question, snapshot, self.earlier(sim_time))
             except Exception as error:
                 answer, info = "Lost the data on that one. Ask me again.", {"error": error.__class__.__name__, "costs": []}
             info["seconds"] = round(time.perf_counter() - asked_at, 2)
+            self.last = {"question": question, "answer": answer, "sim_time": sim_time}
             call = Call(seat="race_engineer", kind="ANSWER_AGENT", sim_time=sim_time,
                         priority=RACE_CONTROL, ttl=ANSWER_TTL_S, conclusion=answer, template=answer,
                         facts={"heard": question, "tools": info.get("tools", []), "rounds": info.get("rounds"),
@@ -653,7 +677,7 @@ class RaceAgent:
                  "seconds": round(time.perf_counter() - started, 3), "cost_rs": round(cost, 5)}
         return response.choices[0].message, spent
 
-    def think(self, question, snapshot):
+    def think(self, question, snapshot, earlier=""):
         if not self.budget.allows_llm():
             return "Over the radio budget for this race. Stick to the basics, mate.", {"costs": []}
         system = AGENT_PROMPT + ("\n" + CLEAN_RULE if self.clean else "")
@@ -662,7 +686,7 @@ class RaceAgent:
         # (1 answer in 4 swore on 24 Sep), the same lesson as the persona's per-line flag
         voice = VOICE_REMINDER_CLEAN if self.clean else VOICE_REMINDER
         messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": f"{question}\n\n(Race picture right now, from race_picture: {picture})\n\n{voice}"}]
+                    {"role": "user", "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})\n\n{voice}"}]
         costs = []
         tools_used = ["race_picture"]
         tool_texts = [picture]
