@@ -38,6 +38,10 @@ MAX_ROUNDS = 4                 # tool rounds before it must answer
 MAX_WORDS = 55
 ANSWER_TTL_S = 30.0            # an answer about the race 30 s ago is out of date
 MAX_TOKENS = 1500
+# 24 Sep: the provider went erratic - three identical calls took 60 s (timed out), 26 s, 1.3 s -
+# and an answer came 38 s after the question. On track that is worse than no answer, so each
+# model call gets 10 s, and past that the team's own call is said at once (see fallback()).
+MODEL_TIMEOUT_S = 10
 
 AGENT_PROMPT = """You are APEX, Gourav's race engineer. He just asked you something on the radio,
 mid-session, in an online ranked race in Le Mans Ultimate. He drives a GT3 on a controller.
@@ -161,6 +165,15 @@ CALL_WORDS = ("DEFEND", "LET BY", "ATTACK", "FOLLOW")
 OVERRIDE_REASONS = ("damage", "contact", "class", "tyres")
 HOT_TYRE_C = 105              # the strategist's "cooking" line
 OTHER_CLASS_NEAR_M = 400      # an other-class car this close behind is about to arrive
+
+
+def fallback(snapshot):
+    """What the radio says when the model is too slow: the team's call, as it is."""
+    for side in ("behind", "ahead"):
+        call = snapshot.team_calls.get(side)
+        if call:
+            return f"Radio's lagging, mate. Team says {call}"
+    return "Radio's lagging, mate. Ask me again."
 
 
 def split_call(raw):
@@ -598,7 +611,7 @@ class RaceAgent:
             from dotenv import load_dotenv
             load_dotenv(".env")
             self.client = OpenAI(base_url="https://aicredits.in/v1",
-                                 api_key=os.environ["AICREDITS_API_KEY"], timeout=30, max_retries=0)
+                                 api_key=os.environ["AICREDITS_API_KEY"], timeout=MODEL_TIMEOUT_S, max_retries=0)
         return self.client
 
     def ask(self, question, snapshot, sim_time):
@@ -656,7 +669,12 @@ class RaceAgent:
         refused = None
         # tool rounds, then the answer, then at most one rewrite
         for round_number in range(1, MAX_ROUNDS + 3):
-            message, spent = self.model_turn(messages)
+            try:
+                message, spent = self.model_turn(messages)
+            except Exception as error:
+                # slow or down: the decision still gets through, from code
+                return fallback(snapshot), {"costs": costs, "tools": tools_used, "rounds": None,
+                                            "refused": f"model {error.__class__.__name__}", "call": "TEAM"}
             costs.append(spent)
             if message.tool_calls and round_number <= MAX_ROUNDS:
                 messages.append(message.model_dump(exclude_none=True))

@@ -226,3 +226,14 @@ def test_an_unbacked_override_ends_in_the_honest_line_not_on_the_radio():
                           Message(content="CALL: LET BY | OVERRIDE: damage\nLet Chabbi Zino go."))
     result = ask(RaceAgent(Budget(), client=model), "defend or let go?", snapshot_at_lap_4())
     assert result["call"].template == "No clean answer on that one, mate. Ask it another way."
+
+
+def test_a_slow_model_still_gets_the_team_call_through():
+    class Slow:
+        def __init__(self):
+            self.chat = self
+            self.completions = self
+        def create(self, **request):
+            raise TimeoutError("provider took 60 s")      # 24 Sep: 60 s, 26 s, 1.3 s in a row
+    result = ask(RaceAgent(Budget(), client=Slow()), "defend or let go?", snapshot_at_lap_4())
+    assert result["call"].template.startswith("Radio's lagging, mate. Team says DEFEND: last lap")
