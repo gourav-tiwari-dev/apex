@@ -132,3 +132,10 @@ def test_rear_snap_needs_braking_lock_and_rotation_the_corner_does_not_explain()
     assert detector.is_triggered(snapping) is True
     assert detector.is_triggered(replace(snapping, steering=None)) is False    # old tapes
     assert detector.is_triggered(replace(snapping, brake=0.0)) is False        # not braking
+
+
+def test_points_too_far_apart_are_different_moments_and_are_not_compared():
+    # Porsche Curves, 24 Sep: 240 m between power-on points became "51 car lengths"
+    mine = {"brake_onset": 11400.0, "min_speed": 170.0, "throttle_on": 12245.0}
+    theirs = {"brake_onset": 11400.0, "min_speed": 170.0, "throttle_on": 12005.0}
+    assert what_to_change(mine, theirs, 15.0) is None

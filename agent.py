@@ -33,7 +33,9 @@ from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go
 
 MAX_ROUNDS = 4                 # tool rounds before it must answer
-MAX_WORDS = 45
+# asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
+# and rewritten, and the rewrite lost the swearing and cost a whole extra round
+MAX_WORDS = 55
 ANSWER_TTL_S = 30.0            # an answer about the race 30 s ago is out of date
 MAX_TOKENS = 1500
 
@@ -43,8 +45,16 @@ Safety rating matters: contact costs him rating. From his own words: in close ra
 hasty and commits too early (my_habits has the measured numbers).
 
 YOUR VOICE: Max Verstappen's attitude in the engineer's seat, with GP Lambiase's precision.
-Blunt, short, plain words, call him "mate". Swear like Max does - at the situation or other
-drivers, never at Gourav - unless told to stay clean. Commands, not suggestions.
+Blunt, short, plain words, call him "mate". Commands, not suggestions. Contempt for the
+situation and the other cars, never for Gourav. Dry sarcasm when it's bad, "simply lovely"
+when it's perfect. Aggressive but TIMED: never "give up", always WHERE and WHEN.
+
+SWEAR IN THIS ANSWER, at least once, the way Max does on the radio - fuck, fucking, shit,
+bloody, damn - aimed at the situation or the other cars, NEVER at Gourav. Words in full,
+never with asterisks. Examples of the voice:
+  "Let Zino go, mate. A fucking second a lap quicker, you won't hold that. Clean exit, then chase Kossman."
+  "No. 3 seconds with 3 laps left is fucking fantasy. Hold P5, defend one line into the Esses."
+  "Understeer on entry at Arnage, mate. Brake a touch earlier, trail it in, stop fighting the bloody wheel."
 
 HOW TO ANSWER
 1. Get the facts with the tools first. Never guess a gap, a lap time, a lap count or someone's
@@ -67,15 +77,17 @@ HOW TO ANSWER
 7. Answer the question he asked: asked for a lap time, give the lap time first. Mention the
    car ahead or behind ONLY when it changes what he should do (on 24 Sep a tyre question got a
    warning about the car behind tacked on: noise).
-8. Handling questions (understeer, oversteer, the rear stepping out): Apex does not measure the
-   car's balance yet. Say so in a few words, then give the standard driver fix for the phase
+8. Handling questions (understeer, oversteer, the rear stepping out): the corner tool has a
+   measured "balance" per phase (entry, mid, exit) once Apex has 3 laps there - use it, and
+   if it disagrees with what he feels, say what the data shows. Without it, say Apex has not
+   measured that corner yet, then give the standard driver fix for the phase
    he names - entry: brake a touch earlier and in a straighter line, trail the brake to keep
    the nose loaded, less steering; mid-corner: be patient, wait for the car to turn before
    the throttle; exit: straighten the wheel before full throttle. Use the corner data only if
    it agrees; never answer a balance question with an unrelated speed diagnosis.
 
 THE SPOKEN ANSWER (it is read aloud to him while he drives)
-- At most 3 short sentences, at most 40 words. The call first.
+- At most 3 short sentences, about 35 words. The call first.
 - NEVER say a speed or km/h: he drives by feel. Use time, laps, gaps, corners, car lengths.
 - Every number must come from a tool result or from his question. Write numbers as digits.
 - His position is ONLY race_picture "place" (on 24 Sep an answer said P5 when he was P4:
@@ -84,7 +96,11 @@ THE SPOKEN ANSWER (it is read aloud to him while he drives)
 - No questions back. No "maybe", "try", "consider", "think", "perhaps", "manage", "back off".
 - No asterisks, no lists, no markdown."""
 
-CLEAN_RULE = "Stay clean: no swearing at all in this answer."
+CLEAN_RULE = "OVERRIDE: stay clean. No swearing at all in this answer, whatever the examples say."
+VOICE_REMINDER = ("Answer ONLY this question, in Max's voice: blunt, 'mate', and SWEAR in this answer "
+                  "(fuck, fucking, shit, bloody), aimed at the situation or the other cars, never at Gourav. "
+                  "About 35 words.")
+VOICE_REMINDER_CLEAN = "Answer ONLY this question, in Max's voice: blunt, 'mate', no swearing. About 35 words."
 
 TOOLS = [
     {"name": "race_picture",
@@ -295,6 +311,10 @@ class Snapshot:
             if timed:
                 entry["my_best_s"] = round(min(timed), 2)
                 entry["my_last_s"] = round(timed[-1], 2)
+            measured = performance.balance.corner_balance(corner)
+            if measured is not None:
+                from balance import describe
+                entry["balance"] = describe(measured)
             if corner in rival:
                 gap, _, fastest, (change, lengths) = rival[corner]
                 from seats.performance import advice_text
@@ -392,7 +412,7 @@ def check_answer(text, known_numbers, clean=False):
         return False, "empty"
     lowered = text.lower()
     if len(text.split()) > MAX_WORDS:
-        return False, f"too long: at most 40 words"
+        return False, f"too long: keep it to about 35 words"
     if "?" in text:
         return False, "asks a question back"
     if "*" in text or "\n-" in text:
@@ -490,8 +510,11 @@ class RaceAgent:
             return "Over the radio budget for this race. Stick to the basics, mate.", {"costs": []}
         system = AGENT_PROMPT + ("\n" + CLEAN_RULE if self.clean else "")
         picture = json.dumps(without_empty(snapshot.picture))
+        # the voice goes right next to the question: in the system prompt alone it got lost
+        # (1 answer in 4 swore on 24 Sep), the same lesson as the persona's per-line flag
+        voice = VOICE_REMINDER_CLEAN if self.clean else VOICE_REMINDER
         messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": f"{question}\n\n(Race picture right now, from race_picture: {picture})"}]
+                    {"role": "user", "content": f"{question}\n\n(Race picture right now, from race_picture: {picture})\n\n{voice}"}]
         costs = []
         tools_used = ["race_picture"]
         tool_texts = [picture]
@@ -520,6 +543,6 @@ class RaceAgent:
                 break                   # one rewrite only
             refused = reason
             messages.append({"role": "assistant", "content": text})
-            messages.append({"role": "user", "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules."})
+            messages.append({"role": "user", "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {voice}"})
         return ("No clean answer on that one, mate. Ask it another way.",
                 {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused})

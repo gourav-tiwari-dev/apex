@@ -89,6 +89,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--lap", type=int, default=4)
     parser.add_argument("--tape", default=DEFAULT_TAPE)
+    parser.add_argument("--clean", action="store_true", help="no swearing")
     args = parser.parse_args()
 
     print(f"Replaying {args.tape} silently up to lap {args.lap}...")
@@ -105,8 +106,9 @@ def main():
         return
     voice = Voice(out_loud=True)
     budget = Budget(cap_rs=5.0)
-    agent = RaceAgent(budget)
-    answers = Answers(seats["Governor"], seats["RaceEngineer"], seats["Strategist"], seats["PerformanceEngineer"])
+    agent = RaceAgent(budget, args.clean)
+    answers = Answers(seats["Governor"], seats["RaceEngineer"], seats["Strategist"], seats["PerformanceEngineer"],
+                      args.clean)
     print("\nHold R1 and ask anything. Ctrl+C to stop.\n")
     try:
         while True:

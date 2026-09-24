@@ -18,6 +18,26 @@ from race_state import same_class_neighbours, laps_to_go
 ANSWER_TTL_S = 10.0
 DEFAULT_QUIET_LAPS = 2
 
+# The fast lane has no model in it, so the Verstappen voice is written here by hand (24 Sep:
+# "I need the outputs from the engineer in the same aggressive swearing Verstappen persona").
+# The number comes first so it is easy to hear; the attitude comes after. Swearing is aimed at
+# the situation or the other cars, never at him. Each intent takes turns through its lines.
+# (swearing line, clean line)
+CLOSERS = {
+    "GAP_AHEAD": [("Go fucking get them.", "Go get them."), ("Reel that car in, mate.", "Reel that car in, mate."),
+                  ("Hunt them down. No fucking mercy.", "Hunt them down.")],
+    "GAP_BEHIND": [("Keep them in the fucking mirrors.", "Keep them in the mirrors."),
+                   ("Don't give them a bloody sniff.", "Don't give them a sniff.")],
+    "PACE_TO_CATCH": [("Simple as that. Fucking go.", "Simple as that. Go."),
+                      ("Every lap, mate. No excuses.", "Every lap, mate. No excuses.")],
+    "FUEL": [("Stop worrying about the fucking fuel.", "Stop worrying about the fuel."),
+             ("Tank's not your problem, mate.", "Tank's not your problem, mate.")],
+    "LAPS_LEFT": [("Head down, mate.", "Head down, mate."), ("Bring this fucking thing home.", "Bring it home.")],
+    "POSITION": [("Let's fucking do better than that.", "Let's do better than that."),
+                 ("Plenty of race left, mate.", "Plenty of race left, mate.")],
+    "LAP_TIME": [("Simply lovely. Again.", "Simply lovely. Again."), ("More of that shit, mate.", "More of that, mate.")],
+}
+
 INTENTS = {
     "GAP_AHEAD": ["gap", "the gap", "ahead", "in front", "car in front", "gap ahead", "gap in front", "gap to the car ahead"],
     "GAP_BEHIND": ["behind", "car behind", "gap behind", "who is behind", "whos behind", "gap back"],
@@ -101,11 +121,22 @@ class Answers:
     """Builds the answer. Reads the seats it needs, never changes what they will say next,
     except for the governor's quiet laps."""
 
-    def __init__(self, governor, engineer, strategist, performance):
+    def __init__(self, governor, engineer, strategist, performance, clean=False):
         self.governor = governor
         self.engineer = engineer
         self.strategist = strategist
         self.performance = performance
+        self.clean = clean
+        self.said = {}            # intent -> how many times answered: the closers take turns
+
+    def closer(self, intent):
+        lines = CLOSERS.get(intent)
+        if not lines:
+            return ""
+        turn = self.said.get(intent, 0)
+        self.said[intent] = turn + 1
+        swearing, clean = lines[turn % len(lines)]
+        return " " + (clean if self.clean else swearing)
 
     def answer(self, text, race, lap, now):
         intent = intent_of(text)
@@ -113,7 +144,7 @@ class Answers:
         if race is None or race.me is None:
             words = "No race data yet."
         elif intent is None:
-            words = "Didn't get that. Say again."
+            words = "Didn't get that, mate. Say again."
         elif intent == "FUEL":
             seat = "strategist"
             words = self.fuel()
@@ -123,12 +154,16 @@ class Answers:
         elif intent == "QUIET":
             laps = laps_asked(text)
             self.governor.quiet_until_lap = lap + laps
-            words = f"Copy. Quiet for {laps} laps. Spotter stays on."
+            words = f"Fine, I'll shut up for {laps} laps. Spotter stays on."
         elif intent == "RADIO_ON":
             self.governor.quiet_until_lap = None
-            words = "Radio's back."
+            words = "Radio's back, mate."
         else:
             words = getattr(self, intent.lower())(race)
+        # the attitude line; "stop worrying about the fuel" only when the fuel IS fine
+        if intent in CLOSERS and race is not None and race.me is not None:
+            if intent != "FUEL" or "fine" in words:
+                words += self.closer(intent)
         return Call(seat=seat, kind="ANSWER_" + (intent or "UNHEARD"), sim_time=now,
                     priority=RACE_CONTROL, ttl=ANSWER_TTL_S, conclusion=words, template=words,
                     facts={"heard": text}, asked=True, phrase=False)

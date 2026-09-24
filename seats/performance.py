@@ -18,6 +18,7 @@ from radio import Call, ENGINEER, PERFORMANCE, MEMORY
 from track_map import corner_at
 from race_state import identity
 from seats.spotter import CAR_LENGTH_M
+from balance import BalanceMeter, FIX
 
 # the kinds said on the radio. HARD_BRAKING, CORNER_ENTRY and THROTTLE_LIFT are recorded, never
 # said: v1's "coasting" is any throttle under 50% with no brake, which is correct part-throttle
@@ -45,6 +46,9 @@ POWER_DIFF_M = 10.0
 # a brake point 129 m apart (Indianapolis, 23 Sep) is not the same braking: one car tapped the
 # brake for the kink before it. Past this, the two brake points are not compared at all.
 MAX_BRAKE_DIFF_M = 40.0
+# the same for the power-on point: in the 1.4 km Porsche Curves window "back on the power
+# after the slowest point" can land in a different curve, and the agent said "51 car lengths"
+MAX_POWER_DIFF_M = 40.0
 BRAKE_ON = 0.4               # same thresholds as my own corner stats
 THROTTLE_ON = 0.5
 MAX_SAMPLE_GAP_M = 200.0     # two snapshots further apart than this cannot be interpolated
@@ -247,6 +251,8 @@ def what_to_change(mine, theirs, brake_margin_m):
     power_diff = None
     if mine.get("throttle_on") is not None and theirs.get("throttle_on") is not None:
         power_diff = mine["throttle_on"] - theirs["throttle_on"]   # > 0: they power earlier
+        if abs(power_diff) > MAX_POWER_DIFF_M:
+            power_diff = None
 
     # braking later AND slower in the middle: in too deep, the classic overdriving
     if brake_diff is not None and roll_diff is not None \
@@ -292,6 +298,8 @@ class PerformanceEngineer:
         self.praise_given = 0
         self.opponents = OpponentCorners()
         self.my_model = None
+        self.balance = BalanceMeter()        # understeer / oversteer, from his own laps
+        self.balance_said = set()            # corners already told about their balance
 
     def call_for_event(self, event, event_id):
         return call_from_event(event, event_id)
@@ -305,6 +313,7 @@ class PerformanceEngineer:
             self.my_model = race.me.car_model
             self.opponents.update(race, moment.corners, race.me.car_class)
 
+        self.balance.update(moment.frame, moment.corner if moment.lap_count >= 1 else None)
         stat = moment.corner_stat
         if stat is not None and stat.min_speed is not None and stat.lap_count >= 1:
             self.corner_finished(stat)
@@ -383,11 +392,11 @@ class PerformanceEngineer:
         return {"corner": corner, "gap_s": gap, "driver": fastest["driver"],
                 "advice": advice_text(change, lengths), "car_lengths": lengths}
 
-    def rival_call(self, now, skip_corner):
+    def rival_call(self, now, skip_corners):
         """The corner where the fastest car of my model gains most on me, once per corner."""
         biggest = None
         for item in self.rival_gaps():
-            if item[1] in self.fastest_said or item[1] == skip_corner:
+            if item[1] in self.fastest_said or item[1] in skip_corners:
                 continue
             biggest = item
             break
@@ -410,15 +419,41 @@ class PerformanceEngineer:
             conclusion=f"{driver}, {who}, is {gap} s quicker than you through {corner}. {advice}",
             facts=facts, template=f"{corner}: {driver} finds {tenths_words(gap)} there. {advice}")
 
+    def balance_call(self, now, skip):
+        """The corner whose balance is most off his normal, once per corner per session
+        (24 Sep: "add the understeer and oversteer discovery")."""
+        worst = None
+        for corner in self.balance.passes:
+            if corner in self.balance_said or corner in skip:
+                continue
+            problems = self.balance.problems(corner)
+            if problems and (worst is None or problems[0][2] > worst[1][2]):
+                worst = (corner, problems[0])
+        if worst is None:
+            return None
+        corner, (phase, kind, how_far) = worst
+        self.balance_said.add(corner)
+        fix = FIX[(phase, kind)]
+        return Call(
+            seat="performance", kind="BALANCE", sim_time=now, priority=PERFORMANCE,
+            ttl=CORNER_CALL_TTL_S,
+            conclusion=f"{corner}: {fix} Measured every lap: the car rotates {round(how_far * 100)} percent off his normal there.",
+            facts={"corner": corner, "phase": phase, "problem": kind},
+            template=f"{corner}: {fix}")
+
     def lap_finished(self, moment, now):
         calls = []
         own = self.own_best_call(now)
         if own is not None:
             calls.append(own)
-        skip = None
+        said = set()
         if own is not None:
-            skip = own.facts["corner"]
-        rival = self.rival_call(now, skip)
+            said.add(own.facts["corner"])
+        balance = self.balance_call(now, said)
+        if balance is not None:
+            calls.append(balance)
+            said.add(balance.facts["corner"])
+        rival = self.rival_call(now, said)
         if rival is not None:
             calls.append(rival)
         calls = calls[:MAX_CORNER_CALLS_PER_LAP]

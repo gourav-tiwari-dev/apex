@@ -755,7 +755,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
 
     governor = Governor()
     # push-to-talk (M9): only live, and Apex races on without it if it is not set up
-    answers = Answers(governor, engineer, strategist, performance)
+    answers = Answers(governor, engineer, strategist, performance, clean)
     talk = None
     agent = None
     if not REPLAY:
