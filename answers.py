@@ -53,6 +53,22 @@ def intent_of(text):
     return best
 
 
+# the fixed list answers short questions; anything longer is a real question for the agent
+# ("the car behind is diving at me, he's 2 seconds faster, defend or let him go?" contains
+# "behind" but is not asking for the gap)
+FIXED_ANSWER_MAX_WORDS = 7
+ALWAYS_FIXED = {"QUIET", "RADIO_ON"}
+
+
+def needs_agent(text):
+    intent = intent_of(text)
+    if intent in ALWAYS_FIXED:
+        return False
+    if intent is None:
+        return True
+    return len(clean(text).split()) > FIXED_ANSWER_MAX_WORDS
+
+
 def laps_asked(text):
     """ "quiet for 3 laps" -> 3. """
     match = re.search(r"(\d+)\s*lap", clean(text))

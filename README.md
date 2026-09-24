@@ -73,6 +73,15 @@ python ptt.py --learn            # once, controller plugged in: press R1
 python ptt.py --test             # hold R1 and talk: what it heard, how fast, which question
 ```
 
+Anything longer or off the list goes to the **race agent** (`agent.py`): "Copy. Stand by.",
+then a model with six read-only tools (race picture, any driver, his habits, a corner, the car,
+the corners ahead) looks at a still picture of the race taken the moment he asked, makes one
+call and gives the reason. Measured at lap 4 of a real race: 2.1-3.4 s and Rs 0.14-0.26 a
+question, thinking off. Its answers pass their own gate: numbers only from the data or his
+question, no speeds, no he/she for other drivers, one rewrite, then an honest "no clean answer".
+Asked "he's 2 seconds faster, defend or let him go?", it checked the data first: "1 second a
+lap quicker, 2 laps left... give it a clean exit."
+
 ## How this was built
 
 - **v1 (July - September 2026, tag `v1.0`) was hand-built by me.** I learned Python on it and

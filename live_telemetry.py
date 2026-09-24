@@ -21,7 +21,8 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
-from answers import Answers
+from answers import Answers, needs_agent
+from agent import RaceAgent, Snapshot
 import ptt as push_to_talk
 from team_memory import facts as memory_facts
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict, identity
@@ -680,6 +681,15 @@ FINISHED_GRACE_S = 10.0
 FLAG_TIMEOUT_S = 420.0   # a car that never takes the flag (parked, crashed out): stop anyway
 
 
+def contacts_by_car(conn, session_id):
+    """Contacts this session, per other car, for the agent's driver tool."""
+    counts = {}
+    for other_car, count in conn.execute("SELECT other_car, COUNT(*) FROM events WHERE session_id = ? AND kind = 'CONTACT' GROUP BY other_car",
+                                         (session_id,)):
+        counts[other_car] = count
+    return counts
+
+
 def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None, launch_id=None):
     """One LMU session, start to finish. Returns the database id of the session.
 
@@ -747,8 +757,11 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     # push-to-talk (M9): only live, and Apex races on without it if it is not set up
     answers = Answers(governor, engineer, strategist, performance)
     talk = None
+    agent = None
     if not REPLAY:
         talk = push_to_talk.start_if_set_up()
+    if talk is not None:
+        agent = RaceAgent(budget, clean)
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
     voice = Voice(out_loud)
     if persona is None:
@@ -787,6 +800,11 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             recall.lap_one = lap_one_facts[0]
         for rival_fact in memory_facts(conn, "rival"):
             racecraft.rivals[rival_fact["subject"]] = rival_fact["summary"]
+        # everything team memory knows about him, for the agent's my_habits tool
+        team_habits = []
+        for kind in ("lap_one", "corner_habit", "pass_attempts", "clean_race", "rival"):
+            for fact in memory_facts(conn, kind):
+                team_habits.append(fact["summary"])
         voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
 
         # GUESSED — mLapInvalidated never observed True (n=33485)
@@ -877,11 +895,27 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             governor.lap = lap_count
             if talk is not None:
                 for heard in talk.poll():
+                    if needs_agent(heard.text) and source.race is not None and source.race.me is not None:
+                        # a real question: the agent looks at a still picture of the race
+                        snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,
+                                            engineer, strategist, performance, racecraft, governor,
+                                            team_habits, contacts_by_car(conn, session_id))
+                        agent.ask(heard.text, snapshot, frame.elapsed_time)
+                        voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
+                        print(f"[asked the agent: {heard.text!r}]")
+                        continue
                     answer = answers.answer(heard.text, source.race, lap_count, frame.elapsed_time)
                     answer.facts["transcribe_ms"] = heard.transcribe_ms
                     print(f"[asked: {heard.text!r} -> {answer.kind}: {answer.template}]")
                     governor.offer(answer)
                     desk.prepare(answer)
+            if agent is not None:
+                for result in agent.finished():
+                    for spent in result["costs"]:
+                        save_llm_call(conn, session_id, "agent", spent)
+                    print(f"[agent: {result['call'].template}  ({result['call'].facts['seconds']} s)]")
+                    governor.offer(result["call"])
+                    desk.prepare(result["call"])
             on_air = governor.step(frame.elapsed_time, in_corner)
             if on_air is not None:
                 if on_air.urgent:

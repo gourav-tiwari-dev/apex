@@ -38,6 +38,7 @@ BANK_LINES = {
     "NOT_HERE":       (ENGINEER_VOICE, "Not here. Wait for it."),
     "RADIO_CHECK":    (ENGINEER_VOICE, "Radio check. I'm with you."),
     "LLM_OFFLINE":    (ENGINEER_VOICE, "Engineer's gone quiet. You know what to do."),
+    "STAND_BY":       (ENGINEER_VOICE, "Copy. Stand by."),
 }
 
 
@@ -85,6 +86,18 @@ class Voice:
             return False
         self.pygame.mixer.stop()          # any other urgent clip
         self.pygame.mixer.music.stop()    # the engineer mid-sentence
+        sound.play()
+        return True
+
+    def play_bank_if_free(self, key, fallback_text):
+        """A short acknowledgement ("Copy. Stand by."): only when nothing else is playing,
+        so it never cuts off the spotter."""
+        if not self.out_loud:
+            print(f"  RADIO: {fallback_text}")
+            return True
+        sound = self.bank.get(key)
+        if sound is None or self.pygame.mixer.get_busy() or self.pygame.mixer.music.get_busy():
+            return False
         sound.play()
         return True
 
