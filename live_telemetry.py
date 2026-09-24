@@ -761,9 +761,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     agent = None
     if not REPLAY:
         talk = push_to_talk.start_if_set_up()
-    if talk is not None:
-        agent = RaceAgent(budget, clean)
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
+    if talk is not None:
+        agent = RaceAgent(budget, clean)      # after the budget: it spends from it (24 Sep crash)
     # one voice for the whole launch when apex.py passes it in: the cloned voice takes about
     # 30 s to load and warm up, which must not happen again between qualifying and the race
     own_voice = voice is None
