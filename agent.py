@@ -77,8 +77,14 @@ HOW TO ANSWER
 5. The race maths is DONE for you in race_picture ("race_maths", "fight"): use those numbers,
    never do your own arithmetic, so every answer in a race agrees with the last one.
    In a fight, race_picture has a "team_call" for that car (DEFEND / LET BY / ATTACK / FOLLOW).
-   That is the pit wall's decision: say it first, then WHERE and WHY. Never reverse it, never
-   water it down, never argue against it in the same answer.
+   That is the pit wall's RECOMMENDATION from the numbers. Follow it, unless the data shows one
+   of these, which the numbers alone do not see - then you may override it:
+     damage   the car has damage (car tool)
+     contact  that driver has hit him this race or has contact history with him (driver tool)
+     class    a faster-class car is closing (race_picture "other_class_cars_near")
+     tyres    his tyres are overheating (car tool)
+   An override must be said out loud with its reason ("Team says defend, but Zino's already
+   hit you twice: let it go"). Code checks every override against the data.
    Never promise a later call ("I'll tell you where"): nothing will call him back. Say where NOW.
 6. A missing fact stays missing: if a pace or lap time says "not known", say you don't have it.
    Never fill it in ("same pace") from nothing.
@@ -102,7 +108,13 @@ THE SPOKEN ANSWER (it is read aloud to him while he drives)
   5 was another car's place). Never take his place from another car's data.
 - Other drivers are real people: use their name or "the car behind", never he, she, him, her or his.
 - No questions back. No "maybe", "try", "consider", "think", "perhaps", "manage", "back off".
-- No asterisks, no lists, no markdown."""
+- No asterisks, no lists, no markdown.
+
+FORMAT: the FIRST line is for the pit wall and is never read out:
+  CALL: DEFEND            (or LET BY, ATTACK, FOLLOW - the call you are making)
+  CALL: LET BY | OVERRIDE: contact     (when you override the team call; reason = damage, contact, class or tyres)
+  CALL: NONE              (no fight in the question)
+Then a new line, then the spoken answer."""
 
 CLEAN_RULE = "OVERRIDE: stay clean. No swearing at all in this answer, whatever the examples say."
 VOICE_REMINDER = ("Answer ONLY this question, in Max's voice: blunt, 'mate', and SWEAR in this answer "
@@ -143,6 +155,30 @@ TOOLS = [
                     "and whether the cars around him are quicker or slower there.",
      "parameters": {"type": "object", "properties": {}, "required": []}},
 ]
+
+
+CALL_WORDS = ("DEFEND", "LET BY", "ATTACK", "FOLLOW")
+OVERRIDE_REASONS = ("damage", "contact", "class", "tyres")
+HOT_TYRE_C = 105              # the strategist's "cooking" line
+OTHER_CLASS_NEAR_M = 400      # an other-class car this close behind is about to arrive
+
+
+def split_call(raw):
+    """The model's answer -> (call, override reason, spoken text). The CALL line is never spoken."""
+    lines = (raw or "").strip().splitlines()
+    call = None
+    override = None
+    if lines and lines[0].strip().upper().startswith("CALL:"):
+        head = lines[0].strip()[5:]
+        lines = lines[1:]
+        parts = [part.strip() for part in head.split("|")]
+        word = parts[0].upper()
+        if word in CALL_WORDS:
+            call = word
+        for part in parts[1:]:
+            if part.upper().startswith("OVERRIDE:"):
+                override = part[9:].strip().lower()
+    return call, override, " ".join(" ".join(lines).split())
 
 
 def lap_text(seconds):
@@ -271,6 +307,60 @@ class Snapshot:
         self.corners = self.every_corner(performance)
         self.car_state = self.car(race, strategist)
         self.ahead_of_me = self.track_ahead(lap_dist, corners, race, racecraft)
+        self.picture["other_class_cars_near"] = self.other_class_near(race, lap_dist, corners)
+        self.team_calls = {side: self.picture[side]["team_call"] for side in ("ahead", "behind")
+                           if self.picture.get(side) and self.picture[side].get("team_call")}
+        self.contacts_in_fight = 0
+        self.history_in_fight = ""
+        for side in self.team_calls:
+            entry = self.drivers.get(side, {})
+            self.contacts_in_fight += entry.get("contacts_with_you_this_race", 0) or 0
+            self.history_in_fight += " " + (entry.get("history") or "")
+
+    def other_class_near(self, race, lap_dist, corners):
+        """Cars of another class just behind him on the road: the ones about to lap him."""
+        lengths = [c["end"] for c in corners or []] + [o.lap_dist for o in race.opponents] + [lap_dist]
+        lap_length = max(lengths) if lengths else 0
+        near = []
+        for opponent in race.opponents:
+            if opponent.car_class == race.me.car_class or opponent.in_pits or lap_length <= 0:
+                continue
+            behind_m = (lap_dist - opponent.lap_dist) % lap_length
+            if behind_m <= OTHER_CLASS_NEAR_M:
+                near.append({"driver": opponent.driver, "class": opponent.car_class,
+                             "metres_behind": round(behind_m)})
+        return near
+
+    def override_evidence(self):
+        """The override reasons the data actually supports right now."""
+        supported = set()
+        if self.car_state.get("damage"):
+            supported.add("damage")
+        if self.contacts_in_fight > 0 or "contact" in self.history_in_fight.lower():
+            supported.add("contact")
+        if self.picture.get("other_class_cars_near"):
+            supported.add("class")
+        if any(t > HOT_TYRE_C for t in self.car_state.get("tyre_temps_c", [])):
+            supported.add("tyres")
+        return supported
+
+    def check_call(self, call, override):
+        """(ok, reason): in a fight the call must be the team's, or an override the data backs."""
+        if not self.team_calls:
+            return True, "ok"
+        team_words = {text.split(":")[0] for text in self.team_calls.values()}
+        if call is None:
+            return False, "start with the CALL line (CALL: DEFEND / LET BY / ATTACK / FOLLOW), then the answer"
+        if call in team_words and override is None:
+            return True, "ok"
+        supported = self.override_evidence()
+        if override in supported:
+            return True, "ok"
+        if not supported:
+            return False, (f"the team call is {' / '.join(sorted(team_words))} and the data supports no "
+                           "override (no damage, no contact history, no other class near, tyres fine): follow it")
+        return False, (f"the team call is {' / '.join(sorted(team_words))}; an override needs a reason the "
+                       f"data supports, and it supports only: {', '.join(sorted(supported))}")
 
     def race_picture(self, race, lap, engineer, governor):
         me = race.me
@@ -371,6 +461,8 @@ class Snapshot:
         state = {"fuel": strategist.fuel_now,
                  "tyre_temps_c": [round(sum(z) / len(z)) for z in me.tyre_temps if z and min(z) > -200],
                  "damage": sum(me.dents) > 0,
+                 "tyres_overheating": any(round(sum(z) / len(z)) > HOT_TYRE_C for z in me.tyre_temps
+                                          if z and min(z) > -200) or bool(me.overheating),
                  "track_limit_steps": me.track_limit_steps,
                  "penalty_at_steps": race.session.limit_steps_per_penalty,
                  "penalties": me.penalties}
@@ -531,7 +623,8 @@ class RaceAgent:
             call = Call(seat="race_engineer", kind="ANSWER_AGENT", sim_time=sim_time,
                         priority=RACE_CONTROL, ttl=ANSWER_TTL_S, conclusion=answer, template=answer,
                         facts={"heard": question, "tools": info.get("tools", []), "rounds": info.get("rounds"),
-                               "seconds": info["seconds"], "refused": info.get("refused")},
+                               "seconds": info["seconds"], "refused": info.get("refused"),
+                               "call": info.get("call"), "override": info.get("override")},
                         asked=True, phrase=False)
             self.results.put({"call": call, "costs": info.get("costs", [])})
 
@@ -577,14 +670,18 @@ class RaceAgent:
                     tool_texts.append(result)
                     messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
                 continue
-            text = " ".join((message.content or "").split())      # one spoken paragraph
-            ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean)
+            raw = message.content or ""
+            call, override, text = split_call(raw)                 # the CALL line is never spoken
+            ok, reason = snapshot.check_call(call, override)
             if ok:
-                return text, {"costs": costs, "tools": tools_used, "rounds": round_number, "refused": refused}
+                ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean)
+            if ok:
+                return text, {"costs": costs, "tools": tools_used, "rounds": round_number, "refused": refused,
+                              "call": call, "override": override}
             if refused is not None:
                 break                   # one rewrite only
             refused = reason
-            messages.append({"role": "assistant", "content": text})
+            messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {voice}"})
         return ("No clean answer on that one, mate. Ask it another way.",
                 {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused})

@@ -13,6 +13,11 @@ the cars around you are moved:
     --situation sandwich   car ahead 0.5 s up and car behind 0.4 s back
     --situation lastlap    last lap, car behind 0.2 s back
     --situation closedive  car behind 0.3 s back, diving, only 0.2 s a lap quicker
+  where the team's fixed call should be overridden (the model must notice):
+    --situation damaged    car behind 0.4 s back, 0.4 quicker (team: defend) and your car is damaged
+    --situation contact    car behind 0.3 s back, 0.4 quicker (team: defend), and it has hit you twice
+    --situation hypercar   car behind 0.6 s back (team: defend) and a Hypercar 200 m behind, lapping you
+    --situation deadtyres  car behind 0.4 s back, 0.5 quicker (team: defend), your tyres at 118 C
     --situations defend,sandwich,lastlap   several: say "next situation" on the radio to move on
     --behind 0.5 --behind-pace 2.0 --ahead 0.4 --ahead-pace -0.6 --laps-left 3
       (pace = how much quicker a lap that car is than you; negative = slower)
@@ -52,12 +57,17 @@ SITUATIONS = {
     "lastlap": {"behind": 0.2, "behind_pace": 0.3, "laps_left": 1},
     # diving at him, but not much quicker: the one to hold (his question, 24 Sep)
     "closedive": {"behind": 0.3, "behind_pace": 0.2, "laps_left": 3},
+    # the cases a fixed call cannot see (24 Sep): the model may override, with the reason
+    "damaged": {"behind": 0.4, "behind_pace": 0.4, "laps_left": 3, "damage": True},
+    "contact": {"behind": 0.3, "behind_pace": 0.4, "laps_left": 3, "contacts": 2},
+    "hypercar": {"behind": 0.6, "behind_pace": 0.3, "laps_left": 3, "hypercar_m": 200},
+    "deadtyres": {"behind": 0.4, "behind_pace": 0.5, "laps_left": 3, "tyres_c": 118},
 }
 NEXT_SITUATION = ("next situation", "next scenario", "next one")
 
 
 def set_situation(frozen, seats, ahead_gap=None, ahead_pace=0.0, behind_gap=None, behind_pace=0.0,
-                  laps_left=None):
+                  laps_left=None, damage=False, contacts=0, hypercar_m=None, tyres_c=None):
     """Move the cars just ahead and behind to the gaps and pace asked for, and rebuild the
     picture the coach sees. pace = seconds a lap quicker than him (negative = slower)."""
     race = frozen["base_race"]                  # always from the real moment, not the last situation
@@ -79,13 +89,26 @@ def set_situation(frozen, seats, ahead_gap=None, ahead_pace=0.0, behind_gap=None
                                last_lap=round(my_lap - behind_pace, 3))
             engineer.gaps_at_line["behind"] = (identity(opponent), round(behind_gap + behind_pace, 2))
         opponents.append(opponent)
-    race = replace(race, opponents=opponents)
+    if hypercar_m is not None:
+        # a faster-class car on the road just behind: a copy of a far-away car, reclassed
+        spare = [o for o in opponents if o is not ahead and o is not behind][0]
+        opponents.append(replace(spare, id=999, driver="a Hypercar", steam_id=999, car_class="Hypercar",
+                                 lap_dist=frozen["lap_dist"] - hypercar_m, in_pits=False))
+    changes = {}
+    if damage:
+        changes["dents"] = [0, 2, 0, 1, 0, 0, 0, 0]
+    if tyres_c is not None:
+        changes["tyre_temps"] = [[tyres_c] * 3] * 4
+    race = replace(race, opponents=opponents, me=replace(me, **changes))
     if laps_left is not None:
         engineer.to_go_at_line = laps_left
+    contacts_this_race = {}
+    if contacts and behind is not None:
+        contacts_this_race[identity(behind)] = contacts
     frozen["race"] = race
     frozen["snapshot"] = Snapshot(race, frozen["lap"], frozen["lap_dist"], frozen["corners"], engineer,
                                   seats["Strategist"], seats["PerformanceEngineer"], seats["Racecraft"],
-                                  seats["Governor"], frozen["habits"], {})
+                                  seats["Governor"], frozen["habits"], contacts_this_race)
 
 
 def frozen_race(tape, lap):
@@ -189,7 +212,9 @@ def main():
         name = queue[index]
         chosen = SITUATIONS[name]
         set_situation(frozen, seats, chosen.get("ahead"), chosen.get("ahead_pace", 0.0),
-                      chosen.get("behind"), chosen.get("behind_pace", 0.0), chosen.get("laps_left"))
+                      chosen.get("behind"), chosen.get("behind_pace", 0.0), chosen.get("laps_left"),
+                      chosen.get("damage", False), chosen.get("contacts", 0), chosen.get("hypercar_m"),
+                      chosen.get("tyres_c"))
         picture = frozen["snapshot"].picture
         print(f"\n=== Situation {index + 1} of {len(queue)}: {name} ===")
         print(f"P{picture['place']}, {picture['laps_to_go']} laps to go.")
@@ -197,6 +222,11 @@ def main():
             car = picture.get(side)
             if car:
                 print(f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}, {car.get('fight', '')}")
+                if car.get("team_call"):
+                    print(f"    team call: {car['team_call'].split(':')[0]}")
+        extras = frozen["snapshot"].override_evidence()
+        if extras:
+            print(f"  the data would back an override for: {', '.join(sorted(extras))}")
         return name
 
     if queue:
@@ -237,7 +267,10 @@ def main():
             for result in agent.finished():
                 call = result["call"]
                 cost = sum(spent["cost_rs"] for spent in result["costs"])
-                print(f"apex: {call.template}   ({call.facts['seconds']} s, Rs {cost:.2f})")
+                decided = call.facts.get("call") or "-"
+                if call.facts.get("override"):
+                    decided += f" (OVERRIDE: {call.facts['override']})"
+                print(f"apex [{decided}]: {call.template}   ({call.facts['seconds']} s, Rs {cost:.2f})")
                 voice.say(call.template)
             time.sleep(0.01)
     except KeyboardInterrupt:

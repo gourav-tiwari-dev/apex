@@ -111,11 +111,13 @@ def test_the_snapshot_tells_the_truth_about_the_cars_around_him():
 def test_the_agent_uses_tools_then_answers_and_the_cost_is_counted():
     model = ScriptedModel(
         Message(tool_calls=[ToolCall("driver", json.dumps({"who": "behind"}))]),
-        Message(content="Let Chabbi Zino go, mate. 1.1 a lap quicker, not 2. Clean room out of Tertre Rouge."))
+        Message(content="CALL: DEFEND\nDefend, mate. Last lap, 1.1 a lap quicker, not 2. One line into Tertre Rouge."))
     agent = RaceAgent(Budget(), client=model)
     result = ask(agent, "He's 2 seconds faster, defend or let him go?", snapshot_at_lap_4())
     call = result["call"]
-    assert call.template == "Let Chabbi Zino go, mate. 1.1 a lap quicker, not 2. Clean room out of Tertre Rouge."
+    # the CALL line is for the pit wall: logged, never spoken
+    assert call.template == "Defend, mate. Last lap, 1.1 a lap quicker, not 2. One line into Tertre Rouge."
+    assert call.facts["call"] == "DEFEND" and call.facts["override"] is None
     assert call.asked and not call.phrase and call.kind == "ANSWER_AGENT"
     assert call.facts["tools"] == ["race_picture", "driver"]
     assert len(result["costs"]) == 2
@@ -124,12 +126,12 @@ def test_the_agent_uses_tools_then_answers_and_the_cost_is_counted():
 
 
 def test_a_refused_answer_gets_one_rewrite_then_an_honest_fallback():
-    model = ScriptedModel(Message(content="He is 7 seconds a lap faster, let him go."),
-                          Message(content="Chabbi Zino is 1.1 a lap quicker. Let Chabbi Zino go."))
+    model = ScriptedModel(Message(content="CALL: DEFEND\nHe is 7 seconds a lap faster, hold him."),
+                          Message(content="CALL: DEFEND\nChabbi Zino is 1.1 a lap quicker. Defend, one line."))
     result = ask(RaceAgent(Budget(), client=model), "defend or let the car behind go?", snapshot_at_lap_4())
-    assert result["call"].template == "Chabbi Zino is 1.1 a lap quicker. Let Chabbi Zino go."
-    assert "he" in result["call"].facts["refused"]
-    stubborn = ScriptedModel(Message(content="He's quicker."), Message(content="He's still quicker."))
+    assert result["call"].template == "Chabbi Zino is 1.1 a lap quicker. Defend, one line."
+    assert "'he'" in result["call"].facts["refused"]
+    stubborn = ScriptedModel(Message(content="CALL: DEFEND\nHe's quicker."), Message(content="CALL: DEFEND\nHe's still quicker."))
     result = ask(RaceAgent(Budget(), client=stubborn), "defend or let the car behind go?", snapshot_at_lap_4())
     assert result["call"].template == "No clean answer on that one, mate. Ask it another way."
 
@@ -201,3 +203,26 @@ def test_the_fight_call_is_made_by_code():
     assert team_call("ahead", 0.4, 240.6, 240.0, 3).startswith("ATTACK")
     assert team_call("ahead", 0.4, 240.1, 240.0, 3).startswith("FOLLOW")
     assert team_call("behind", 1.7, 239.0, 240.0, 3) is None                    # not a fight yet
+
+
+def test_an_override_needs_a_reason_the_data_backs():
+    from agent import split_call
+    assert split_call("CALL: LET BY | OVERRIDE: contact\nLet Zino go.") == ("LET BY", "contact", "Let Zino go.")
+    snapshot = snapshot_at_lap_4()                       # last lap: the team says DEFEND
+    assert snapshot.check_call("DEFEND", None)[0]
+    assert not snapshot.check_call(None, None)[0]        # in a fight the CALL line is required
+    refused = snapshot.check_call("LET BY", "contact")   # no contact in the data
+    assert not refused[0] and "supports no override" in refused[1]
+    # the same override when that car HAS hit him: accepted
+    zino = snapshot.drivers["behind"]
+    zino["contacts_with_you_this_race"] = 2
+    snapshot.contacts_in_fight = 2
+    assert snapshot.check_call("LET BY", "contact")[0]
+    assert not snapshot.check_call("LET BY", "damage")[0]      # a reason the data does not show
+
+
+def test_an_unbacked_override_ends_in_the_honest_line_not_on_the_radio():
+    model = ScriptedModel(Message(content="CALL: LET BY | OVERRIDE: damage\nLet Chabbi Zino go, the car's hurt."),
+                          Message(content="CALL: LET BY | OVERRIDE: damage\nLet Chabbi Zino go."))
+    result = ask(RaceAgent(Budget(), client=model), "defend or let go?", snapshot_at_lap_4())
+    assert result["call"].template == "No clean answer on that one, mate. Ask it another way."
