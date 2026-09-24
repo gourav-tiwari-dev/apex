@@ -38,6 +38,21 @@ SETTINGS = {"top_k": 5, "top_p": 1, "temperature": 0.9, "text_split_method": "cu
             "repetition_penalty": 1.35}
 
 
+# 24 Sep, live: "I can't even hear the Verstappen voice, it's so low compared to the game".
+# The clone comes out at about 0.08-0.10 RMS (edge-tts is mastered far louder), so every line
+# is lifted to a radio-loud level and a soft limiter keeps the peaks from cracking.
+TARGET_RMS = 0.25
+LIMIT = 0.98
+
+
+def radio_loud(audio):
+    import numpy
+    audio = numpy.asarray(audio, dtype="float32")
+    rms = float(numpy.sqrt(numpy.mean(audio ** 2))) or 1e-6
+    audio = audio * (TARGET_RMS / rms)
+    return (numpy.tanh(audio / LIMIT) * LIMIT).astype("float32")      # soft limit, no hard clip
+
+
 def main():
     answers = sys.stdout
     sys.stdout = sys.stderr            # GPT-SoVITS prints a lot: keep stdout for answers only
@@ -59,7 +74,10 @@ def main():
         request = dict(SETTINGS, text=text, text_lang="en", prompt_text=prompt, prompt_lang="en",
                        ref_audio_path=os.path.join(SLICES, PREFIX + clip + ".wav"), seed=seed)
         rate, audio = next(tts.run(request))
-        return rate, numpy.asarray(audio)
+        audio = numpy.asarray(audio)
+        if audio.dtype.kind == "i":                        # int16 PCM -> -1..1
+            audio = audio.astype("float32") / 32768.0
+        return rate, radio_loud(audio)
 
     for mood in REFERENCES:            # warm every mood up now, not in the first lap
         speak("Radio check, mate.", mood)

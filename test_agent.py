@@ -243,7 +243,7 @@ def test_the_fallback_states_the_facts_that_could_change_the_call():
     from agent import fallback
     snapshot = snapshot_at_lap_4()
     snapshot.contacts_in_fight = 2                     # the car behind has hit him
-    assert fallback(snapshot).endswith("Careful: that car has already hit you.")
+    assert fallback(snapshot, "the car behind keeps hitting me").endswith("Careful: that car has already hit you.")
 
 
 def test_a_follow_up_carries_the_last_exchange():
@@ -254,3 +254,15 @@ def test_a_follow_up_carries_the_last_exchange():
     ask(agent, "But it keeps hitting me.", snapshot_at_lap_4())
     second_question = model.sent[1][1]["content"]
     assert 'Just before this he asked: "The car behind is all over me' in second_question
+
+
+def test_the_fallback_gives_the_fight_call_only_to_a_fight_question():
+    from agent import fallback
+    snapshot = snapshot_at_lap_4()
+    assert fallback(snapshot, "What's the strategy for this race?") == "Radio's lagging, mate. Ask me again."
+    assert fallback(snapshot, "The car behind is diving at me").startswith("Radio's lagging, mate. Team says DEFEND")
+
+
+def test_a_fight_question_goes_to_the_agent_however_short():
+    assert needs_agent("Car ahead is defending aggressively")      # live 24 Sep: got the bare gap
+    assert needs_agent("He keeps diving")

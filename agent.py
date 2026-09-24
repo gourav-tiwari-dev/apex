@@ -176,10 +176,18 @@ FALLBACK_WARNINGS = {
 }
 
 
-def fallback(snapshot):
+FIGHT_WORDS = ("defend", "block", "div", "attack", "overtak", "pass", "hit", "let him", "let them",
+               "behind", "ahead", "aggress", "fight", "battle")
+
+
+def fallback(snapshot, question=""):
     """What the radio says when the model is too slow: the team's call, plus the facts that
     could change it - stated, not decided (24 Sep: "but he keeps hitting me" got a bare DEFEND
-    while the provider was down)."""
+    while the provider was down). Only for a question about a fight: live 24 Sep, "what's the
+    strategy for this race?" got "Team says DEFEND" because a car happened to be close."""
+    asked = question.lower()
+    if not any(word in asked for word in FIGHT_WORDS):
+        return "Radio's lagging, mate. Ask me again."
     for side in ("behind", "ahead"):
         call = snapshot.team_calls.get(side)
         if call:
@@ -616,6 +624,10 @@ class RaceAgent:
         self.clean = clean
         self.thinking = thinking
         self.last = None            # the last question and answer, for follow-ups
+        # live 24 Sep: the first question timed out on a cold connection (TLS, DNS) while the
+        # provider was fine a minute later. One tiny call at startup opens it before he asks.
+        if client is None:
+            threading.Thread(target=self.warm_up, daemon=True).start()
         self.client = client
         self.jobs = Queue()
         self.results = Queue()
@@ -629,6 +641,13 @@ class RaceAgent:
             self.client = OpenAI(base_url="https://aicredits.in/v1",
                                  api_key=os.environ["AICREDITS_API_KEY"], timeout=MODEL_TIMEOUT_S, max_retries=0)
         return self.client
+
+    def warm_up(self):
+        try:
+            self.connect().chat.completions.create(model=MODEL, messages=[{"role": "user", "content": "ok"}],
+                                                   max_tokens=1, extra_body={"thinking": {"type": "disabled"}})
+        except Exception:
+            pass                       # a failed warm-up changes nothing: the first question retries
 
     def ask(self, question, snapshot, sim_time):
         self.jobs.put((question, snapshot, sim_time, time.perf_counter()))
@@ -697,7 +716,7 @@ class RaceAgent:
                 message, spent = self.model_turn(messages)
             except Exception as error:
                 # slow or down: the decision still gets through, from code
-                return fallback(snapshot), {"costs": costs, "tools": tools_used, "rounds": None,
+                return fallback(snapshot, question), {"costs": costs, "tools": tools_used, "rounds": None,
                                             "refused": f"model {error.__class__.__name__}", "call": "TEAM"}
             costs.append(spent)
             if message.tool_calls and round_number <= MAX_ROUNDS:

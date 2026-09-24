@@ -898,8 +898,16 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             # waiting for a straight in the first live race (23 Sep 2026)
             in_corner = frame.brake > 0.2 or abs(frame.accel_lat) >= TURNING
             governor.lap = lap_count
+            heard_now = []
             if talk is not None:
-                for heard in talk.poll():
+                try:
+                    heard_now = talk.poll()
+                except Exception as error:
+                    # push-to-talk must never end a race: it switches itself off instead
+                    print(f"[push-to-talk off for this session: {error.__class__.__name__}: {error}]")
+                    talk = None
+            if talk is not None or heard_now:
+                for heard in heard_now:
                     if needs_agent(heard.text) and source.race is not None and source.race.me is not None:
                         # a real question: the agent looks at a still picture of the race
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,

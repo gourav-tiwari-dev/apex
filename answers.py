@@ -84,7 +84,11 @@ ALWAYS_FIXED = {"QUIET", "RADIO_ON"}
 # the bare gap. Questions that ask what to DO go to the agent however short they are.
 # ...anywhere in the question: "realistically which position can we get" got a bare "P5"
 JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "how do i", "why",
-                  "is it worth", "will i", "will we", "realistic", "what if")
+                  "is it worth", "will i", "will we", "realistic", "what if",
+                  # a fight is a judgment too: live 24 Sep, "car ahead is defending" got the bare gap
+                  "defending", "defend", "blocking", "block", "diving", "dive", "attack", "attacking",
+                  "overtake", "pass", "passing", "hitting", "hit me", "let him", "let them", "aggressive",
+                  "aggressively")
 
 
 def needs_agent(text):

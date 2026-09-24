@@ -72,7 +72,19 @@ class Controller:
         """Returns "pressed", "released" or None. Handles the controller being plugged in late."""
         pygame = self.pygame
         change = None
-        for event in pygame.event.get():
+        try:
+            events = pygame.event.get()
+        except (SystemError, KeyError):
+            # 24 Sep, live: pygame raised KeyError(0) from inside event.get() when a controller
+            # it never opened disconnected (LMU taking the pad). Start the controller side over.
+            pygame.joystick.quit()
+            pygame.joystick.init()
+            self.pads = {}
+            if self.held:
+                self.held = False
+                return "released"
+            return None
+        for event in events:
             if event.type == pygame.JOYDEVICEADDED:
                 pad = pygame.joystick.Joystick(event.device_index)
                 self.pads[pad.get_instance_id()] = pad
