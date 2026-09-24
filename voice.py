@@ -13,6 +13,11 @@ interview, private to this laptop) when it is set up and running, edge-tts other
 clone runs as its own process (voice_server.py) because it needs its own PyTorch; it warms up
 before the race, and any line it cannot make within CLONE_TIMEOUT_S falls back to edge-tts,
 so the radio is never silent. Recordings for clips use edge-tts only (--record).
+
+Two voices, two jobs (his call, 24 Sep 2026): the SPOTTER is always the standard voice, and
+everything else is the engineer, Max. A slow Max line is waited for (up to its time to live),
+never swapped for the standard voice: that night he heard three voices and called it "not in
+harmony". The standard engineer voice now speaks only when the clone is not running at all.
 """
 import json
 import re
@@ -34,6 +39,10 @@ CLONE_SERVER = os.path.join(HERE, "voice_server.py")
 CLONE_BANK_FOLDER = os.path.join("voice_bank", "clone")
 CLONE_TIMEOUT_S = 5.0          # measured 1.2-3.1 s a line next to LMU; past this, edge-tts says it
 CLONE_READY_TIMEOUT_S = 180.0
+MAX_CLONE_WAIT_S = 30.0        # a line still not rendered after this is too late to say anyway
+
+# the spotter's own lines: always the standard voice, even when a cloned take exists
+SPOTTER_KINDS = {"CAR_LEFT", "CAR_RIGHT", "THREE_WIDE", "STILL_THERE", "CLEAR"}
 
 # how each kind of call should sound (the clone copies a reference clip per mood)
 URGENT_KINDS = {"CAR_LEFT", "CAR_RIGHT", "THREE_WIDE", "STILL_THERE", "YELLOW", "SAFETY_CAR", "BLUE_FLAG",
@@ -124,8 +133,10 @@ class CloneVoice:
             print("[cloned voice did not start in time: using the standard voice]")
             self.failed = True
 
-    def render(self, text, mood, seed=42):
+    def render(self, text, mood, seed=42, timeout=None):
         """WAV bytes, or None to fall back. A different seed is a different take."""
+        if timeout is None:
+            timeout = CLONE_TIMEOUT_S      # read at call time: build_voice_bank.py raises it
         if self.failed or not self.ready.is_set():
             return None
         with self.lock:                    # one line at a time: the server is one GPU worker
@@ -137,7 +148,7 @@ class CloneVoice:
             except (OSError, ValueError):
                 self.failed = True
                 return None
-            deadline = time.perf_counter() + CLONE_TIMEOUT_S
+            deadline = time.perf_counter() + timeout
             while True:
                 left = deadline - time.perf_counter()
                 if left <= 0:
@@ -214,7 +225,7 @@ class Voice:
         for key in BANK_LINES:
             path = os.path.join(BANK_FOLDER, key + ".mp3")
             cloned = os.path.join(CLONE_BANK_FOLDER, key + ".wav")
-            if self.clone is not None and os.path.exists(cloned):
+            if self.clone is not None and key not in SPOTTER_KINDS and os.path.exists(cloned):
                 path = cloned              # the urgent lines, pre-recorded in the cloned voice
             if os.path.exists(path):
                 self.bank[key] = self.pygame.mixer.Sound(path)
@@ -253,15 +264,22 @@ class Voice:
         (about 1.3 s). None when printing instead of speaking."""
         return self.render_with_engine(text, voice, mood)[0]
 
-    def render_with_engine(self, text, voice=ENGINEER_VOICE, mood="dry"):
+    def render_with_engine(self, text, voice=ENGINEER_VOICE, mood="dry", wait_s=None):
         """(audio, which voice made it): "clone" or "standard". Logged per line (24 Sep: he
-        heard three different voices and nothing said how often each one spoke)."""
+        heard three different voices and nothing said how often each one spoke).
+
+        wait_s: how long this line may wait for the cloned voice. Given, a slow clone means
+        (None, "clone_too_slow"): the line is skipped, never said in another voice."""
         if not self.out_loud:
             return None, None
-        if self.clone is not None:
-            audio = self.clone.render(speakable(text, clone=True), mood)
+        clone_up = self.clone is not None and not self.clone.failed and self.clone.ready.is_set()
+        if clone_up:
+            timeout = CLONE_TIMEOUT_S if wait_s is None else min(max(wait_s, CLONE_TIMEOUT_S), MAX_CLONE_WAIT_S)
+            audio = self.clone.render(speakable(text, clone=True), mood, timeout=timeout)
             if audio is not None:
                 return audio, "clone"
+            if wait_s is not None and not self.clone.failed:
+                return None, "clone_too_slow"
         return asyncio.run(render(speakable(text), voice)), "standard"
 
     def play(self, audio, text):
@@ -345,11 +363,13 @@ class RadioDesk:
         if line is not None:
             try:
                 if hasattr(self.voice, "render_with_engine"):
-                    audio, engine = self.voice.render_with_engine(line, mood=mood_of(call.kind))
+                    audio, engine = self.voice.render_with_engine(line, mood=mood_of(call.kind), wait_s=call.ttl)
                 else:
                     audio, engine = self.voice.render(line, mood=mood_of(call.kind)), None
                 if engine:
                     call.facts["voice"] = engine
+                if engine == "clone_too_slow":
+                    return {"line": line, "audio": None, "reason": "cloned voice too slow"}
             except Exception as error:
                 return {"line": line, "audio": None, "reason": f"voice render failed: {error.__class__.__name__}"}
         return {"line": line, "audio": audio, "reason": reason}
@@ -380,8 +400,8 @@ class RadioDesk:
             except Exception:
                 self.report(call, "no_line", reason="not ready in time")
                 continue
-            if cooked["line"] is None:
-                self.report(call, "no_line", reason=cooked["reason"])
+            if cooked["line"] is None or (cooked["audio"] is None and getattr(self.voice, "out_loud", False)):
+                self.report(call, "no_line", line=cooked["line"], reason=cooked["reason"])
                 continue
             if self.latest_sim_time - call.sim_time > call.ttl:
                 self.report(call, "stale", line=cooked["line"], reason=cooked["reason"])

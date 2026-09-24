@@ -12,6 +12,7 @@ from queue import Full, Empty, Queue
 from datetime import datetime
 from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners,save_pass_attempts
 from radio import Governor, Budget
+from seats.settle import RaceSettle
 from persona import Persona
 from voice import Voice, RadioDesk
 from seats.performance import call_from_event, PerformanceEngineer
@@ -762,6 +763,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     engineer = RaceEngineer()
     strategist = Strategist()
     seats = [Spotter(), engineer, strategist, performance, racecraft, recall]
+    settle = RaceSettle()
 
     governor = Governor()
     # push-to-talk (M9): only live, and Apex races on without it if it is not set up
@@ -889,8 +891,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     event_id = save_event(conn, session_id, event)
                     frame_events.append(event)
                     call = performance.call_for_event(event, event_id)
-                    if call is not None:
-                        governor.offer(call)
+                    if call is not None and governor.offer(call):
                         desk.prepare(call)
 
             corner_now = corner_at(current_corners, real_lap_distance)
@@ -898,10 +899,16 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                             lap_count=lap_count, lap_wrapped=lap_counter.wrapped, corner=corner_now,
                             track=track, corner_stat=stat, session_type=session_type,
                             corners=current_corners, events=frame_events)
+            # first: is the start still chaos? Then nothing but the spotter, flags and answers
+            for call in settle.update(moment):
+                governor.settled = settle.settled
+                if governor.offer(call):
+                    desk.prepare(call)
+            governor.settled = settle.settled
             for seat in seats:
                 for call in seat.update(moment):
-                    governor.offer(call)
-                    desk.prepare(call)
+                    if governor.offer(call):
+                        desk.prepare(call)
 
             # ... and the radio decides what goes on air, on sim time only
             # quiet while actually braking or cornering hard. The map windows were the rule
@@ -931,8 +938,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     answer = answers.answer(heard.text, source.race, lap_count, frame.elapsed_time)
                     answer.facts["transcribe_ms"] = heard.transcribe_ms
                     print(f"[asked: {heard.text!r} -> {answer.kind}: {answer.template}]")
-                    governor.offer(answer)
-                    desk.prepare(answer)
+                    if governor.offer(answer):
+                        desk.prepare(answer)
             if agent is not None:
                 for result in agent.finished():
                     for spent in result["costs"]:
@@ -946,8 +953,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         quick.facts["agent_gave_up"] = result["call"].template
                         result["call"] = quick
                     print(f"[agent: {result['call'].template}  ({result['call'].facts['seconds']} s)]")
-                    governor.offer(result["call"])
-                    desk.prepare(result["call"])
+                    if governor.offer(result["call"]):
+                        desk.prepare(result["call"])
             on_air = governor.step(frame.elapsed_time, in_corner)
             if on_air is not None:
                 if on_air.urgent:

@@ -12,6 +12,11 @@ LANE_MIN_M = 1.2              # closer sideways than this is not alongside, it i
 LANE_MAX_M = 6.0              # further than this is two lanes away
 CLEAR_AFTER_S = 0.4           # a side must stay empty this long before "clear"
 CALL_TTL_S = 1.0              # a spotter call even a second late is wrong
+# v3 (24 Sep): 17 of 34 spotter lines that night were "Clear", mostly after a car that only
+# brushed past. Real spotters (NASA Speed News guide, iRacing's spotter) say "clear" to end a
+# real overlap and repeat "still there" every few seconds while it lasts.
+CLEAR_NEEDS_ALONGSIDE_S = 1.0 # a car alongside for less than this passed by: no "clear"
+STILL_THERE_EVERY_S = 4.0
 
 # GUESSED until the first v2 tape: in LMU's car frame +x points to the driver's left
 # (the rFactor 2 convention). The AI-race tape settles it: if the spotter says "left"
@@ -70,8 +75,11 @@ class Spotter:
         self.right = False
         self.three_wide = False
         self.empty_since = None      # when both sides last became empty
+        self.alongside_since = None  # when this overlap began
+        self.last_said_at = None     # the last spotter line, for "still there"
 
     def call(self, kind, text, now):
+        self.last_said_at = now
         return Call(seat="spotter", kind=kind, sim_time=now, priority=SPOTTER, ttl=CALL_TTL_S,
                     conclusion=text, template=text, urgent=True)
 
@@ -82,6 +90,7 @@ class Spotter:
         if not on_track(moment):
             self.left = self.right = self.three_wide = False
             self.empty_since = None
+            self.alongside_since = None
             return []
         left, right = sides_taken(moment)
         calls = []
@@ -96,6 +105,10 @@ class Spotter:
 
         if left or right:
             # someone is beside me: remember which side, and cancel any pending "clear"
+            if self.alongside_since is None:
+                self.alongside_since = now
+            elif not calls and now - (self.last_said_at or self.alongside_since) >= STILL_THERE_EVERY_S:
+                calls.append(self.call("STILL_THERE", "Still there.", now))
             self.left = left
             self.right = right
             self.empty_since = None
@@ -105,7 +118,9 @@ class Spotter:
             if self.empty_since is None:
                 self.empty_since = now
             if now - self.empty_since >= CLEAR_AFTER_S:
-                calls.append(self.call("CLEAR", "Clear.", now))
+                if self.empty_since - self.alongside_since >= CLEAR_NEEDS_ALONGSIDE_S:
+                    calls.append(self.call("CLEAR", "Clear.", now))
+                self.alongside_since = None
                 self.left = False
                 self.right = False
                 self.three_wide = False

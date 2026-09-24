@@ -13,6 +13,10 @@ The rules, like a real pit wall:
   - an answer to a question he asked on the radio (push-to-talk) goes out as soon as nothing
     else is playing: he asked, so he is ready to listen, corner or not
   - "quiet for N laps" holds everything except urgent calls and answers (E17)
+  - v3 (24 Sep): the engineer gets about 2 lines a minute; the spotter, flags and his own
+    answers are never counted. Live that night: 84 lines in 14.5 minutes was noise
+  - v3: at the start and after a restart, only the spotter, flags and answers speak until the
+    race has settled (seats/settle.py decides when). Coaching in the chaos is noise
 """
 import hashlib
 import json
@@ -32,6 +36,10 @@ LINE_OVERHEAD_S = 0.8       # a radio click and a breath around every line
 UNKNOWN_LINE_WORDS = 10     # an LLM line's length is unknown when it is admitted
 
 DEFAULT_COOLDOWN_S = 8.0
+# GUESSED from his words ("less noise"): 2 engineer lines a minute. Tune on the next race.
+ENGINEER_LINES_PER_WINDOW = 2
+ENGINEER_WINDOW_S = 60.0
+NEVER_COUNTED_SEATS = ("spotter", "race_control")
 SEAT_COOLDOWN_S = {
     "spotter": 0.0,         # the spotter must never be held back
     "race_control": 0.0,
@@ -76,9 +84,37 @@ class Governor:
         self.dropped = []         # (call, reason) - calls that never went out, for the log
         self.lap = 0              # the lap he is on, kept up to date by the session loop
         self.quiet_until_lap = None
+        self.settled = True       # False from lights out until seats/settle.py says the race settled
+        self.engineer_air_times = []   # sim times of the counted lines, for the talk budget
+
+    def exempt(self, call):
+        """The spotter, flags and his own answers: never held, never counted."""
+        return call.urgent or call.asked or call.seat in NEVER_COUNTED_SEATS
+
+    def hold_reason(self, call):
+        if self.exempt(call):
+            return None
+        if self.quiet():
+            return "quiet"
+        if not self.settled:
+            return "start_chaos"
+        return None
 
     def offer(self, call):
+        """False when the call is dropped on arrival (quiet, or the start is still chaos), so the
+        caller does not spend a model call or a voice render on a line nobody will hear."""
+        reason = self.hold_reason(call)
+        if reason is not None:
+            self.dropped.append((call, reason))
+            return False
         self.pending.append(call)
+        return True
+
+    def within_talk_budget(self, call, now):
+        if self.exempt(call):
+            return True
+        recent = [t for t in self.engineer_air_times if now - t < ENGINEER_WINDOW_S]
+        return len(recent) < ENGINEER_LINES_PER_WINDOW
 
     def cooldown_of(self, seat):
         return SEAT_COOLDOWN_S.get(seat, DEFAULT_COOLDOWN_S)
@@ -114,26 +150,28 @@ class Governor:
         self.pending.remove(call)
         self.busy_until = now + estimated_duration(call)
         self.last_spoken_by_seat[call.seat] = now
+        if not self.exempt(call):
+            self.engineer_air_times.append(now)
         self.admitted.append((call.seat, call.kind, round(call.sim_time, 4)))
         return call
 
     def quiet(self):
         return self.quiet_until_lap is not None and self.lap < self.quiet_until_lap
 
-    def drop_while_quiet(self):
+    def drop_held(self):
         kept = []
         for call in self.pending:
-            if call.urgent or call.asked:
+            reason = self.hold_reason(call)
+            if reason is None:
                 kept.append(call)
             else:
-                self.dropped.append((call, "quiet"))
+                self.dropped.append((call, reason))
         self.pending = kept
 
     def step(self, now, in_corner):
         """Call once per frame. Returns the call to put on air now, or None."""
         self.drop_stale(now)
-        if self.quiet():
-            self.drop_while_quiet()
+        self.drop_held()
         if not self.pending:
             return None
 
@@ -149,7 +187,7 @@ class Governor:
         # flow-state rule: no talking to the driver in the middle of a corner
         if in_corner:
             return None
-        ready = [c for c in self.pending if self.cooled_down(c, now)]
+        ready = [c for c in self.pending if self.cooled_down(c, now) and self.within_talk_budget(c, now)]
         if not ready:
             return None
         return self.put_on_air(self.best(ready), now)

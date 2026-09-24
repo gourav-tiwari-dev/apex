@@ -1,0 +1,140 @@
+"""Has the race start settled? Until it has, only the spotter, flags and his answers speak.
+
+His rule (24 Sep 2026): "coaching on the chaos at the race start is just noise, that time I
+need to focus. It should decide when the race is settled." Not "skip lap 1": a clean start
+can settle by the third corner, a brawl can run into lap 2.
+
+Settled = calm for SETTLE_S in a row, where calm means:
+  - nobody alongside him (the spotter's own geometry)
+  - no place changes between him and the same-class cars up to 2 places either side
+  - no yellow in any sector
+A stable train counts as settled: close cars are fine, cars swapping places are not.
+
+The chaos starts at lights out, and again at a restart (full-course yellow back to green).
+When it settles, the engineer says ONE summary line, in code's own words.
+"""
+from radio import Call, ENGINEER
+from race_state import same_class_neighbours
+from seats.spotter import sides_taken, GREEN
+
+# GUESSED, then checked on the 24 Sep lap 1s (see test_settle.py): 15 s with nobody
+# alongside and nobody swapping places around him
+SETTLE_S = 15.0
+NEIGHBOUR_PLACES = 2
+# a brawl that never calms still hands over to the engineer after this many laps of chaos
+SETTLE_WITHIN_LAPS = 2
+RACE_SESSIONS = (10, 11, 12, 13)
+FULL_COURSE_YELLOW = 6
+NO_YELLOW = {0, 11}
+SUMMARY_TTL_S = 20.0
+
+PLACE_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+               8: "eight", 9: "nine", 10: "ten"}
+
+
+def places_moved(start, now):
+    moved = start - now
+    if moved == 0:
+        return "held position"
+    words = PLACE_WORDS.get(abs(moved), str(abs(moved)))
+    if moved > 0:
+        return f"up {words}"
+    return f"down {words}"
+
+
+def neighbourhood(race):
+    """Who sits in the places around him, in order: a change here is a place swap."""
+    me = race.me
+    around = []
+    for opponent in race.opponents:
+        if opponent.car_class != me.car_class:
+            continue
+        if abs(opponent.place - me.place) <= NEIGHBOUR_PLACES:
+            around.append((opponent.place, opponent.id))
+    around.sort()
+    return me.place, tuple(around)
+
+
+def yellow_anywhere(session):
+    for flag in session.sector_flags:
+        if flag not in NO_YELLOW:
+            return True
+    return False
+
+
+class RaceSettle:
+    def __init__(self):
+        self.settled = True          # practice, qualifying, or Apex started mid-race
+        self.last_phase = None
+        self.calm_since = None
+        self.last_neighbourhood = None
+        self.place_at_start = None
+        self.chaos_lap = None        # the lap the chaos began on (lights out or a restart)
+
+    def is_race(self, moment):
+        if moment.session_type is not None:
+            return moment.session_type in RACE_SESSIONS
+        return moment.race.session.session in RACE_SESSIONS
+
+    def update(self, moment):
+        race = moment.race
+        if race is None or race.me is None:
+            return []
+        phase = race.session.game_phase
+        went_green = phase == GREEN and self.last_phase is not None and self.last_phase != GREEN
+        # 24 Sep: Apex was restarted mid lap 1 (P24) and would have counted it as settled
+        joined_on_lap_1 = self.last_phase is None and phase == GREEN and race.me.laps == 0
+        if (went_green or joined_on_lap_1) and self.is_race(moment):
+            # lights out, or a restart after a full-course yellow: chaos until proven calm
+            self.settled = False
+            self.calm_since = None
+            self.last_neighbourhood = None
+            self.chaos_lap = moment.lap_count
+            if self.place_at_start is None or self.last_phase != FULL_COURSE_YELLOW:
+                self.place_at_start = race.me.place
+        self.last_phase = phase
+        if self.settled:
+            return []
+
+        now = moment.now
+        brawl_too_long = moment.lap_count - self.chaos_lap >= SETTLE_WITHIN_LAPS
+        if not self.calm(moment):
+            self.calm_since = None
+            if not brawl_too_long:
+                return []
+        elif self.calm_since is None:
+            self.calm_since = now
+        calm_long_enough = self.calm_since is not None and now - self.calm_since >= SETTLE_S
+        if not calm_long_enough and not brawl_too_long:
+            return []
+        self.settled = True
+        return [self.summary(race, now)]
+
+    def calm(self, moment):
+        race = moment.race
+        left, right = sides_taken(moment)
+        if left or right:
+            return False
+        if yellow_anywhere(race.session):
+            return False
+        if moment.new_race:
+            around = neighbourhood(race)
+            changed = self.last_neighbourhood is not None and around != self.last_neighbourhood
+            self.last_neighbourhood = around
+            if changed:
+                return False
+        return True
+
+    def summary(self, race, now):
+        me = race.me
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
+        words = [f"Settled. P{me.place}, {places_moved(self.place_at_start or me.place, me.place)}."]
+        if ahead is not None and gap_ahead is not None:
+            words.append(f"Car ahead {gap_ahead:.1f}.")
+        if behind is not None and gap_behind is not None:
+            words.append(f"Car behind {gap_behind:.1f}.")
+        text = " ".join(words)
+        return Call(seat="race_engineer", kind="SETTLED", sim_time=now, priority=ENGINEER,
+                    ttl=SUMMARY_TTL_S, conclusion=text, template=text, phrase=False,
+                    facts={"place": me.place, "start_place": self.place_at_start,
+                           "gap_ahead": gap_ahead, "gap_behind": gap_behind})

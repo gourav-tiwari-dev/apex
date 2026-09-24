@@ -10,7 +10,7 @@ import asyncio
 import os
 import sys
 
-from voice import BANK_FOLDER, BANK_LINES, CLONE_BANK_FOLDER, CloneVoice, mood_of, render, speakable
+from voice import SPOTTER_KINDS, BANK_FOLDER, BANK_LINES, CLONE_BANK_FOLDER, CloneVoice, mood_of, render, speakable
 import voice
 
 CLONE_LINE_TIMEOUT_S = 30.0      # rendering ahead of time: no hurry, unlike a live line
@@ -63,6 +63,8 @@ def cloned():
     kept = 0
     try:
         for key, (_, text) in BANK_LINES.items():
+            if key in SPOTTER_KINDS:
+                continue                   # the spotter is always the standard voice (24 Sep)
             target = os.path.join(CLONE_BANK_FOLDER, key + ".wav")
             best = None
             for take in range(TAKES):

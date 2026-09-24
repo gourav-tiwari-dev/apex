@@ -73,9 +73,26 @@ def kinds(calls):
 def test_spotter_calls_a_car_alongside_and_then_clear():
     spotter = Spotter()
     assert kinds(spotter.update(moment(0.0, nearby=near(0.0, (3.0, 1.0))))) == ["CAR_LEFT"]
-    assert spotter.update(moment(0.1, nearby=near(0.1, (3.0, -1.0)))) == []   # still there
-    assert spotter.update(moment(0.2)) == []                                  # gone, wait...
-    assert kinds(spotter.update(moment(0.7))) == ["CLEAR"]                    # ...then clear
+    assert spotter.update(moment(1.1, nearby=near(1.1, (3.0, -1.0)))) == []   # still alongside
+    assert spotter.update(moment(1.2)) == []                                  # gone, wait...
+    assert kinds(spotter.update(moment(1.7))) == ["CLEAR"]                    # ...then clear
+
+
+def test_a_car_that_only_brushed_past_gets_no_clear():
+    # 24 Sep: 17 of 34 spotter lines were "Clear", mostly after cars that just went by
+    spotter = Spotter()
+    assert kinds(spotter.update(moment(0.0, nearby=near(0.0, (3.0, 1.0))))) == ["CAR_LEFT"]
+    assert spotter.update(moment(0.3)) == []
+    assert spotter.update(moment(1.0)) == []                                  # no "clear"
+
+
+def test_still_there_every_four_seconds_while_alongside():
+    spotter = Spotter()
+    said = []
+    for step in range(0, 100):
+        t = step * 0.1
+        said += kinds(spotter.update(moment(t, nearby=near(t, (3.0, 0.0)))))
+    assert said == ["CAR_LEFT", "STILL_THERE", "STILL_THERE"]                 # at 0, 4 and 8 s
 
 
 def test_a_car_flickering_at_the_edge_does_not_repeat_car_left():
