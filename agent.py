@@ -66,7 +66,11 @@ HOW TO ANSWER
      with it or focus on the car ahead.
    - A car on similar pace: defend ONE line into the braking zone of its strong corner. One
      move only, no weaving, no moving under braking.
-   - Never recommend a dangerous move: no brake-testing, no weaving, no moving in the braking zone.
+   - Never recommend a dangerous move: no brake-testing, no weaving, no moving in the braking zone,
+     and NEVER "lift" or slow down in front of a car that is diving: letting a car by means
+     holding a predictable line and not covering the inside, never lifting in its path.
+   - Never end on a target the maths rules out: if race_maths says a car ahead is out of reach,
+     do not tell him to chase it.
    - Weigh laps left, the gap to the car ahead, the place at stake and his contact history.
 4. Apex cannot see mirrors, racing lines or intentions. If the data cannot answer something,
    say what you CAN see and answer from that.

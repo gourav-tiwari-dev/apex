@@ -12,6 +12,8 @@ the cars around you are moved:
     --situation defend     car ahead 0.4 s up, you 0.6 s a lap quicker, it is blocking
     --situation sandwich   car ahead 0.5 s up and car behind 0.4 s back
     --situation lastlap    last lap, car behind 0.2 s back
+    --situation closedive  car behind 0.3 s back, diving, only 0.2 s a lap quicker
+    --situations defend,sandwich,lastlap   several: say "next situation" on the radio to move on
     --behind 0.5 --behind-pace 2.0 --ahead 0.4 --ahead-pace -0.6 --laps-left 3
       (pace = how much quicker a lap that car is than you; negative = slower)
 
@@ -48,18 +50,23 @@ SITUATIONS = {
     "defend": {"ahead": 0.4, "ahead_pace": -0.6, "laps_left": 3},
     "sandwich": {"ahead": 0.5, "ahead_pace": -0.3, "behind": 0.4, "behind_pace": 0.5, "laps_left": 3},
     "lastlap": {"behind": 0.2, "behind_pace": 0.3, "laps_left": 1},
+    # diving at him, but not much quicker: the one to hold (his question, 24 Sep)
+    "closedive": {"behind": 0.3, "behind_pace": 0.2, "laps_left": 3},
 }
+NEXT_SITUATION = ("next situation", "next scenario", "next one")
 
 
 def set_situation(frozen, seats, ahead_gap=None, ahead_pace=0.0, behind_gap=None, behind_pace=0.0,
                   laps_left=None):
     """Move the cars just ahead and behind to the gaps and pace asked for, and rebuild the
     picture the coach sees. pace = seconds a lap quicker than him (negative = slower)."""
-    race = frozen["race"]
+    race = frozen["base_race"]                  # always from the real moment, not the last situation
+    engineer = seats["RaceEngineer"]
+    engineer.gaps_at_line = dict(frozen["base_gaps"])
+    engineer.to_go_at_line = frozen["base_to_go"]
     me = race.me
     my_lap = me.last_lap if me.last_lap > 0 else me.best_lap
     ahead, _, behind, _ = same_class_neighbours(race)
-    engineer = seats["RaceEngineer"]
     opponents = []
     for opponent in race.opponents:
         if ahead is not None and opponent is ahead and ahead_gap is not None:
@@ -128,6 +135,9 @@ def frozen_race(tape, lap):
                 frozen["lap_dist"] = moment.frame.lap_dist
                 frozen["corners"] = moment.corners
                 frozen["habits"] = habits
+                frozen["base_race"] = moment.race
+                frozen["base_gaps"] = dict(self.gaps_at_line)
+                frozen["base_to_go"] = self.to_go_at_line
             return calls
 
     live_telemetry.RaceEngineer = FreezingEngineer
@@ -146,6 +156,7 @@ def main():
     parser.add_argument("--tape", default=DEFAULT_TAPE)
     parser.add_argument("--clean", action="store_true", help="no swearing")
     parser.add_argument("--situation", choices=sorted(SITUATIONS))
+    parser.add_argument("--situations", help="several, comma separated; 'next situation' moves on")
     parser.add_argument("--ahead", type=float, help="gap to the car ahead, seconds")
     parser.add_argument("--ahead-pace", type=float, default=0.0, help="how much quicker a lap the car ahead is")
     parser.add_argument("--behind", type=float, help="gap to the car behind, seconds")
@@ -155,24 +166,41 @@ def main():
 
     print(f"Replaying {args.tape} silently up to lap {args.lap}...")
     frozen, seats = frozen_race(args.tape, args.lap)
-    chosen = dict(SITUATIONS.get(args.situation, {}))
+    # the queue of situations: one from the flags, or several to step through by voice
+    queue = []
+    if args.situations:
+        queue = [name.strip() for name in args.situations.split(",") if name.strip() in SITUATIONS]
+    elif args.situation:
+        queue = [args.situation]
+    custom = {}
     for key, value in (("ahead", args.ahead), ("behind", args.behind), ("laps_left", args.laps_left)):
         if value is not None:
-            chosen[key] = value
+            custom[key] = value
     if args.ahead_pace:
-        chosen["ahead_pace"] = args.ahead_pace
+        custom["ahead_pace"] = args.ahead_pace
     if args.behind_pace:
-        chosen["behind_pace"] = args.behind_pace
-    if chosen:
+        custom["behind_pace"] = args.behind_pace
+    if custom:
+        SITUATIONS["custom"] = custom
+        queue.append("custom")
+    step = {"index": 0}
+
+    def go_to(index):
+        name = queue[index]
+        chosen = SITUATIONS[name]
         set_situation(frozen, seats, chosen.get("ahead"), chosen.get("ahead_pace", 0.0),
                       chosen.get("behind"), chosen.get("behind_pace", 0.0), chosen.get("laps_left"))
-        print(f"Situation set: {args.situation or 'custom'}")
-    picture = frozen["snapshot"].picture
-    print(f"Frozen at lap {frozen['lap']}: P{picture['place']}, {picture['laps_to_go']} laps to go.")
-    for side in ("ahead", "behind"):
-        car = picture.get(side)
-        if car:
-            print(f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}, {car.get('gap_trend', '')}")
+        picture = frozen["snapshot"].picture
+        print(f"\n=== Situation {index + 1} of {len(queue)}: {name} ===")
+        print(f"P{picture['place']}, {picture['laps_to_go']} laps to go.")
+        for side in ("ahead", "behind"):
+            car = picture.get(side)
+            if car:
+                print(f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}, {car.get('fight', '')}")
+        return name
+
+    if queue:
+        go_to(0)
 
     talk = push_to_talk.start_if_set_up()
     if talk is None:
@@ -187,6 +215,15 @@ def main():
         while True:
             for heard in talk.poll():
                 print(f"you: {heard.text}")
+                said = heard.text.lower()
+                if any(words in said for words in NEXT_SITUATION):
+                    if step["index"] + 1 < len(queue):
+                        step["index"] += 1
+                        name = go_to(step["index"])
+                        voice.say(f"Next situation: {name}.")
+                    else:
+                        voice.say("That was the last situation, mate.")
+                    continue
                 if needs_agent(heard.text):
                     voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
                     agent.ask(heard.text, frozen["snapshot"], 0.0)
