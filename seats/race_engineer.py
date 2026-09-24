@@ -180,7 +180,9 @@ class RaceEngineer:
         self.to_go_at_line = to_go
         final_lap = None
         if to_go is not None:
-            final_lap = lap + to_go
+            # lap is the lap he is ON and to_go counts it (checked on the 23 Sep tape): the
+            # last lap is lap + to_go - 1, and a car caught within n laps is caught on lap + n - 1
+            final_lap = lap + to_go - 1
         calls = []
         if ahead is not None and gap_ahead is not None:
             gained = self.gain_since_last_line("ahead", ahead, gap_ahead)
@@ -217,7 +219,7 @@ class RaceEngineer:
         driver = ahead.driver
         gap = round(gap, 1)
         if gained >= TREND_S_PER_LAP:
-            catch_lap = lap + math.ceil(round(gap / gained, 3))
+            catch_lap = lap + math.ceil(round(gap / gained, 3)) - 1
             if final_lap is None or catch_lap <= final_lap:
                 self.last_said_lap["CATCHING"] = lap
                 facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": gained, "catch_lap": catch_lap}
@@ -249,7 +251,7 @@ class RaceEngineer:
         driver = behind.driver
         gap = round(gap, 1)
         if his_gain >= TREND_S_PER_LAP:
-            reach_lap = lap + math.ceil(round(gap / his_gain, 3))
+            reach_lap = lap + math.ceil(round(gap / his_gain, 3)) - 1
             if final_lap is not None and reach_lap > final_lap:
                 return None                      # the race runs out before he gets there
             facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": his_gain, "reach_lap": reach_lap}

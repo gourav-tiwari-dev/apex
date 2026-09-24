@@ -99,8 +99,9 @@ def test_catching_the_car_ahead_says_by_which_lap():
     assert picture(engineer, 110.0, 1, me_now, [ann(6.0)]) == []          # first line: no trend yet
     calls = picture(engineer, 220.0, 2, me_now, [ann(6.4)])             # 2.0 -> 1.6
     catching = [c for c in calls if c.kind == "CATCHING"][0]
-    assert catching.facts["catch_lap"] == 6                              # 1.6 / 0.4 = 4 more laps
-    assert catching.template == "Ann, 1.6 ahead. You're taking 4 tenths a lap. On Ann by lap 6. Keep pushing."
+    # on lap 2, 1.6 / 0.4 = 4 laps of closing: laps 2, 3, 4, 5, so on Ann during lap 5
+    assert catching.facts["catch_lap"] == 5
+    assert catching.template == "Ann, 1.6 ahead. You're taking 4 tenths a lap. On Ann by lap 5. Keep pushing."
 
 
 def test_not_closing_gives_the_lap_time_that_catches_him_by_the_flag():
@@ -123,7 +124,7 @@ def test_a_car_closing_from_behind_is_called_with_the_lap_time_to_hold_him():
     picture(engineer, 110.0, 1, me_now, [bob(10.0)])
     calls = picture(engineer, 220.0, 2, me_now, [bob(9.6)])             # 2.0 -> 1.6
     threat = [c for c in calls if c.kind == "THREAT_BEHIND"][0]
-    assert threat.template == "Bob behind, 1.6. Closing 4 tenths a lap. On you by lap 6. Match 1:51.0."
+    assert threat.template == "Bob behind, 1.6. Closing 4 tenths a lap. On you by lap 5. Match 1:51.0."
 
 
 def test_a_job_collects_clean_laps_across_races_at_its_own_track(tmp_path):

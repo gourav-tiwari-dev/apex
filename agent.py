@@ -60,6 +60,11 @@ HOW TO ANSWER
    - Weigh laps left, the gap to the car ahead, the place at stake and his contact history.
 4. Apex cannot see mirrors, racing lines or intentions. If the data cannot answer something,
    say what you CAN see and answer from that.
+5. The race maths is DONE for you in race_picture ("race_maths", "fight"): use those numbers,
+   never do your own arithmetic, so every answer in a race agrees with the last one.
+6. A missing fact stays missing: if a pace or lap time says "not known", say you don't have it.
+   Never fill it in ("same pace") from nothing.
+7. Answer the question he asked: asked for a lap time, give the lap time first.
 
 THE SPOKEN ANSWER (it is read aloud to him while he drives)
 - At most 3 short sentences, at most 40 words. The call first.
@@ -117,6 +122,46 @@ def lap_text(seconds):
         minutes += 1
         rest = round(rest - 60.0, 1)
     return f"{minutes}:{rest:04.1f}"
+
+
+NOT_A_FIGHT_S = 1.0     # further apart than this, nobody is diving at anybody yet
+
+
+def recent_lap(car):
+    """(lap time, where it came from). The game posts -1 for a lap it did not count
+    (Kossman on 23 Sep), so the best lap stands in, labelled as such."""
+    if car.last_lap > 0:
+        return car.last_lap, "last lap"
+    if car.best_lap > 0:
+        return car.best_lap, "best lap, last lap not posted"
+    return None, None
+
+
+def race_maths(side, gap, their_lap, my_lap, laps_to_go):
+    """The arithmetic, done by code so every answer uses the same numbers (on 24 Sep the model
+    said "hunt Kossman" and "you won't catch him" a minute apart)."""
+    maths = {}
+    per_lap = round(their_lap - my_lap, 2)          # > 0: I am quicker
+    if side == "ahead":
+        if laps_to_go:
+            needed = gap / laps_to_go
+            maths["to_catch_by_the_flag"] = (f"find {round(needed, 1)} s a lap on them: "
+                                             f"a {lap_text(their_lap - needed)} lap, every lap")
+        if per_lap > 0:
+            laps = round(gap / per_lap, 1)
+            maths["at_this_pace"] = (f"you reach them in about {laps} laps: "
+                                     + ("before the flag" if laps_to_go and laps <= laps_to_go else "not before the flag"))
+        else:
+            maths["at_this_pace"] = "you are not catching them"
+    else:
+        if per_lap < 0:
+            laps = round(gap / -per_lap, 1)
+            maths["at_this_pace"] = (f"they reach you in about {laps} laps: "
+                                     + ("before the flag" if laps_to_go and laps <= laps_to_go else "not before the flag"))
+            maths["to_keep_them_behind"] = f"lap {lap_text(their_lap)} or quicker"
+        else:
+            maths["at_this_pace"] = "they are not catching you"
+    return maths
 
 
 # Directions go to the model in WORDS, never as a signed number: on 24 Sep it read
@@ -183,12 +228,21 @@ class Snapshot:
             if car is None or gap is None:
                 picture[side] = None
                 continue
-            entry = {"driver": car.driver, "gap_s": round(gap, 1), "their_last_lap": lap_text(car.last_lap)}
+            entry = {"driver": car.driver, "gap_s": round(gap, 1)}
             before = engineer.gaps_at_line.get(side)
             if before is not None and before[1] is not None:
                 entry["gap_trend"] = trend_words(side, before[1] - gap)
-            if car.last_lap > 0 and me.last_lap > 0:
-                entry["their_pace"] = pace_words(car.last_lap, me.last_lap)
+            theirs, source = recent_lap(car)
+            mine, _ = recent_lap(me)
+            if theirs is not None:
+                entry["their_lap"] = f"{lap_text(theirs)} ({source})"
+            if theirs is not None and mine is not None:
+                entry["their_pace"] = pace_words(theirs, mine)
+                entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
+            else:
+                entry["their_pace"] = "not known: no lap time posted yet. Say so, never guess it."
+            if gap >= NOT_A_FIGHT_S:
+                entry["fight"] = f"not a fight yet: {round(gap, 1)} s is more than {NOT_A_FIGHT_S:g} s"
             picture[side] = entry
         return picture
 
@@ -204,8 +258,12 @@ class Snapshot:
                      "last_lap": lap_text(opponent.last_lap), "best_lap": lap_text(opponent.best_lap),
                      "in_pits": opponent.in_pits,
                      "where": road_words(me, opponent)}
-            if opponent.last_lap > 0 and me.last_lap > 0:
-                entry["their_pace"] = pace_words(opponent.last_lap, me.last_lap)
+            theirs, source = recent_lap(opponent)
+            mine, _ = recent_lap(me)
+            if theirs is not None and mine is not None:
+                entry["their_pace"] = f"{pace_words(theirs, mine)} (their {source})"
+            else:
+                entry["their_pace"] = "not known: no lap time posted yet"
             key = racecraft_key(opponent)
             edges = racecraft.edges_against(key)
             entry["corners_they_are_quicker"] = sorted(c for c, edge in edges.items() if edge <= -3.0)

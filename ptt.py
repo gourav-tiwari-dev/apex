@@ -29,9 +29,13 @@ BLOCK = 800                    # 50 ms of audio per chunk
 PRE_ROLL_CHUNKS = 6            # 0.3 s kept from before the press
 SHORTEST_PRESS_S = 0.3         # shorter than this is a knock on the button, not a question
 LONGEST_PRESS_S = 12.0
-MODEL = "base.en"
+# small.en, not base.en: base heard "the guy behind me is diving" as "the guy I had means
+# defending" on 24 Sep. small is 128 ms on the GPU instead of 53, measured.
+MODEL = "small.en"
 # words he will say, so Whisper leans towards them
-RADIO_WORDS = "Gap ahead, gap behind, fuel, laps left, lap time, catch him, quiet, radio back on, where am I losing time."
+RADIO_WORDS = ("Gap ahead, gap behind, the car behind me, the guy behind me is diving, defend, "
+               "let him go, overtake, fuel, laps left, lap time, catch him, quiet, radio back on, "
+               "where am I losing time, Arnage, Indianapolis, Mulsanne, Tertre Rouge, Porsche Curves.")
 
 
 def load_button():

@@ -21,7 +21,7 @@ DEFAULT_QUIET_LAPS = 2
 INTENTS = {
     "GAP_AHEAD": ["gap", "the gap", "ahead", "in front", "car in front", "gap ahead", "gap in front", "gap to the car ahead"],
     "GAP_BEHIND": ["behind", "car behind", "gap behind", "who is behind", "whos behind", "gap back"],
-    "PACE_TO_CATCH": ["catch", "catch him", "catch them", "what lap time do i need", "lap time do i need",
+    "PACE_TO_CATCH": ["catch", "catch him", "catch them", "catch the car ahead", "what lap time do i need", "lap time do i need",
                       "what pace do i need", "pace do i need", "need to do"],
     "FUEL": ["fuel", "energy", "tank", "enough fuel", "lift and coast", "save fuel"],
     "LAPS_LEFT": ["laps left", "how many laps", "laps to go", "time left", "how long left", "how long to go"],
@@ -60,11 +60,18 @@ FIXED_ANSWER_MAX_WORDS = 7
 ALWAYS_FIXED = {"QUIET", "RADIO_ON"}
 
 
+# "can I catch him?" is a judgment, not a lookup: on 24 Sep the fixed list answered it with
+# the bare gap. Questions that ask what to DO go to the agent however short they are.
+JUDGMENT_STARTS = ("can i", "should i", "do i", "what do i", "how do i", "what should", "is it worth", "will i")
+
+
 def needs_agent(text):
     intent = intent_of(text)
     if intent in ALWAYS_FIXED:
         return False
     if intent is None:
+        return True
+    if clean(text).startswith(JUDGMENT_STARTS):
         return True
     return len(clean(text).split()) > FIXED_ANSWER_MAX_WORDS
 

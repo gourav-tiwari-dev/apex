@@ -149,3 +149,37 @@ def test_over_budget_the_agent_says_so_without_calling_the_model():
     result = ask(RaceAgent(Budget(cap_rs=0.0), client=model), "should I pit?", snapshot_at_lap_4())
     assert "budget" in result["call"].template
     assert model.sent == []
+
+
+def test_judgment_questions_go_to_the_agent_however_short():
+    assert needs_agent("Can I catch the car ahead?")        # 24 Sep: got the bare gap
+    assert needs_agent("Should I pit?")
+    assert not needs_agent("What's the gap ahead?")
+
+
+def test_code_does_the_race_maths_so_every_answer_agrees():
+    snapshot = snapshot_at_lap_4()
+    behind = snapshot.picture["behind"]
+    # Zino 0.8 s back, 1.1 s a lap quicker: there within a lap
+    assert behind["race_maths"]["at_this_pace"] == "they reach you in about 0.7 laps: before the flag"
+    assert behind["race_maths"]["to_keep_them_behind"] == "lap 3:58.9 or quicker"
+    ahead = snapshot.picture["ahead"]
+    assert ahead["race_maths"]["at_this_pace"] == "you reach them in about 6.5 laps: not before the flag"
+    assert ahead["fight"].startswith("not a fight yet")
+
+
+def test_a_lap_the_game_did_not_post_falls_back_to_the_best_lap_and_says_so():
+    snapshot = snapshot_at_lap_4()
+    kossman = replace(behind_car(0.0), id=3, driver="Jarek Kossman", steam_id=33, place=4,
+                      time_behind_leader=5.4, last_lap=-1.0, best_lap=240.5)
+    now = race(1175.0, {"time_remaining": 210.0}, {"place": 5, "time_behind_leader": 8.0, "last_lap": 240.0},
+               opponents=[kossman])
+    performance = PerformanceEngineer()
+    picture = Snapshot(now, 5, 9000.0, [], RaceEngineer(), Strategist(), performance, Racecraft(performance),
+                       Governor(), [], {}).picture
+    assert picture["ahead"]["their_lap"] == "4:00.5 (best lap, last lap not posted)"
+    nobody = replace(kossman, best_lap=-1.0)
+    now = replace(now, opponents=[nobody])
+    picture = Snapshot(now, 5, 9000.0, [], RaceEngineer(), Strategist(), performance, Racecraft(performance),
+                       Governor(), [], {}).picture
+    assert picture["ahead"]["their_pace"].startswith("not known")
