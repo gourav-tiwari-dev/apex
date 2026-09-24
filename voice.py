@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue, Full, Empty
 
 from persona import gate
+from lines import MaxLines
 
 ENGINEER_VOICE = "en-GB-RyanNeural"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -322,6 +323,7 @@ class RadioDesk:
         self.persona = persona
         self.budget = budget
         self.clean = clean
+        self.max_lines = MaxLines(clean)
         self.kitchen = ThreadPoolExecutor(max_workers=2)
         self.orders = {}                  # id(call) -> future of the cooked line
         self.admitted_at = {}             # id(call) -> when the governor put it on air
@@ -339,9 +341,12 @@ class RadioDesk:
     def cook(self, call):
         line = None
         reason = None
-        if not call.phrase:
-            # code's own words (push-to-talk answers): no model, so no 1.8 s wait and no cost
+        if call.asked:
+            # his answers are already in Max's voice (answers.py, the coach)
             line = call.template
+        elif not call.phrase:
+            # code's own words plus a Max closer: no model, so no 1.8 s wait and no cost
+            line = self.max_lines.line(call)
         elif self.budget.allows_llm():
             text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
             if tokens_in or tokens_out:

@@ -131,3 +131,22 @@ def test_a_slow_max_line_is_skipped_not_said_in_another_voice():
     voice.out_loud = True                                   # pretend, without opening a speaker
     voice.clone = SlowClone()
     assert voice.render_with_engine("Box this lap.", wait_s=10.0) == (None, "clone_too_slow")
+
+
+def test_a_seat_line_is_said_in_code_words_with_a_max_closer_and_never_asks_the_model():
+    from lines import MaxLines
+    from seats.race_engineer import spoken
+    the_call = spoken("CATCHING", "x", 10.0, {}, template="Car ahead, 1.6. On it by lap 5.")
+    assert not the_call.phrase
+    lines = MaxLines()
+    assert lines.line(the_call) == "Car ahead, 1.6. On it by lap 5. Keep fucking pushing."
+    assert lines.line(the_call) == "Car ahead, 1.6. On it by lap 5."            # rotates, not random
+    assert MaxLines(clean=True).line(the_call).endswith("Keep pushing.")
+
+
+def test_no_seat_line_names_a_driver():
+    import re
+    for path in ("seats/race_engineer.py", "seats/racecraft.py", "seats/performance.py"):
+        source = open(path, encoding="utf8").read()
+        spoken_lines = re.findall(r'template\s*=\s*f"[^"]*"', source)
+        assert not [l for l in spoken_lines if "driver" in l], path

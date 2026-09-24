@@ -57,7 +57,7 @@ when it's perfect. Aggressive but TIMED: never "give up", always WHERE and WHEN.
 SWEAR IN THIS ANSWER, at least once, the way Max does on the radio - fuck, fucking, shit,
 bloody, damn - aimed at the situation or the other cars, NEVER at Gourav. Words in full,
 never with asterisks. Examples of the voice:
-  "Let Zino go, mate. A fucking second a lap quicker, you won't hold that. Clean exit, then chase Kossman."
+  "Let the car behind go, mate. A fucking second a lap quicker, you won't hold that. Clean exit, then chase P4."
   "No. 3 seconds with 3 laps left is fucking fantasy. Hold P5, defend one line into the Esses."
   "Understeer on entry at Arnage, mate. Brake a touch earlier, trail it in, stop fighting the bloody wheel."
 
@@ -88,7 +88,7 @@ HOW TO ANSWER
      contact  that driver has hit him this race or has contact history with him (driver tool)
      class    a faster-class car is closing (race_picture "other_class_cars_near")
      tyres    his tyres are overheating (car tool)
-   An override must be said out loud with its reason ("Team says defend, but Zino's already
+   An override must be said out loud with its reason ("Team says defend, but that car's already
    hit you twice: let it go"). Code checks every override against the data.
    Never promise a later call ("I'll tell you where"): nothing will call him back. Say where NOW.
 6. A missing fact stays missing: if a pace or lap time says "not known", say you don't have it.
@@ -111,7 +111,8 @@ THE SPOKEN ANSWER (it is read aloud to him while he drives)
 - Every number must come from a tool result or from his question. Write numbers as digits.
 - His position is ONLY race_picture "place" (on 24 Sep an answer said P5 when he was P4:
   5 was another car's place). Never take his place from another car's data.
-- Other drivers are real people: use their name or "the car behind", never he, she, him, her or his.
+- NEVER say a driver's name: he can't look names up mid-race and the voice mispronounces them.
+  Say "the car ahead", "the car behind", or its position ("P9"). Never he, she, him, her or his.
 - No questions back. No "maybe", "try", "consider", "think", "perhaps", "manage", "back off".
 - No asterisks, no lists, no markdown.
 
@@ -531,6 +532,9 @@ class Snapshot:
             result.append(entry)
         return result
 
+    def driver_names(self):
+        return [key for key in self.drivers if key not in ("ahead", "behind")]
+
     def run_tool(self, name, arguments):
         if name == "race_picture":
             return self.picture
@@ -583,11 +587,17 @@ def without_empty(value):
 
 # ---- the gate for agent answers --------------------------------------------------------------
 
-def check_answer(text, known_numbers, clean=False):
-    """(ok, reason). known_numbers: every number the tools returned or he said."""
+def check_answer(text, known_numbers, clean=False, names=()):
+    """(ok, reason). known_numbers: every number the tools returned or he said.
+    names: the other drivers in this race; none may be said (v3, 24 Sep)."""
     if not text or not text.strip():
         return False, "empty"
     lowered = text.lower()
+    for name in names:
+        parts = [name.lower()] + [part for part in name.lower().split() if len(part) >= 4]
+        for part in parts:
+            if has_phrase(lowered, part):
+                return False, "says a driver's name: say the car ahead, the car behind, or its position"
     if len(text.split()) > MAX_WORDS:
         return False, f"too long: keep it to about 35 words"
     if "?" in text:
@@ -742,7 +752,8 @@ class RaceAgent:
             call, override, text = split_call(raw)                 # the CALL line is never spoken
             ok, reason = snapshot.check_call(call, override)
             if ok:
-                ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean)
+                ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean,
+                                          snapshot.driver_names())
             if ok:
                 return text, {"costs": costs, "tools": tools_used, "rounds": round_number, "refused": refused,
                               "call": call, "override": override}

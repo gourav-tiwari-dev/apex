@@ -3,10 +3,11 @@ from voice import RadioDesk
 
 
 def call(seat="performance", kind="OFF_TRACK", at=10.0, priority=PERFORMANCE, ttl=6.0,
-         urgent=False, template=None, facts=None):
+         urgent=False, template=None, facts=None, phrase=True):
+    # phrase=True: the model path, still there for a line that needs judgment. v3 default is False
     return Call(seat=seat, kind=kind, sim_time=at, priority=priority, ttl=ttl,
                 conclusion="ran wide at T11 Parabolica", facts=facts or {},
-                urgent=urgent, template=template)
+                urgent=urgent, template=template, phrase=phrase)
 
 
 def test_nothing_is_said_mid_corner_but_waits_for_the_straight():

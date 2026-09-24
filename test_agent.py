@@ -127,9 +127,9 @@ def test_the_agent_uses_tools_then_answers_and_the_cost_is_counted():
 
 def test_a_refused_answer_gets_one_rewrite_then_an_honest_fallback():
     model = ScriptedModel(Message(content="CALL: DEFEND\nHe is 7 seconds a lap faster, hold him."),
-                          Message(content="CALL: DEFEND\nChabbi Zino is 1.1 a lap quicker. Defend, one line."))
+                          Message(content="CALL: DEFEND\nThe car behind is 1.1 a lap quicker. Defend, one line."))
     result = ask(RaceAgent(Budget(), client=model), "defend or let the car behind go?", snapshot_at_lap_4())
-    assert result["call"].template == "Chabbi Zino is 1.1 a lap quicker. Defend, one line."
+    assert result["call"].template == "The car behind is 1.1 a lap quicker. Defend, one line."
     assert "'he'" in result["call"].facts["refused"]
     stubborn = ScriptedModel(Message(content="CALL: DEFEND\nHe's quicker."), Message(content="CALL: DEFEND\nHe's still quicker."))
     result = ask(RaceAgent(Budget(), client=stubborn), "defend or let the car behind go?", snapshot_at_lap_4())
@@ -138,7 +138,9 @@ def test_a_refused_answer_gets_one_rewrite_then_an_honest_fallback():
 
 def test_the_answer_gate():
     known = numbers_seen("he's 2 seconds faster", '{"gap_s": 0.8, "their_pace": "1.1 s a lap quicker than you"}')
-    assert check_answer("Let Chabbi Zino go. 1.1 a lap quicker, not 2.", known)[0]
+    assert check_answer("Let the car behind go. 1.1 a lap quicker, not 2.", known)[0]
+    assert not check_answer("Let Chabbi Zino go. 1.1 a lap quicker.", known, names=["chabbi zino"])[0]
+    assert not check_answer("Let Zino go. 1.1 a lap quicker.", known, names=["chabbi zino"])[0]
     assert not check_answer("Chabbi Zino is 5 seconds quicker.", known)[0]             # invented
     assert not check_answer("Chabbi Zino is 12 km/h quicker at Arnage.", known)[0]    # a speed
     assert not check_answer("Let him go.", known)[0]                                  # he/him

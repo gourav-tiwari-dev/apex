@@ -60,7 +60,10 @@ class Call:
     template: str | None = None                    # exact words; urgent calls always have one
     evidence: dict = field(default_factory=dict)   # database ids this call rests on
     asked: bool = False       # an answer to his push-to-talk question
-    phrase: bool = True       # False: say the template as it is, no model in the loop
+    # v3 (24 Sep): False by default. Code's own words are said as they are, with a Max closer
+    # from lines.py; the model rewording them added ~1.8 s a line and nothing else. True only
+    # for a line that genuinely needs the model's judgment.
+    phrase: bool = False
 
 
 def words_in(text):

@@ -101,12 +101,12 @@ class Racecraft:
                 best = corner
         if best is None:
             facts["stay_within_s"] = 1
-            conclusion = f"Stay within 1 second of {opponent.driver} and wait for the mistake. No lunges."
-            template = f"{opponent.driver} ahead. Stay close. Wait for the mistake."
+            conclusion = "Stay within 1 second of the car ahead and wait for the mistake. No lunges."
+            template = "Car ahead. Stay close. Wait for the mistake."
         else:
             pass_at = self.corner_after(best, corners)
             facts.update({"strong_corner": best, "pass_corner": pass_at})
-            conclusion = f"Faster out of {best}: pass {opponent.driver} into {pass_at}, not before."
+            conclusion = f"Faster out of {best}: pass the car ahead into {pass_at}, not before."
             template = f"You're faster out of {best}. Pass into {pass_at}. Not before."
         if history:
             conclusion += f" History: {history}."
@@ -122,13 +122,13 @@ class Racecraft:
             if -edge >= EDGE_WORTH_USING_KMH and (danger is None or edge < edges[danger]):
                 danger = corner
         if danger is None:
-            conclusion = f"{opponent.driver} behind has nothing on you. Clean lines, no weaving."
-            template = f"{opponent.driver} behind. Nothing on you. Clean lines."
+            conclusion = "The car behind has nothing on you. Clean lines, no weaving."
+            template = "Car behind. Nothing on you. Clean lines."
         else:
             cover = self.corner_after(danger, corners)
             facts.update({"his_corner": danger, "cover_corner": cover})
-            conclusion = f"{opponent.driver} is quicker out of {danger}: cover the inside into {cover}."
-            template = f"{opponent.driver}'s quicker out of {danger}. Cover the inside into {cover}."
+            conclusion = f"The car behind is quicker out of {danger}: cover the inside into {cover}."
+            template = f"Car behind's quicker out of {danger}. Cover the inside into {cover}."
         return Call(seat="racecraft", kind="DEFEND_PLAN", sim_time=now, priority=RACECRAFT,
                     ttl=PLAN_TTL_S, conclusion=conclusion, facts=facts, template=template,
                     evidence={"rival": identity(opponent)})

@@ -101,7 +101,8 @@ def test_catching_the_car_ahead_says_by_which_lap():
     catching = [c for c in calls if c.kind == "CATCHING"][0]
     # on lap 2, 1.6 / 0.4 = 4 laps of closing: laps 2, 3, 4, 5, so on Ann during lap 5
     assert catching.facts["catch_lap"] == 5
-    assert catching.template == "Ann, 1.6 ahead. You're taking 4 tenths a lap. On Ann by lap 5. Keep pushing."
+    # v3: no names ("I have to look up their names above, and the pronunciation is weird")
+    assert catching.template == "Car ahead, 1.6. You're taking 4 tenths a lap. On it by lap 5."
 
 
 def test_not_closing_gives_the_lap_time_that_catches_him_by_the_flag():
@@ -111,7 +112,7 @@ def test_not_closing_gives_the_lap_time_that_catches_him_by_the_flag():
     calls = picture(engineer, 220.0, 2, me_now, [ann(6.2)], time_remaining=300.0)
     target = [c for c in calls if c.kind == "PACE_TARGET"][0]
     # 1.8 s to find in 3 laps: 0.6 a lap under Ann's 1:50.0
-    assert target.template == "Ann's doing 1:50.0. You need 1:49.4 to catch by the flag."
+    assert target.template == "Car ahead's doing 1:50.0. You need 1:49.4 to catch it by the flag."
     # 3 s in 3 laps is a second a lap: more than 0.6 % of a lap, not a real target
     other = RaceEngineer()
     picture(other, 110.0, 1, me_now, [ann(5.0)], time_remaining=300.0)
@@ -124,7 +125,7 @@ def test_a_car_closing_from_behind_is_called_with_the_lap_time_to_hold_him():
     picture(engineer, 110.0, 1, me_now, [bob(10.0)])
     calls = picture(engineer, 220.0, 2, me_now, [bob(9.6)])             # 2.0 -> 1.6
     threat = [c for c in calls if c.kind == "THREAT_BEHIND"][0]
-    assert threat.template == "Bob behind, 1.6. Closing 4 tenths a lap. On you by lap 5. Match 1:51.0."
+    assert threat.template == "Car behind, 1.6. Closing 4 tenths a lap. On you by lap 5. Match 1:51.0."
 
 
 def test_a_job_collects_clean_laps_across_races_at_its_own_track(tmp_path):

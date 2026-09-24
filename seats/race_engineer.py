@@ -229,9 +229,9 @@ class RaceEngineer:
                 self.last_said_lap["CATCHING"] = lap
                 facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": gained, "catch_lap": catch_lap}
                 return spoken("CATCHING",
-                              f"{driver} is {gap} s ahead and you are taking {gained} s a lap out of that: at this pace you are on {driver} by lap {catch_lap}. Keep pushing.",
+                              f"The car ahead is {gap} s up the road and you are taking {gained} s a lap out of that: at this pace you are on it by lap {catch_lap}. Keep pushing.",
                               now, facts,
-                              template=f"{driver}, {gap} ahead. You're taking {tenths(gained)} a lap. On {driver} by lap {catch_lap}. Keep pushing.")
+                              template=f"Car ahead, {gap}. You're taking {tenths(gained)} a lap. On it by lap {catch_lap}.")
         # not closing fast enough to catch before the flag: the lap time that would
         if to_go is None or to_go < 1 or ahead.last_lap <= 0 or self.said_recently("PACE_TARGET", lap, PACE_TARGET_EVERY_LAPS):
             return None
@@ -246,9 +246,9 @@ class RaceEngineer:
                  "their_minutes": their_min, "their_seconds": their_sec,
                  "target_minutes": target_min, "target_seconds": target_sec}
         return spoken("PACE_TARGET",
-                      f"{driver} is {gap} s ahead, lapping {their_min}:{their_sec:04.1f}. To catch {driver} by the flag you need {target_min}:{target_sec:04.1f} laps.",
+                      f"The car ahead is {gap} s up, lapping {their_min}:{their_sec:04.1f}. To catch it by the flag you need {target_min}:{target_sec:04.1f} laps.",
                       now, facts,
-                      template=f"{driver}'s doing {their_min}:{their_sec:04.1f}. You need {target_min}:{target_sec:04.1f} to catch by the flag.")
+                      template=f"Car ahead's doing {their_min}:{their_sec:04.1f}. You need {target_min}:{target_sec:04.1f} to catch it by the flag.")
 
     def defence_call(self, behind, gap, his_gain, lap, final_lap, now):
         if gap < FIGHT_GAP_S or gap > WATCH_GAP_S or his_gain is None:
@@ -260,20 +260,20 @@ class RaceEngineer:
             if final_lap is not None and reach_lap > final_lap:
                 return None                      # the race runs out before he gets there
             facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": his_gain, "reach_lap": reach_lap}
-            conclusion = f"{driver} is {gap} s behind and closing {his_gain} s a lap: on your gearbox by lap {reach_lap}."
-            template = f"{driver} behind, {gap}. Closing {tenths(his_gain)} a lap. On you by lap {reach_lap}."
+            conclusion = f"The car behind is {gap} s back and closing {his_gain} s a lap: on your gearbox by lap {reach_lap}."
+            template = f"Car behind, {gap}. Closing {tenths(his_gain)} a lap. On you by lap {reach_lap}."
             if behind.last_lap > 0:
                 his_min, his_sec = lap_time_parts(behind.last_lap)
                 facts.update({"their_minutes": his_min, "their_seconds": his_sec})
-                conclusion += f" {driver} is lapping {his_min}:{his_sec:04.1f}: match that and the gap holds."
+                conclusion += f" It is lapping {his_min}:{his_sec:04.1f}: match that and the gap holds."
                 template += f" Match {his_min}:{his_sec:04.1f}."
             self.last_said_lap["THREAT_BEHIND"] = lap
             return spoken("THREAT_BEHIND", conclusion, now, facts, template=template)
         if -his_gain >= 2 * TREND_S_PER_LAP and gap <= 3.0 and not self.said_recently("GAP_GROWING", lap, GROWING_EVERY_LAPS):
             self.last_said_lap["GAP_GROWING"] = lap
             facts = {"driver": driver, "gap_s": gap}
-            return spoken("GAP_GROWING", f"The gap back to {driver} is growing, {gap} s now. Whatever you are doing, keep doing it.",
-                          now, facts, template=f"Gap to {driver} growing, {gap}. Keep doing that.")
+            return spoken("GAP_GROWING", f"The gap back to the car behind is growing, {gap} s now. Whatever you are doing, keep doing it.",
+                          now, facts, template=f"Gap behind growing, {gap}. Keep doing that.")
         return None
 
     def gap_report(self, race, now):

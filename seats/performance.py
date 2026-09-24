@@ -416,8 +416,8 @@ class PerformanceEngineer:
         return Call(
             seat="performance", kind="FASTEST_CAR", sim_time=now, priority=PERFORMANCE,
             ttl=CORNER_CALL_TTL_S,
-            conclusion=f"{driver}, {who}, is {gap} s quicker than you through {corner}. {advice}",
-            facts=facts, template=f"{corner}: {driver} finds {tenths_words(gap)} there. {advice}")
+            conclusion=f"{who.capitalize()} is {gap} s quicker than you through {corner}. {advice}",
+            facts=facts, template=f"{corner}: {who} finds {tenths_words(gap)} there. {advice}")
 
     def balance_call(self, now, skip):
         """The corner whose balance is most off his normal, once per corner per session

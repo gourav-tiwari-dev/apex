@@ -176,7 +176,7 @@ class Answers:
         ahead, gap, behind, gap_behind = same_class_neighbours(race)
         if ahead is None or gap is None:
             return "Nobody ahead in your class. You're leading it."
-        words = f"{ahead.driver} ahead, {round(gap, 1)}."
+        words = f"Car ahead, {round(gap, 1)}."
         if ahead.last_lap > 0:
             words += f" Lapping {lap_text(ahead.last_lap)}."
         return words
@@ -185,7 +185,7 @@ class Answers:
         ahead, gap_ahead, behind, gap = same_class_neighbours(race)
         if behind is None or gap is None:
             return "Nobody behind in your class."
-        words = f"{behind.driver} behind, {round(gap, 1)}."
+        words = f"Car behind, {round(gap, 1)}."
         if behind.last_lap > 0:
             words += f" Lapping {lap_text(behind.last_lap)}."
         return words
@@ -196,9 +196,9 @@ class Answers:
             return "Nobody ahead to catch. Just bring it home."
         to_go = self.engineer.to_go_at_line
         if to_go is None or to_go < 1 or ahead.last_lap <= 0:
-            return f"{ahead.driver} is {round(gap, 1)} ahead. Need a timed lap first."
+            return f"Car ahead is {round(gap, 1)} up. Need a timed lap first."
         target = ahead.last_lap - gap / to_go
-        return f"You need {lap_text(target)} to catch {ahead.driver} by the flag. {ahead.driver}'s doing {lap_text(ahead.last_lap)}."
+        return f"You need {lap_text(target)} to catch the car ahead by the flag. It's doing {lap_text(ahead.last_lap)}."
 
     def fuel(self):
         picture = self.strategist.fuel_now
@@ -228,7 +228,7 @@ class Answers:
             return "Nothing clear yet. Need a couple more laps."
         tenths = round(focus["gap_s"] * 10)
         amount = "a tenth" if tenths <= 1 else f"{tenths} tenths"
-        return f"{focus['corner']}. {focus['driver']} finds {amount} there. {focus['advice']}"
+        return f"{focus['corner']}. The fastest car finds {amount} there. {focus['advice']}"
 
     def position(self, race):
         return f"P{race.me.place}."
