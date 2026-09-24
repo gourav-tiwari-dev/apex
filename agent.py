@@ -298,11 +298,11 @@ class Snapshot:
             if theirs is not None and mine is not None:
                 entry["their_pace"] = pace_words(theirs, mine)
                 entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
+            else:
+                entry["their_pace"] = "not known: no lap time posted yet. Say so, never guess it."
             call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
             if call is not None:
                 entry["team_call"] = call
-            else:
-                entry["their_pace"] = "not known: no lap time posted yet. Say so, never guess it."
             if gap >= NOT_A_FIGHT_S:
                 entry["fight"] = f"not a fight yet: {round(gap, 1)} s is more than {NOT_A_FIGHT_S:g} s"
             else:
