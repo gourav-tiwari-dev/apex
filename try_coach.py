@@ -202,7 +202,7 @@ def main():
     if queue:
         go_to(0)
 
-    talk = push_to_talk.start_if_set_up()
+    talk = push_to_talk.start_if_set_up(verbose=True)     # every step shows: a silent failure shows where
     if talk is None:
         return
     voice = Voice(out_loud=True)
@@ -214,6 +214,9 @@ def main():
     try:
         while True:
             for heard in talk.poll():
+                if not heard.text:
+                    print("  (heard nothing)")
+                    continue
                 print(f"you: {heard.text}")
                 said = heard.text.lower()
                 if any(words in said for words in NEXT_SITUATION):

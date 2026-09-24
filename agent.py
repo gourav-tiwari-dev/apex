@@ -296,8 +296,10 @@ class Snapshot:
                 entry["their_pace"] = "not known: no lap time posted yet"
             key = racecraft_key(opponent)
             edges = racecraft.edges_against(key)
-            entry["corners_they_are_quicker"] = sorted(c for c, edge in edges.items() if edge <= -3.0)
-            entry["corners_you_are_quicker"] = sorted(c for c, edge in edges.items() if edge >= 3.0)
+            # named for what they measure: speed carried through the middle, NOT braking (24 Sep:
+            # "corners_they_are_quicker" came back as "quicker in every braking zone")
+            entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge <= -3.0)
+            entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge >= 3.0)
             entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
             entry["pass_attempts_this_race"] = [a[4] for a in racecraft.attempts if a[0] == key]
             entry["history"] = racecraft.rivals.get(key)
