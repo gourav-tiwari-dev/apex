@@ -267,6 +267,8 @@ class Snapshot:
                 entry["their_pace"] = "not known: no lap time posted yet. Say so, never guess it."
             if gap >= NOT_A_FIGHT_S:
                 entry["fight"] = f"not a fight yet: {round(gap, 1)} s is more than {NOT_A_FIGHT_S:g} s"
+            else:
+                entry["fight"] = f"IN A FIGHT NOW: {round(gap, 1)} s, within {NOT_A_FIGHT_S:g} s"
             picture[side] = entry
         return picture
 

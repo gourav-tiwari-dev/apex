@@ -4,6 +4,17 @@
     python try_coach.py --lap 2         frozen at another lap
     python try_coach.py --tape TAPE     another race tape
 
+Set the situation you want to ask about (24 Sep: "make the situation exactly match what I'm
+saying"). The real race stays underneath - your corners, balance, habits, rivals - and only
+the cars around you are moved:
+    --situation dive       car behind 0.3 s back, 1.0 s a lap quicker
+    --situation fast       car behind 0.5 s back, 2.0 s a lap quicker (a much faster car)
+    --situation defend     car ahead 0.4 s up, you 0.6 s a lap quicker, it is blocking
+    --situation sandwich   car ahead 0.5 s up and car behind 0.4 s back
+    --situation lastlap    last lap, car behind 0.2 s back
+    --behind 0.5 --behind-pace 2.0 --ahead 0.4 --ahead-pace -0.6 --laps-left 3
+      (pace = how much quicker a lap that car is than you; negative = slower)
+
 It replays the race silently up to that lap (about a minute), freezes it, and then it is a
 radio: hold R1, ask anything, let go. Short everyday questions get the fixed answer, anything
 else goes to the race agent, and the answer is spoken, like in a race. Every agent question
@@ -16,8 +27,11 @@ import os
 import tempfile
 import time
 
+from dataclasses import replace
+
 import live_telemetry
 import memory
+from race_state import identity, same_class_neighbours
 import ptt as push_to_talk
 from agent import RaceAgent, Snapshot
 from answers import Answers, needs_agent
@@ -27,6 +41,44 @@ from team_memory import facts as memory_facts
 from voice import Voice
 
 DEFAULT_TAPE = "tape_20260923_201605.jsonl.gz"
+
+SITUATIONS = {
+    "dive": {"behind": 0.3, "behind_pace": 1.0, "laps_left": 3},
+    "fast": {"behind": 0.5, "behind_pace": 2.0, "laps_left": 3},
+    "defend": {"ahead": 0.4, "ahead_pace": -0.6, "laps_left": 3},
+    "sandwich": {"ahead": 0.5, "ahead_pace": -0.3, "behind": 0.4, "behind_pace": 0.5, "laps_left": 3},
+    "lastlap": {"behind": 0.2, "behind_pace": 0.3, "laps_left": 1},
+}
+
+
+def set_situation(frozen, seats, ahead_gap=None, ahead_pace=0.0, behind_gap=None, behind_pace=0.0,
+                  laps_left=None):
+    """Move the cars just ahead and behind to the gaps and pace asked for, and rebuild the
+    picture the coach sees. pace = seconds a lap quicker than him (negative = slower)."""
+    race = frozen["race"]
+    me = race.me
+    my_lap = me.last_lap if me.last_lap > 0 else me.best_lap
+    ahead, _, behind, _ = same_class_neighbours(race)
+    engineer = seats["RaceEngineer"]
+    opponents = []
+    for opponent in race.opponents:
+        if ahead is not None and opponent is ahead and ahead_gap is not None:
+            opponent = replace(opponent, time_behind_leader=me.time_behind_leader - ahead_gap,
+                               last_lap=round(my_lap - ahead_pace, 3))
+            # a lap ago the gap was bigger by whatever he gained on it
+            engineer.gaps_at_line["ahead"] = (identity(opponent), round(ahead_gap - ahead_pace, 2))
+        if behind is not None and opponent is behind and behind_gap is not None:
+            opponent = replace(opponent, time_behind_leader=me.time_behind_leader + behind_gap,
+                               last_lap=round(my_lap - behind_pace, 3))
+            engineer.gaps_at_line["behind"] = (identity(opponent), round(behind_gap + behind_pace, 2))
+        opponents.append(opponent)
+    race = replace(race, opponents=opponents)
+    if laps_left is not None:
+        engineer.to_go_at_line = laps_left
+    frozen["race"] = race
+    frozen["snapshot"] = Snapshot(race, frozen["lap"], frozen["lap_dist"], frozen["corners"], engineer,
+                                  seats["Strategist"], seats["PerformanceEngineer"], seats["Racecraft"],
+                                  seats["Governor"], frozen["habits"], {})
 
 
 def frozen_race(tape, lap):
@@ -73,6 +125,9 @@ def frozen_race(tape, lap):
                                               made["Racecraft"], made["Governor"], habits, {})
                 frozen["race"] = moment.race
                 frozen["lap"] = moment.lap_count
+                frozen["lap_dist"] = moment.frame.lap_dist
+                frozen["corners"] = moment.corners
+                frozen["habits"] = habits
             return calls
 
     live_telemetry.RaceEngineer = FreezingEngineer
@@ -90,16 +145,34 @@ def main():
     parser.add_argument("--lap", type=int, default=4)
     parser.add_argument("--tape", default=DEFAULT_TAPE)
     parser.add_argument("--clean", action="store_true", help="no swearing")
+    parser.add_argument("--situation", choices=sorted(SITUATIONS))
+    parser.add_argument("--ahead", type=float, help="gap to the car ahead, seconds")
+    parser.add_argument("--ahead-pace", type=float, default=0.0, help="how much quicker a lap the car ahead is")
+    parser.add_argument("--behind", type=float, help="gap to the car behind, seconds")
+    parser.add_argument("--behind-pace", type=float, default=0.0, help="how much quicker a lap the car behind is")
+    parser.add_argument("--laps-left", type=int)
     args = parser.parse_args()
 
     print(f"Replaying {args.tape} silently up to lap {args.lap}...")
     frozen, seats = frozen_race(args.tape, args.lap)
+    chosen = dict(SITUATIONS.get(args.situation, {}))
+    for key, value in (("ahead", args.ahead), ("behind", args.behind), ("laps_left", args.laps_left)):
+        if value is not None:
+            chosen[key] = value
+    if args.ahead_pace:
+        chosen["ahead_pace"] = args.ahead_pace
+    if args.behind_pace:
+        chosen["behind_pace"] = args.behind_pace
+    if chosen:
+        set_situation(frozen, seats, chosen.get("ahead"), chosen.get("ahead_pace", 0.0),
+                      chosen.get("behind"), chosen.get("behind_pace", 0.0), chosen.get("laps_left"))
+        print(f"Situation set: {args.situation or 'custom'}")
     picture = frozen["snapshot"].picture
     print(f"Frozen at lap {frozen['lap']}: P{picture['place']}, {picture['laps_to_go']} laps to go.")
     for side in ("ahead", "behind"):
         car = picture.get(side)
         if car:
-            print(f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}")
+            print(f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}, {car.get('gap_trend', '')}")
 
     talk = push_to_talk.start_if_set_up()
     if talk is None:
