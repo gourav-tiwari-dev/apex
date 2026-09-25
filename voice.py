@@ -33,6 +33,7 @@ from queue import Queue, Full, Empty
 from persona import gate
 from lines import MaxLines
 from phrasebook import Phrasebook
+from azure_voice import AzureVoice
 
 ENGINEER_VOICE = "en-GB-RyanNeural"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -177,6 +178,7 @@ class CloneVoice:
             self.process.kill()
 SPOTTER_VOICE = "en-US-GuyNeural"
 BANK_FOLDER = "voice_bank"
+AZURE_BANK_FOLDER = os.path.join("voice_bank", "azure")
 
 # key -> (voice, words). The key is the Call.kind of an urgent call.
 BANK_LINES = {
@@ -210,11 +212,17 @@ class Voice:
     """The one owner of the speaker. Everything Apex says goes through here, so nothing can
     talk over anything else by accident (23 Sep: the brief, a yellow and the spotter overlapped)."""
 
-    def __init__(self, out_loud=True, clone=True):
+    def __init__(self, out_loud=True, clone=False, azure=True):
         self.out_loud = out_loud
         self.bank = {}
         self.books = {}
         self.clone = None
+        self.azure = None
+        if out_loud and azure:
+            # 25 Sep: Azure's voices with emotion styles; not set up -> edge-tts as before
+            candidate = AzureVoice()
+            if candidate.ready:
+                self.azure = candidate
         if out_loud:
             import pygame
             self.pygame = pygame
@@ -225,6 +233,9 @@ class Voice:
             self.load_bank()
             # v3 step 5: the sentences of the instant lines, pre-rendered (phrasebook.py)
             self.books = {"spotter": Phrasebook("spotter"), "engineer": Phrasebook("engineer")}
+            if self.azure is not None:
+                self.books["azure_spotter"] = Phrasebook("azure_spotter")
+                self.books["azure_engineer"] = Phrasebook("azure_engineer")
             if self.clone is not None and not self.clone.failed:
                 self.books["clone"] = Phrasebook("clone")
             sizes = ", ".join(f"{book} {len(pieces)}" for book, pieces in self.books.items())
@@ -237,6 +248,9 @@ class Voice:
             cloned = os.path.join(CLONE_BANK_FOLDER, key + ".wav")
             if self.clone is not None and key not in SPOTTER_KINDS and os.path.exists(cloned):
                 path = cloned              # the urgent lines, pre-recorded in the cloned voice
+            with_emotion = os.path.join(AZURE_BANK_FOLDER, key + ".wav")
+            if self.azure is not None and os.path.exists(with_emotion):
+                path = with_emotion        # the urgent lines in Azure's voices, with emotion
             if os.path.exists(path):
                 self.bank[key] = self.pygame.mixer.Sound(path)
             else:
@@ -272,6 +286,9 @@ class Voice:
     def clone_up(self):
         return self.clone is not None and not self.clone.failed and self.clone.ready.is_set()
 
+    def azure_up(self):
+        return self.azure is not None and self.azure.ready
+
     def from_bank(self, text, spotter=False):
         """(WAV bytes, which voice) when every sentence of the line is in the phrase bank of
         the voice that would say it, else (None, None) and the line is rendered live.
@@ -279,7 +296,9 @@ class Voice:
         speaks, only how fast."""
         if not self.out_loud:
             return None, None
-        if spotter:
+        if self.azure_up() and not self.clone_up():
+            book, engine = ("azure_spotter" if spotter else "azure_engineer"), "azure"
+        elif spotter:
             book, engine = "spotter", "standard"
         elif self.clone_up():
             book, engine = "clone", "clone"
@@ -311,7 +330,21 @@ class Voice:
                 return audio, "clone"
             if wait_s is not None and not self.clone.failed:
                 return None, "clone_too_slow"
+        if self.azure_up():
+            audio = self.azure.render(speakable(text), "engineer", mood)
+            if audio is not None:
+                return audio, "azure"
         return asyncio.run(render(speakable(text), voice)), "standard"
+
+    def render_spotter(self, text, mood="urgent"):
+        """The spotter's voice: Azure's with emotion when it is up, else edge-tts."""
+        if not self.out_loud:
+            return None, None
+        if self.azure_up():
+            audio = self.azure.render(speakable(text), "spotter", mood)
+            if audio is not None:
+                return audio, "azure"
+        return asyncio.run(render(speakable(text), SPOTTER_VOICE)), "standard"
 
     def play(self, audio, text):
         """Blocks until the line is done. Waits for an urgent clip to finish first, never talks
@@ -404,9 +437,12 @@ class RadioDesk:
         if line is not None:
             try:
                 if call.voice == "spotter":
-                    # the spotter is always the standard voice (his call, 24 Sep)
-                    audio = self.voice.render(line, voice=SPOTTER_VOICE) if getattr(self.voice, "out_loud", False) else None
-                    engine = "standard"
+                    # the spotter keeps its own voice (his call, 24 Sep): Azure's Guy, or edge-tts
+                    if hasattr(self.voice, "render_spotter"):
+                        audio, engine = self.voice.render_spotter(line, mood_of(call.kind))
+                    else:
+                        audio = self.voice.render(line, voice=SPOTTER_VOICE) if getattr(self.voice, "out_loud", False) else None
+                        engine = "standard"
                 elif hasattr(self.voice, "render_with_engine"):
                     audio, engine = self.voice.render_with_engine(line, mood=mood_of(call.kind), wait_s=call.ttl)
                 else:

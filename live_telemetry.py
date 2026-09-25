@@ -796,7 +796,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     # 30 s to load and warm up, which must not happen again between qualifying and the race
     own_voice = voice is None
     if own_voice:
-        voice = Voice(out_loud, clone=not REPLAY)
+        voice = Voice(out_loud, clone=False)        # the cloned voice is off (25 Sep, his call)
     if persona is None:
         persona = Persona(clean=clean)
     desk = RadioDesk(voice, persona, budget, clean)

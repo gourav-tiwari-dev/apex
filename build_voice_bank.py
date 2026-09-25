@@ -5,6 +5,7 @@
     python build_voice_bank.py --phrases            the sentences of instant lines (phrasebook.py),
                                                     spotter + standard engineer voice (internet)
     python build_voice_bank.py --phrases --clone    the same sentences in Max's voice (GPU free)
+    python build_voice_bank.py --azure              all of it in Azure's voices with emotion (.env key)
 
 Run it again after changing BANK_LINES. The cloned bank stays on this laptop
 (voice_bank/ is gitignored) and is used only when the cloned voice is on, never with --record.
@@ -102,6 +103,49 @@ def cloned():
 
 
 EDGE_AT_ONCE = 6                 # edge-tts renders in flight at once
+
+
+def azure_bank():
+    """Everything the bank holds, in Azure's voices with emotion: the sentences of the instant
+    lines (phrase books azure_spotter / azure_engineer) and the urgent whole lines
+    (voice_bank/azure/). Paced under the free tier's 20 requests a minute; run it again to
+    finish or retry - what is already there is kept."""
+    import time
+    import phrasebook
+    from azure_voice import AzureVoice, FREE_TIER_PER_MINUTE
+    azure = AzureVoice()
+    if not azure.ready:
+        raise SystemExit("No Azure key: put AZURE_SPEECH_KEY and AZURE_SPEECH_REGION in .env")
+    wanted = phrasebook.units()
+    jobs = [("azure_spotter", "spotter", "urgent", text) for text in phrasebook.missing("azure_spotter", wanted["spotter"])]
+    jobs += [("azure_engineer", "engineer", wanted["engineer"][text], text)
+             for text in phrasebook.missing("azure_engineer", wanted["engineer"])]
+    os.makedirs(voice.AZURE_BANK_FOLDER, exist_ok=True)
+    for key, (_, text) in BANK_LINES.items():
+        if not os.path.exists(os.path.join(voice.AZURE_BANK_FOLDER, key + ".wav")):
+            role = "spotter" if key in SPOTTER_KINDS else "engineer"
+            jobs.append(("whole", role, mood_of(key), (key, text)))
+    gap_s = 60.0 / (FREE_TIER_PER_MINUTE - 1)
+    print(f"{len(jobs)} to render, about {round(len(jobs) * gap_s / 60)} minutes (free tier pace)")
+    failed = 0
+    for n, (book, role, mood, text) in enumerate(jobs, 1):
+        started = time.perf_counter()
+        words = text[1] if book == "whole" else text
+        audio = azure.render(speakable(words), role, mood, timeout=15)
+        if audio is None:
+            failed += 1
+            print(f"  FAILED ({azure.last_error}): {words}")
+            if not azure.ready:
+                raise SystemExit("Azure stopped answering (key, region or quota): run again later")
+        elif book == "whole":
+            with open(os.path.join(voice.AZURE_BANK_FOLDER, text[0] + ".wav"), "wb") as f:
+                f.write(audio)
+        else:
+            phrasebook.save_piece(book, text, audio)
+        if n % 25 == 0:
+            print(f"  {n}/{len(jobs)}")
+        time.sleep(max(0.0, gap_s - (time.perf_counter() - started)))
+    print(f"done: {len(jobs) - failed} saved, {failed} failed (run again to retry them)")
 
 
 def mp3_to_wav(mp3_bytes):
@@ -214,7 +258,9 @@ SPOTTER_VOICE_NAME = voice.SPOTTER_VOICE
 
 
 if __name__ == "__main__":
-    if "--phrases" in sys.argv:
+    if "--azure" in sys.argv:
+        azure_bank()
+    elif "--phrases" in sys.argv:
         if "--clone" in sys.argv:
             # e.g. --kinds PASS_PRAISE,STICK_IT --takes 12: another go at the lines that matter most
             kinds = sys.argv[sys.argv.index("--kinds") + 1].split(",") if "--kinds" in sys.argv else None

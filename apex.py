@@ -70,7 +70,9 @@ def race_night(clean, record=False):
     conn = connect_db("apex.db")
     # the cloned voice starts loading now, while the brief is said; --record keeps it off, so a
     # clip never carries it (24 Sep, his condition: "just my laptop, for my racing")
-    voice = Voice(out_loud=True, clone=not record)
+    # 25 Sep: the cloned voice is OFF (his call: it took the GPU from LMU and was hard to hear).
+    # Azure's voices with emotion speak when .env has a key, edge-tts otherwise.
+    voice = Voice(out_loud=True, clone=False)
     said = brief(conn)
     launch_id = datetime.now().isoformat(timespec="seconds")
     try:
