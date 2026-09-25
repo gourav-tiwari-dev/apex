@@ -1036,6 +1036,19 @@ def fuel_honest(question, text, picture):
     return True, "ok"
 
 
+PRONOUNS = [(r"\bhe's\b", "it's"), (r"\bshe's\b", "it's"), (r"\bhe\b", "it"), (r"\bshe\b", "it"),
+            (r"\bhim\b", "it"), (r"\bhis\b", "its"), (r"\bhers\b", "its"), (r"\bher\b", "its")]
+
+
+def neutral_pronouns(text):
+    """Other drivers are "it" (the car), never he/she. Rewritten in code: on 25 Sep two answers
+    were refused for "he" and each refusal cost a whole extra model round."""
+    for pattern, word in PRONOUNS:
+        text = re.sub(pattern, lambda m: word.capitalize() if m.group(0)[0].isupper() else word, text,
+                      flags=re.IGNORECASE)
+    return text
+
+
 def check_answer(text, known_numbers, clean=False, names=(), max_words=MAX_WORDS, speeds_ok=False):
     """(ok, reason). known_numbers: every number the tools returned or he said.
     names: the other drivers in this race; none may be said (v3, 24 Sep)."""
@@ -1188,11 +1201,19 @@ class RaceAgent:
             voice += " He asked about speed: speeds in km/h are allowed in this answer."
         if not snapshot.team_calls:
             voice += " " + NO_TACK_ON
+        # live 25 Sep: 25 model calls for 7 answers - nearly every answer first asked for the cars
+        # ahead/behind and his habits, a whole extra round (2-8 s, ~Rs 0.25). They go with the
+        # question now; the tools stay for everything else.
+        near = {side: without_empty(snapshot.drivers[side]) for side in ("ahead", "behind") if side in snapshot.drivers}
+        habits = (snapshot.habits or [])[:3]
+        given = json.dumps({"driver_ahead": near.get("ahead"), "driver_behind": near.get("behind"), "his_habits": habits})
         messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})\n\n{voice}"}]
+                    {"role": "user", "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})"
+                                                f"\n(Already given, no need to call driver or my_habits for these: {given})\n\n{voice}"}]
         costs = []
         tools_used = ["race_picture"]
-        tool_texts = [picture]
+        tool_texts_given = [given]
+        tool_texts = [picture] + tool_texts_given
         refused = None
         # tool rounds, then the answer, then at most one rewrite
         for round_number in range(1, MAX_ROUNDS + 3):
@@ -1217,6 +1238,7 @@ class RaceAgent:
                 continue
             raw = message.content or ""
             call, override, text = split_call(raw)                 # the CALL line is never spoken
+            text = neutral_pronouns(text)     # a free fix instead of a paid rewrite round (25 Sep)
             ok, reason = snapshot.check_call(call, override)
             if ok:
                 ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean,

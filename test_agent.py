@@ -126,12 +126,12 @@ def test_the_agent_uses_tools_then_answers_and_the_cost_is_counted():
 
 
 def test_a_refused_answer_gets_one_rewrite_then_an_honest_fallback():
-    model = ScriptedModel(Message(content="CALL: DEFEND\nHe is 7 seconds a lap faster, hold him."),
+    model = ScriptedModel(Message(content="CALL: DEFEND\nChabbi Zino is quicker, hold it."),
                           Message(content="CALL: DEFEND\nThe car behind is 1.1 a lap quicker. Defend, one line."))
     result = ask(RaceAgent(Budget(), client=model), "defend or let the car behind go?", snapshot_at_lap_4())
     assert result["call"].template == "The car behind is 1.1 a lap quicker. Defend, one line."
-    assert "'he'" in result["call"].facts["refused"]
-    stubborn = ScriptedModel(Message(content="CALL: DEFEND\nHe's quicker."), Message(content="CALL: DEFEND\nHe's still quicker."))
+    assert "name" in result["call"].facts["refused"]
+    stubborn = ScriptedModel(Message(content="CALL: DEFEND\nZino's quicker."), Message(content="CALL: DEFEND\nZino's still quicker."))
     result = ask(RaceAgent(Budget(), client=stubborn), "defend or let the car behind go?", snapshot_at_lap_4())
     assert result["call"].template == "No clean answer on that one, mate. Ask it another way."
 
@@ -409,3 +409,9 @@ def test_never_let_a_slower_car_by_and_one_contact_is_not_enough():
     assert not snapshot.check_call("LET BY", "contact")[0]              # one contact, not quicker
     snapshot.contacts_in_fight = 2
     assert snapshot.check_call("LET BY", "contact")[0]                  # hit twice: fair
+
+
+def test_he_and_she_become_it_for_free():
+    # 25 Sep: two answers refused for "he" cost two extra model rounds
+    from agent import neutral_pronouns
+    assert neutral_pronouns("He's diving, let him go, his exit is better.") == "It's diving, let it go, its exit is better."
