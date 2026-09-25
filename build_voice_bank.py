@@ -49,8 +49,9 @@ def standard():
     os.makedirs(BANK_FOLDER, exist_ok=True)
     for key, (speaker, text) in BANK_LINES.items():
         audio = asyncio.run(render(text, speaker, "spotter" if key in SPOTTER_KINDS else "engineer", mood_of(key)))
-        with open(os.path.join(BANK_FOLDER, key + ".mp3"), "wb") as f:
-            f.write(audio)
+        from phrasebook import radio_ready
+        with open(os.path.join(BANK_FOLDER, key + ".wav"), "wb") as f:
+            f.write(radio_ready(audio))                 # levelled like every live line
         print(f"  {key:14s} {speaker:20s} {text}")
     print(f"{len(BANK_LINES)} lines saved to {BANK_FOLDER}/")
 

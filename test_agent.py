@@ -101,8 +101,8 @@ def test_directions_are_words_never_a_sign():
 
 def test_the_snapshot_tells_the_truth_about_the_cars_around_him():
     snapshot = snapshot_at_lap_4()
-    assert snapshot.picture["behind"]["their_pace"] == "1.1 s a lap quicker than you"
-    assert snapshot.picture["ahead"]["their_pace"] == "0.4 s a lap slower than you"
+    assert snapshot.picture["behind"]["their_pace"].startswith("1.1 s a lap quicker than you")
+    assert snapshot.picture["ahead"]["their_pace"].startswith("0.4 s a lap slower than you")
     assert snapshot.run_tool("driver", {"who": "behind"})["driver"] == "Chabbi Zino"
     assert snapshot.run_tool("driver", {"who": "zino"})["where"] == "0.8 s behind you"
     assert "error" in snapshot.run_tool("driver", {"who": "Hamilton"})
@@ -362,3 +362,24 @@ def test_pace_is_never_his_start_lap_or_best_lap():
     assert my_pace(me, engineer) == 242.0
     assert my_pace(replace(me, laps=1), engineer) is None          # lap 1 is never pace
     assert recent_lap(replace(behind_car(0.0), laps=1, last_lap=280.0)) == (None, None)
+
+
+
+def test_pace_is_measured_on_the_road_a_lap_apart():
+    from gaps import TrackClock
+    clock = TrackClock()
+    clock.lap_length = 1000.0
+    # I do 50 m/s; the car behind does 55 m/s, starting 150 m back
+    for step in range(0, 700):
+        t = step * 0.1
+        clock.mine.add(1000.0 + 50.0 * t, t)
+        clock.theirs.setdefault(9, __import__("gaps").Trail()).add(850.0 + 55.0 * t, t)
+    quicker = clock.pace_vs_me(9)
+    assert quicker is not None and 1.5 < quicker < 2.0      # ~1.8 s a lap quicker over a 1000 m lap
+
+
+def test_let_by_only_for_a_car_genuinely_fast_and_measured():
+    from agent import team_call
+    assert team_call("behind", 0.4, 240.0, 241.5, 5).startswith("DEFEND")          # 1.5 s: fight it
+    assert team_call("behind", 0.4, 238.0, 240.5, 5).startswith("LET BY")          # 2.5 s, measured
+    assert team_call("behind", 0.4, 238.0, 240.5, 5, measured=False).startswith("DEFEND")

@@ -22,6 +22,7 @@ How:
         where the prediction reaches ON_YOU_S is where it will be on him
 """
 import bisect
+import statistics
 
 POINT_EVERY_M = 5.0            # a trail point every 5 m is ~0.07 s at 250 km/h: plenty
 KEEP_LAPS = 2.2                # trails older than this are dropped
@@ -30,6 +31,7 @@ MIN_CLOSING_SAMPLES = 10
 ON_YOU_S = 0.3                 # "on you": close enough to attack at the next braking zone
 LOOK_AHEAD_LAPS = 2
 PROFILE_STEP_M = 50.0          # the gap to each car is kept every 50 m of track
+PACE_STRETCHES = 8             # pace = the median of 8 stretches of the last lap
 
 
 class Trail:
@@ -171,6 +173,37 @@ class TrackClock:
         if when_front_was_there is None:
             return None
         return back.time[-1] - when_front_was_there
+
+    def gap_at(self, car_id, point):
+        """Their time at a distance raced minus mine there: > 0 = they are behind me there."""
+        trail = self.theirs.get(car_id)
+        mine = self.mine.time_at(point)
+        theirs = trail.time_at(point) if trail is not None else None
+        if mine is None or theirs is None:
+            return None
+        return theirs - mine
+
+    def pace_vs_me(self, car_id):
+        """Seconds a lap this car is QUICKER than me right now (negative = slower), measured on the
+        road: the gap at the latest point we both passed, against the gap at that same point one
+        lap earlier. Lap times, invalid laps and start laps do not come into it (live 25 Sep: an
+        invalid lap 2 made the coach compare his start lap and say "17 s a lap quicker")."""
+        trail = self.theirs.get(car_id)
+        if trail is None or not trail.distance or not self.mine.distance or not self.lap_length:
+            return None
+        # the lap in 8 stretches, and the MEDIAN stretch: one incident (his off, their spin, the
+        # start) is one stretch, not the pace. Live 25 Sep, one whole lap said "9.2 s quicker".
+        point = min(trail.distance[-1], self.mine.distance[-1])
+        stretch = self.lap_length / PACE_STRETCHES
+        shrinks = []
+        for i in range(PACE_STRETCHES):
+            end = point - i * stretch
+            at_end, at_start = self.gap_at(car_id, end), self.gap_at(car_id, end - stretch)
+            if at_end is not None and at_start is not None:
+                shrinks.append(at_start - at_end)
+        if len(shrinks) < PACE_STRETCHES - 1:
+            return None
+        return round(statistics.median(shrinks) * PACE_STRETCHES, 2)
 
     def remember_gap(self, car_id, gap, now, point=None):
         """point: the distance raced where this gap was measured (the chaser's position)."""

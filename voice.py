@@ -32,10 +32,12 @@ from queue import Queue, Full, Empty
 
 from persona import gate
 from lines import MaxLines
-from phrasebook import Phrasebook
+from phrasebook import Phrasebook, radio_ready
 from azure_voice import AzureVoice
 
-ENGINEER_VOICE = "en-GB-RyanNeural"
+# live 25 Sep: Ryan (British, soft) was "barely audible". Christopher: firm and clear, and
+# still a different voice from the spotter's Guy.
+ENGINEER_VOICE = "en-US-ChristopherNeural"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLONE_PYTHON = os.path.join(HERE, ".sovits", ".venv", "Scripts", "python.exe")
 CLONE_SERVER = os.path.join(HERE, "voice_server.py")
@@ -263,7 +265,9 @@ class Voice:
     def load_bank(self):
         missing = []
         for key in BANK_LINES:
-            path = os.path.join(BANK_FOLDER, key + ".mp3")
+            path = os.path.join(BANK_FOLDER, key + ".wav")          # levelled (25 Sep)
+            if not os.path.exists(path):
+                path = os.path.join(BANK_FOLDER, key + ".mp3")
             cloned = os.path.join(CLONE_BANK_FOLDER, key + ".wav")
             if self.clone is not None and key not in SPOTTER_KINDS and os.path.exists(cloned):
                 path = cloned              # the urgent lines, pre-recorded in the cloned voice
@@ -354,7 +358,7 @@ class Voice:
             if audio is not None:
                 return audio, "azure"
         role = "spotter" if voice == SPOTTER_VOICE else "engineer"
-        return asyncio.run(render(speakable(text), voice, role, mood)), "standard"
+        return radio_ready(asyncio.run(render(speakable(text), voice, role, mood))), "standard"
 
     def render_spotter(self, text, mood="urgent"):
         """The spotter's voice: Azure's with emotion when it is up, else edge-tts."""
@@ -364,7 +368,7 @@ class Voice:
             audio = self.azure.render(speakable(text), "spotter", mood)
             if audio is not None:
                 return audio, "azure"
-        return asyncio.run(render(speakable(text), SPOTTER_VOICE, "spotter", mood)), "standard"
+        return radio_ready(asyncio.run(render(speakable(text), SPOTTER_VOICE, "spotter", mood))), "standard"
 
     def play(self, audio, text):
         """Blocks until the line is done. Waits for an urgent clip to finish first, never talks

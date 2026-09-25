@@ -343,6 +343,22 @@ def recent_lap(car):
     return None, None
 
 
+def pace_pair(car, theirs, source, mine, engineer, racecraft):
+    """(their lap, my lap, measured?, how it was measured) for the pace comparison.
+    First choice: the road (racecraft's same-point gaps, one lap apart): the pace they are doing
+    NOW, whatever the lap times say. Then two posted laps, both real last laps. Else unknown."""
+    quicker = None
+    if racecraft is not None:
+        quicker = racecraft.clock.pace_vs_me(car.id)
+    if quicker is not None:
+        base = mine or engineer.my_lap or 240.0      # only the difference matters to the maths
+        return round(base - quicker, 2), base, True, "measured on the road over the last lap"
+    if theirs is not None and mine is not None:
+        clean = source == "last lap"
+        return theirs, mine, clean, "from lap times" if clean else "from their best lap, their last not posted"
+    return None, None, False, None
+
+
 def my_pace(me, engineer):
     """His lap for pace comparisons: the game's last lap, or Apex's own clock for it when the
     game posted -1. Never his best lap: live 25 Sep his lap 2 was invalid, his only valid lap
@@ -386,19 +402,24 @@ def race_maths(side, gap, their_lap, my_lap, laps_to_go):
 # 24 Sep, his situation tests: on the LAST LAP with a car 0.2 s behind and only 0.3 s a lap
 # quicker, the model said "that fight is lost, let it go" - and in the sandwich it said "you
 # won't hold that" and "hold P5" in one breath. Left to itself it leans to "let it go".
-LET_BY_QUICKER_S = 1.0        # a car this much quicker a lap gets by anyway (when laps remain)
+# his rule, live 25 Sep: "nobody gets past without a fight unless someone is genuinely fast or
+# my situation is bad or conditions say so". So LET BY needs a car at least 2 s a lap quicker,
+# MEASURED on the road over a lap (was 1.0 s, from lap times); damage, contact, a faster class
+# and hot tyres stay the override reasons.
+LET_BY_QUICKER_S = 2.0
 ATTACK_QUICKER_S = 0.2        # this much quicker than the car ahead, in a fight: go
 
 
-def team_call(side, gap, their_lap, my_lap, laps_to_go):
-    """DEFEND / LET BY / ATTACK / FOLLOW for a car within a second, or None outside a fight."""
+def team_call(side, gap, their_lap, my_lap, laps_to_go, measured=True):
+    """DEFEND / LET BY / ATTACK / FOLLOW for a car within a second, or None outside a fight.
+    measured: the pace came from the road (or two clean laps); without it, never LET BY."""
     if gap >= NOT_A_FIGHT_S:
         return None
     last_lap = laps_to_go is not None and laps_to_go <= 1
     if side == "behind":
         if last_lap:
             return "DEFEND: last lap, every place counts. One line, no weaving, no moving in the braking zone."
-        if their_lap is not None and my_lap is not None and my_lap - their_lap >= LET_BY_QUICKER_S:
+        if measured and their_lap is not None and my_lap is not None and my_lap - their_lap >= LET_BY_QUICKER_S:
             quicker = round(my_lap - their_lap, 1)
             return (f"LET BY: {quicker} s a lap quicker, it gets by anyway. Hold a predictable line, "
                     "don't cover the inside, never lift in its path, then stay with it.")
@@ -451,7 +472,7 @@ class Snapshot:
 
     def __init__(self, race, lap, lap_dist, corners, engineer, strategist, performance,
                  racecraft, governor, habits, contacts_this_race, db_path=None, session_id=None):
-        self.picture = self.race_picture(race, lap, engineer, governor)
+        self.picture = self.race_picture(race, lap, engineer, governor, racecraft)
         self.lap = lap
         self.race = race
         self.db_path = db_path
@@ -521,7 +542,7 @@ class Snapshot:
         return False, (f"the team call is {' / '.join(sorted(team_words))}; an override needs a reason the "
                        f"data supports, and it supports only: {', '.join(sorted(supported))}")
 
-    def race_picture(self, race, lap, engineer, governor):
+    def race_picture(self, race, lap, engineer, governor, racecraft=None):
         me = race.me
         session = race.session
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
@@ -544,12 +565,13 @@ class Snapshot:
             mine = my_pace(me, engineer)
             if theirs is not None:
                 entry["their_lap"] = f"{lap_text(theirs)} ({source})"
+            theirs, mine, measured, how = pace_pair(car, theirs, source, mine, engineer, racecraft)
             if theirs is not None and mine is not None:
-                entry["their_pace"] = pace_words(theirs, mine)
+                entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
                 entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
             else:
-                entry["their_pace"] = "not known: no lap time posted yet. Say so, never guess it."
-            call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
+                entry["their_pace"] = "not known yet: no lap measured on the road or posted. Say so, never guess it."
+            call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"], measured)
             if call is not None:
                 entry["team_call"] = call
             elif side == "behind":
@@ -578,8 +600,9 @@ class Snapshot:
                      "where": road_words(me, opponent)}
             theirs, source = recent_lap(opponent)
             mine = my_pace(me, engineer)
+            theirs, mine, _, how = pace_pair(opponent, theirs, source, mine, engineer, racecraft)
             if theirs is not None and mine is not None:
-                entry["their_pace"] = f"{pace_words(theirs, mine)} (their {source})"
+                entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
             else:
                 entry["their_pace"] = "not known: no lap time posted yet"
             key = racecraft_key(opponent)

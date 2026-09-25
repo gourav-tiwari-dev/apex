@@ -30,6 +30,10 @@ import numpy as np
 PHRASE_FOLDER = os.path.join("voice_bank", "phrases")
 BOOKS = ("spotter", "engineer", "clone")
 JOIN_PAUSE_S = 0.12          # between two sentences, like a breath on the radio
+# live 25 Sep: "the engineer is barely audible, I don't hear half the sentence; the spotter is
+# loud and clear". Every line is now levelled to the same loudness (RMS), with a soft limiter so
+# it never cracks (0.25 cracked on 24 Sep with the clone).
+TARGET_RMS = 0.18
 EDGE_PAD_S = 0.08            # kept either side of a trimmed sentence (soft "s"/"c" starts)
 QUIET = 0.01                 # below this share of full scale is silence, for trimming
 
@@ -127,6 +131,41 @@ def trimmed(samples, rate):
     return samples[max(0, loud[0] - pad):loud[-1] + pad + 1]
 
 
+def levelled(samples):
+    """Every voice at the same radio loudness: gain to TARGET_RMS, then a tanh soft limiter."""
+    x = samples.astype(np.float64) / 32767.0
+    rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
+    if rms < 1e-4:
+        return samples
+    x = np.tanh(x * (TARGET_RMS / rms) * 1.2) / np.tanh(1.2)
+    return (x * 32767.0 * 0.98).astype(np.int16)
+
+
+def decode_mp3(mp3_bytes):
+    """edge-tts makes MP3; decode it (pygame, the mixer Apex already runs) to mono samples."""
+    import io
+    import pygame
+    if not pygame.mixer.get_init():
+        pygame.mixer.init(frequency=24000, size=-16, channels=1)
+    rate, _, channels = pygame.mixer.get_init()
+    raw = np.frombuffer(pygame.mixer.Sound(file=io.BytesIO(mp3_bytes)).get_raw(), dtype=np.int16)
+    return raw.reshape(-1, channels).mean(axis=1).astype(np.int16), rate
+
+
+def radio_ready(audio):
+    """Any rendered line (edge MP3 or WAV) -> levelled WAV bytes, ready to play."""
+    try:
+        if audio[:4] == b"RIFF":
+            samples, rate = read_wav(audio)
+        else:
+            samples, rate = decode_mp3(audio)
+    except Exception:
+        return audio                  # never lose a line over levelling it
+    if samples is None:
+        return audio
+    return to_wav(levelled(samples), rate)
+
+
 def to_wav(samples, rate):
     out = io.BytesIO()
     with wave.open(out, "wb") as w:
@@ -207,7 +246,7 @@ def save_piece(book, text, wav_bytes, folder=PHRASE_FOLDER):
     os.makedirs(target, exist_ok=True)
     name = file_name(text)
     with open(os.path.join(target, name), "wb") as f:
-        f.write(to_wav(trimmed(samples, rate), rate))
+        f.write(to_wav(levelled(trimmed(samples, rate)), rate))
     index_path = os.path.join(target, "index.json")
     index = {}
     if os.path.exists(index_path):
