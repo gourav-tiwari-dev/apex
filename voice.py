@@ -32,6 +32,7 @@ from queue import Queue, Full, Empty
 
 from persona import gate
 from lines import MaxLines
+from phrasebook import Phrasebook
 
 ENGINEER_VOICE = "en-GB-RyanNeural"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -212,6 +213,7 @@ class Voice:
     def __init__(self, out_loud=True, clone=True):
         self.out_loud = out_loud
         self.bank = {}
+        self.books = {}
         self.clone = None
         if out_loud:
             import pygame
@@ -221,6 +223,12 @@ class Voice:
             if clone:
                 self.clone = CloneVoice()
             self.load_bank()
+            # v3 step 5: the sentences of the instant lines, pre-rendered (phrasebook.py)
+            self.books = {"spotter": Phrasebook("spotter"), "engineer": Phrasebook("engineer")}
+            if self.clone is not None and not self.clone.failed:
+                self.books["clone"] = Phrasebook("clone")
+            sizes = ", ".join(f"{book} {len(pieces)}" for book, pieces in self.books.items())
+            print(f"[phrase bank: {sizes} sentences]")
 
     def load_bank(self):
         missing = []
@@ -261,6 +269,28 @@ class Voice:
         sound.play()
         return True
 
+    def clone_up(self):
+        return self.clone is not None and not self.clone.failed and self.clone.ready.is_set()
+
+    def from_bank(self, text, spotter=False):
+        """(WAV bytes, which voice) when every sentence of the line is in the phrase bank of
+        the voice that would say it, else (None, None) and the line is rendered live.
+        The voice is the one render_with_engine would pick, so the bank never changes WHO
+        speaks, only how fast."""
+        if not self.out_loud:
+            return None, None
+        if spotter:
+            book, engine = "spotter", "standard"
+        elif self.clone_up():
+            book, engine = "clone", "clone"
+        else:
+            book, engine = "engineer", "standard"
+        pieces = self.books.get(book)
+        audio = pieces.join(text) if pieces else None
+        if audio is None:
+            return None, None
+        return audio, engine
+
     def render(self, text, voice=ENGINEER_VOICE, mood="dry"):
         """Text to audio bytes: the cloned voice if it is up and quick enough, else edge-tts
         (about 1.3 s). None when printing instead of speaking."""
@@ -274,8 +304,7 @@ class Voice:
         (None, "clone_too_slow"): the line is skipped, never said in another voice."""
         if not self.out_loud:
             return None, None
-        clone_up = self.clone is not None and not self.clone.failed and self.clone.ready.is_set()
-        if clone_up:
+        if self.clone_up():
             timeout = CLONE_TIMEOUT_S if wait_s is None else min(max(wait_s, CLONE_TIMEOUT_S), MAX_CLONE_WAIT_S)
             audio = self.clone.render(speakable(text, clone=True), mood, timeout=timeout)
             if audio is not None:
@@ -366,6 +395,12 @@ class RadioDesk:
         if line is None and call.template:
             line = call.template
         audio = None
+        if line is not None and hasattr(self.voice, "from_bank"):
+            banked, engine = self.voice.from_bank(line, spotter=call.voice == "spotter")
+            if banked is not None:
+                call.facts["voice"] = engine
+                call.facts["banked"] = True        # measured in the radio log: how often it hits
+                return {"line": line, "audio": banked, "reason": reason}
         if line is not None:
             try:
                 if call.voice == "spotter":

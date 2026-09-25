@@ -1,0 +1,224 @@
+"""Radio v3 step 5: every sentence an instant line can contain, rendered ahead of time, so the
+line plays the moment it is called instead of ~1.3 s (edge-tts) or ~1.8 s (the cloned voice)
+later.
+
+Why sentences and not whole lines: the lines carry numbers and places ("Car behind, 6 tenths,
+closing fast. It's already hit you once.", "Stick it. They're in your tow. Cover the inside
+into Arnage."). Whole lines would be thousands of files; their sentences are a few hundred.
+A line is split at its sentence ends, each piece is looked up, and the pieces are joined with
+a short radio pause. A sentence end is where a voice pauses anyway, so the join does not show.
+If any piece is missing, the line is rendered live as before: the bank only ever makes a line
+faster, never different.
+
+Three books, one per voice:
+    spotter    the standard spotter voice (edge-tts, SPOTTER_VOICE)
+    engineer   the standard engineer voice (edge-tts), used when the clone is not running
+    clone      Max, the cloned voice (voice_server.py), private to this laptop
+
+    python build_voice_bank.py --phrases            spotter + engineer (needs internet)
+    python build_voice_bank.py --phrases --clone    Max (needs the cloned voice, GPU free)
+"""
+import hashlib
+import io
+import json
+import os
+import re
+import wave
+
+import numpy as np
+
+PHRASE_FOLDER = os.path.join("voice_bank", "phrases")
+BOOKS = ("spotter", "engineer", "clone")
+JOIN_PAUSE_S = 0.12          # between two sentences, like a breath on the radio
+EDGE_PAD_S = 0.08            # kept either side of a trimmed sentence (soft "s"/"c" starts)
+QUIET = 0.01                 # below this share of full scale is silence, for trimming
+
+
+# ---- which sentences ----------------------------------------------------------------------
+def gap_words(low_s, high_s):
+    """Every way tenths_words() can say a gap between these two, in tenths."""
+    from seats.performance import tenths_words
+    return sorted({tenths_words(tenths / 10) for tenths in range(round(low_s * 10), round(high_s * 10) + 1)})
+
+
+def corner_names():
+    from track_map import MAPS_FOLDER, MONZA_CORNERS
+    names = {corner["name"] for corner in MONZA_CORNERS}
+    if os.path.isdir(MAPS_FOLDER):
+        for file in sorted(os.listdir(MAPS_FOLDER)):
+            if file.endswith(".json"):
+                with open(os.path.join(MAPS_FOLDER, file)) as f:
+                    names |= {corner["name"] for corner in json.load(f)["corners"]}
+    return sorted(names)
+
+
+def reputation_sentences():
+    sentences = {"It's already hit you once."}
+    sentences |= {f"It's hit you {n} times." for n in range(2, 10)}
+    sentences |= {f"That car's had {n} incidents today." for n in range(2, 21)}
+    return sentences
+
+
+def units():
+    """book -> every unit (one or more whole sentences) to pre-render. The spotter's is a set;
+    the engineer's maps each unit to the mood Max says it in. The engineer units are rendered
+    twice: in the standard voice and in Max's."""
+    from seats.racecraft import BRILLIANT, SOLID, MOVE_WORDS, ALARM_MAX_GAP_S, FIGHT_COST_S
+    from seats.track_awareness import FASTER_CLASS_WARN_S
+    corners = corner_names()
+    places = corners + [f"before {name}" for name in corners]
+
+    spotter = {"Three wide ahead. Stay out of it, let them fight.",
+               "Hold your line, let it by on the exit.", "Stay predictable, hold your line."}
+    spotter |= {f"Car behind, {gap}, closing fast." for gap in gap_words(0.1, ALARM_MAX_GAP_S + 0.5)}
+    spotter |= reputation_sentences()
+    for what in ("Slow car", "Car stopped"):
+        spotter.add(f"{what} ahead.")
+        spotter |= {f"{what} ahead, {where}." for where in places}
+    for spoken in ("Hypercar", "LMP2", "Faster car"):
+        spotter |= {f"{spoken} behind, {gap}." for gap in gap_words(0.1, FASTER_CLASS_WARN_S + 0.5)}
+        spotter.add(f"Two {spoken}s fighting behind.")
+
+    # Max's sentences, by the kind of call that says them: each is rendered in THAT call's
+    # mood (voice.mood_of), the mood a live render of the whole line would get, so a joined
+    # praise line does not switch from fired to dry halfway through
+    by_kind = {
+        "PASS_PRAISE": {"Clear."} | {f"Next one, {gap}." for gap in gap_words(0.1, 9.9)}
+                       | {text for pair in BRILLIANT + SOLID for text in pair} | set(MOVE_WORDS.values()),
+        "STICK_IT": {"Stick it. They're in your tow."} | {f"Cover the inside into {name}." for name in corners},
+        "CLOSING_ON": {"Closing fast on the car ahead."}
+                      | {f"{gap[0].upper()}{gap[1:]}." for gap in gap_words(0.1, ALARM_MAX_GAP_S + 0.5)},
+        "DEFEND_HELD": {"Mega defending, mate. They've got fucking nothing.", "Mega defending, mate. They've got nothing."},
+        "PASSED": {"Stay in the tow."} | {f"Get it back into {name}." for name in corners},
+        "PASS_RETAKEN": {"They're back past. Go again."} | {f"You're quicker out of {name}." for name in corners},
+        "PLACE_GIFT": {f"P{n}." for n in range(1, 41)} | {"Car ahead's pitting.", "Car ahead's out.", "Car ahead's in trouble."},
+        "FIGHT_COST": {"Car behind is coming.", "Commit or settle."}
+                      | {f"This fight's costing you {gap} a lap." for gap in gap_words(FIGHT_COST_S, 6.0)}
+                      | {f"Go at {name} this lap or settle in." for name in corners},
+        "REPUTATION": reputation_sentences(),       # dry: said after a plan, a fact not a cheer
+    }
+    from voice import mood_of
+    engineer = {}
+    for kind, texts in by_kind.items():
+        for text in texts:
+            engineer.setdefault(text, mood_of(kind))
+    return {"spotter": spotter, "engineer": engineer}
+
+
+# ---- splitting and joining ----------------------------------------------------------------
+def sentences(text):
+    """At a sentence end followed by a space: "1.4 seconds." stays whole."""
+    return [piece for piece in re.split(r"(?<=[.!?])\s+", text.strip()) if piece]
+
+
+def file_name(text):
+    return hashlib.sha1(text.encode("utf8")).hexdigest()[:16] + ".wav"
+
+
+def trimmed(samples, rate):
+    """Cut the silence the voice left before and after the words, keeping a short pad."""
+    loud = np.flatnonzero(np.abs(samples) > QUIET * 32767)
+    if loud.size == 0:
+        return samples
+    pad = int(EDGE_PAD_S * rate)
+    return samples[max(0, loud[0] - pad):loud[-1] + pad + 1]
+
+
+def to_wav(samples, rate):
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(samples.astype(np.int16).tobytes())
+    return out.getvalue()
+
+
+def read_wav(data):
+    with wave.open(io.BytesIO(data)) as w:
+        if w.getnchannels() != 1 or w.getsampwidth() != 2:
+            return None, None
+        return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16), w.getframerate()
+
+
+class Phrasebook:
+    """One voice's rendered sentences, held in memory. join() is the whole race-time cost."""
+
+    def __init__(self, book, folder=PHRASE_FOLDER):
+        self.book = book
+        self.folder = os.path.join(folder, book)
+        self.pieces = {}            # sentence(s) -> samples
+        self.rate = None
+        index = os.path.join(self.folder, "index.json")
+        if not os.path.exists(index):
+            return
+        with open(index, encoding="utf8") as f:
+            for text, name in json.load(f).items():
+                path = os.path.join(self.folder, name)
+                if not os.path.exists(path):
+                    continue
+                with open(path, "rb") as audio:
+                    samples, rate = read_wav(audio.read())
+                if samples is None or (self.rate is not None and rate != self.rate):
+                    continue
+                self.rate = rate
+                self.pieces[text] = samples
+
+    def __len__(self):
+        return len(self.pieces)
+
+    def pieces_for(self, text):
+        """The longest known units that make up the line, in order, or None if any is missing."""
+        parts = sentences(text)
+        found = []
+        start = 0
+        while start < len(parts):
+            for end in range(len(parts), start, -1):
+                key = " ".join(parts[start:end])
+                if key in self.pieces:
+                    found.append(key)
+                    start = end
+                    break
+            else:
+                return None
+        return found
+
+    def join(self, text):
+        """WAV bytes of the whole line from the book, or None to render it live."""
+        found = self.pieces_for(text)
+        if not found:
+            return None
+        pause = np.zeros(int(JOIN_PAUSE_S * self.rate), dtype=np.int16)
+        joined = [self.pieces[found[0]]]
+        for key in found[1:]:
+            joined += [pause, self.pieces[key]]
+        return to_wav(np.concatenate(joined), self.rate)
+
+
+def save_piece(book, text, wav_bytes, folder=PHRASE_FOLDER):
+    """Trim one rendered sentence and add it to the book's index."""
+    samples, rate = read_wav(wav_bytes)
+    if samples is None:
+        raise ValueError(f"not a 16-bit mono WAV: {text}")
+    target = os.path.join(folder, book)
+    os.makedirs(target, exist_ok=True)
+    name = file_name(text)
+    with open(os.path.join(target, name), "wb") as f:
+        f.write(to_wav(trimmed(samples, rate), rate))
+    index_path = os.path.join(target, "index.json")
+    index = {}
+    if os.path.exists(index_path):
+        with open(index_path, encoding="utf8") as f:
+            index = json.load(f)
+    index[text] = name
+    with open(index_path, "w", encoding="utf8") as f:
+        json.dump(index, f, indent=0, sort_keys=True)
+
+
+def missing(book, wanted, folder=PHRASE_FOLDER):
+    index_path = os.path.join(folder, book, "index.json")
+    have = {}
+    if os.path.exists(index_path):
+        with open(index_path, encoding="utf8") as f:
+            have = json.load(f)
+    return sorted(text for text in wanted if text not in have)

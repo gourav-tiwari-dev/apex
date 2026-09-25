@@ -2,6 +2,9 @@
 
     python build_voice_bank.py            the standard voice (edge-tts, needs internet)
     python build_voice_bank.py --clone    the cloned engineer voice, into voice_bank/clone/
+    python build_voice_bank.py --phrases            the sentences of instant lines (phrasebook.py),
+                                                    spotter + standard engineer voice (internet)
+    python build_voice_bank.py --phrases --clone    the same sentences in Max's voice (GPU free)
 
 Run it again after changing BANK_LINES. The cloned bank stays on this laptop
 (voice_bank/ is gitignored) and is used only when the cloned voice is on, never with --record.
@@ -98,8 +101,114 @@ def cloned():
     print(f"{kept} of {len(BANK_LINES)} lines in the cloned voice, saved to {CLONE_BANK_FOLDER}/")
 
 
+EDGE_AT_ONCE = 6                 # edge-tts renders in flight at once
+
+
+def mp3_to_wav(mp3_bytes):
+    """edge-tts only makes MP3; the phrasebook joins raw samples, so decode it once here."""
+    import io
+    import pygame
+    import phrasebook
+    if not pygame.mixer.get_init():
+        pygame.mixer.init(frequency=24000, size=-16, channels=1)
+    # the mixer opens in stereo even when asked for mono (measured: (24000, -16, 2)); read as
+    # mono, every sentence came out twice as long and a transcriber heard nonsense
+    rate, _, channels = pygame.mixer.get_init()
+    import numpy as np
+    raw = np.frombuffer(pygame.mixer.Sound(file=io.BytesIO(mp3_bytes)).get_raw(), dtype=np.int16)
+    samples = raw.reshape(-1, channels).mean(axis=1)
+    return phrasebook.to_wav(samples, rate)
+
+
+def phrases_standard():
+    import phrasebook
+    wanted = phrasebook.units()
+    jobs = [("spotter", SPOTTER_VOICE_NAME, text) for text in phrasebook.missing("spotter", wanted["spotter"])]
+    jobs += [("engineer", voice.ENGINEER_VOICE, text) for text in phrasebook.missing("engineer", wanted["engineer"])]
+    print(f"{len(jobs)} sentences to render in the standard voices")
+
+    async def all_of_them():
+        gate = asyncio.Semaphore(EDGE_AT_ONCE)
+
+        async def one(book, speaker, text):
+            async with gate:
+                for attempt in range(3):
+                    try:
+                        return book, text, await render(speakable(text), speaker)
+                    except Exception as error:
+                        failure = error
+                return book, text, failure
+        return await asyncio.gather(*(one(*job) for job in jobs))
+
+    failed = 0
+    for book, text, audio in asyncio.run(all_of_them()):
+        if isinstance(audio, Exception) or not audio:
+            failed += 1
+            print(f"  FAILED {book:8s} {text}  ({audio!r})")
+            continue
+        phrasebook.save_piece(book, text, mp3_to_wav(audio))
+    print(f"done: {len(jobs) - failed} saved, {failed} failed (run again to retry the failed ones)")
+
+
+def phrases_cloned():
+    """Max's voice. Each sentence: up to PHRASE_TAKES takes, checked by a transcriber; a sentence
+    no take says clearly is left out, and a line that needs it is rendered live (still Max)."""
+    import phrasebook
+    moods = phrasebook.units()["engineer"]
+    wanted = phrasebook.missing("clone", moods)
+    print(f"{len(wanted)} sentences to render in Max's voice")
+    voice.CLONE_TIMEOUT_S = CLONE_LINE_TIMEOUT_S
+    clone = CloneVoice()
+    if clone.failed or not clone.ready.wait(240):
+        raise SystemExit("The cloned voice is not set up or did not start (see voice_server.log).")
+    from faster_whisper import WhisperModel
+    ears = WhisperModel("large-v3-turbo", device="cuda", compute_type="float16")
+    os.makedirs(phrasebook.PHRASE_FOLDER, exist_ok=True)
+    trial = os.path.join(phrasebook.PHRASE_FOLDER, "_take.wav")
+    kept, left_out = 0, []
+    try:
+        for n, text in enumerate(wanted, 1):
+            best = None
+            for take in range(PHRASE_TAKES):
+                audio = clone.render(speakable(text, clone=True), moods[text], seed=2000 + take)
+                if audio is None:
+                    continue
+                with open(trial, "wb") as f:
+                    f.write(audio)
+                segments, _ = ears.transcribe(trial, language="en", beam_size=5)
+                heard = " ".join(s.text.strip() for s in segments)
+                rate = error_rate(speakable(text, clone=True), heard)
+                if best is None or rate < best[0]:
+                    best = (rate, audio, heard)
+                if rate == 0:
+                    break
+            if best is not None and best[0] <= GOOD_ENOUGH:
+                phrasebook.save_piece("clone", text, best[1])
+                kept += 1
+            else:
+                left_out.append((text, best[2] if best else "nothing"))
+            if n % 25 == 0:
+                print(f"  {n}/{len(wanted)} ({kept} kept)")
+    finally:
+        clone.stop()
+        if os.path.exists(trial):
+            os.remove(trial)
+    for text, heard in left_out:
+        print(f"  LEFT OUT (live render instead): \"{text}\" heard \"{heard}\"")
+    print(f"done: {kept} of {len(wanted)} sentences in Max's voice")
+
+
+PHRASE_TAKES = 3
+SPOTTER_VOICE_NAME = voice.SPOTTER_VOICE
+
+
 if __name__ == "__main__":
-    if "--clone" in sys.argv:
+    if "--phrases" in sys.argv:
+        if "--clone" in sys.argv:
+            phrases_cloned()
+        else:
+            phrases_standard()
+    elif "--clone" in sys.argv:
         cloned()
     else:
         standard()
