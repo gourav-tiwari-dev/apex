@@ -34,7 +34,7 @@ STOPPED_KMH = 20.0
 NORMAL_BIN_M = 50.0           # normal speed is learned for every 50 m of track
 NORMAL_SAMPLES = 40           # the latest passes kept per 50 m
 NORMAL_MIN_SAMPLES = 8        # fewer passes than this: only a stopped car is called
-HAZARD_TTL_S = 3.0
+HAZARD_TTL_S = 8.0            # 3 s let all 3 LMP2 warnings expire unspoken live on 25 Sep
 HAZARD_REARM_S = 20.0         # the same hazard is not called again for this long
 
 BATTLE_GAP_S = 0.5            # two cars this close for FIGHT_FOR_S are fighting

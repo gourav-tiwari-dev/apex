@@ -71,7 +71,7 @@ def kinds(calls):
 # ---- spotter ------------------------------------------------------------------------------
 
 def test_spotter_calls_a_car_alongside_and_then_clear():
-    spotter = Spotter()
+    spotter = Spotter(side_calls=True)
     assert kinds(spotter.update(moment(0.0, nearby=near(0.0, (3.0, 1.0))))) == ["CAR_LEFT"]
     assert spotter.update(moment(1.1, nearby=near(1.1, (3.0, -1.0)))) == []   # still alongside
     assert spotter.update(moment(1.2)) == []                                  # gone, wait...
@@ -80,14 +80,14 @@ def test_spotter_calls_a_car_alongside_and_then_clear():
 
 def test_a_car_that_only_brushed_past_gets_no_clear():
     # 24 Sep: 17 of 34 spotter lines were "Clear", mostly after cars that just went by
-    spotter = Spotter()
+    spotter = Spotter(side_calls=True)
     assert kinds(spotter.update(moment(0.0, nearby=near(0.0, (3.0, 1.0))))) == ["CAR_LEFT"]
     assert spotter.update(moment(0.3)) == []
     assert spotter.update(moment(1.0)) == []                                  # no "clear"
 
 
 def test_still_there_backs_off_while_alongside():
-    spotter = Spotter()
+    spotter = Spotter(side_calls=True)
     said = []
     for step in range(0, 450):
         t = step * 0.1
@@ -103,7 +103,7 @@ def test_a_car_flickering_at_the_edge_does_not_repeat_car_left():
 
 
 def test_three_wide_and_right_side():
-    spotter = Spotter()
+    spotter = Spotter(side_calls=True)
     assert kinds(spotter.update(moment(0.0, nearby=near(0.0, (-3.0, 0.5))))) == ["CAR_RIGHT"]
     assert kinds(spotter.update(moment(0.1, nearby=near(0.1, (-3.0, 0.5), (3.0, 0.0))))) == ["THREE_WIDE"]
 
@@ -207,3 +207,9 @@ def test_last_lap_call():
     snapshot = race(10.0, {"max_laps": 10}, {"laps": 9})
     assert strategist.update(moment(10.0, snapshot)) == []                 # mid-lap: not counted
     assert kinds(strategist.update(moment(11.0, snapshot, lap=9, wrapped=True))) == ["LAST_LAP"]
+
+
+
+def test_side_by_side_calls_are_off_by_default():
+    # his call, 25 Sep: "I know who is on my right or left", and they cut every engineer line
+    assert Spotter().update(moment(0.0, nearby=near(0.0, (3.0, 1.0)))) == []

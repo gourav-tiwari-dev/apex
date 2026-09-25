@@ -84,3 +84,10 @@ E. race_model_check.py on all tapes -> D1-D10 -> fix -> commit
 New calls: "P13's in the pits, that's a place for you"; "You're losing X a lap stuck behind that car. Pass it
 into <corner where you gain most>, or drop back to two seconds." Coach view: field 3 places either side,
 battles near, pits, corner-by-corner time gains per rival, pass odds from his races.
+
+## NEXT FEATURE (his ask, 25 Sep live test) - after the current fixes are sorted
+Two-way conversation with the engineer: it takes HIS point of view, he can OVERRIDE a decision
+("don't give me that bullshit, we push, no holding back") and it REMEMBERS the decision for the
+rest of the race and acts on it like a real person. Research first (real driver-engineer radio
+exchanges, how engineers adapt to the driver's call, mixed-initiative dialogue / shared plans),
+then build.

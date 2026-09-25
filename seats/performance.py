@@ -25,6 +25,7 @@ from balance import BalanceMeter, FIX
 # driving through the Porsche Curves, and on 23 Sep the model turned its "no braking" into
 # "No fucking braking at Arnage" - an instruction not to brake into a hairpin.
 SPOKEN_KINDS = {"SPIN", "OFF_TRACK", "LOCKUP"}
+SPIN_TTL_S = 10.0
 INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
 STALE_AFTER_S = 6.0      # v1's STALE_THRESHOLD: advice about a corner 6 s ago is useless
 
@@ -77,7 +78,13 @@ def call_from_event(event, event_id):
     # the event keeps v1's wording for the log; the radio gets it without the speed
     said = {"LOCKUP": f"Locked the fronts into {event.corner}.",
             "OFF_TRACK": f"Wide at {event.corner}.",
-            "SPIN": f"Spin at {event.corner}."}[event.kind]
+            "SPIN": "Spun. Wait for the traffic, then rejoin. Cars coming."}[event.kind]
+    if event.kind == "SPIN":
+        # live 25 Sep: two spins at Indianapolis expired unspoken while racecraft kept saying
+        # "mega defending". A spin is a safety call: said at once, and it lives long enough
+        return Call(seat="performance", kind="SPIN", sim_time=event.sim_time, priority=priority,
+                    ttl=SPIN_TTL_S, conclusion=said, facts={"corner": event.corner}, template=said,
+                    evidence={"event_id": event_id}, immediate=True)
     return Call(
         seat="performance",
         kind=event.kind,

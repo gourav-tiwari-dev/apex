@@ -34,7 +34,9 @@ FIGHT_GAP_S = 1.0             # a same-class car within a second ahead is a figh
 DEFEND_GAP_S = 0.8            # and this close behind
 FIGHT_CONFIRM_S = 8.0         # ...for this long: a car brushing past is not a fight
 EDGE_WORTH_USING_KMH = 3.0    # min-speed advantage that makes a corner yours
-GAIN_WORTH_USING_S = 0.15     # ...or, on the road, seconds I gain through it (race model, 25 Sep)
+GAIN_WORTH_USING_S = 0.15
+INCIDENT_KMH = 40.0           # slower than this on track: he's spun or crashed
+INCIDENT_QUIET_S = 20.0     # ...or, on the road, seconds I gain through it (race model, 25 Sep)
 CLOSE_GAP_S = 0.4             # this close into a corner where he is faster = about to lunge
 WARN_BEFORE_M = 300.0         # "not here" must come before the braking zone, not in it
 ATTEMPT_WINDOW_S = 6.0        # how long a pass attempt has to resolve
@@ -145,6 +147,7 @@ class Racecraft:
         self.clean = clean
         self.clock = TrackClock()
         self.model = None             # the race model, when the live loop shares it
+        self.quiet_until = None       # silent after a spin, until this time
         self.corners = []
         self.gap_points = {}               # "ahead" / "behind" -> where the latest gap was measured
         self.reputation = Reputation()
@@ -348,6 +351,12 @@ class Racecraft:
         if moment.session_type is not None and moment.session_type not in RACE_SESSIONS:
             return []
         if race.me.in_pits or race.session.game_phase != GREEN:
+            return []
+        # after a spin, or crawling: no racecraft (live 25 Sep, spun at Indianapolis, it kept saying
+        # "mega defending" and "stay in the tow")
+        if any(event.kind == "SPIN" for event in moment.events) or moment.frame.speed_kmh < INCIDENT_KMH:
+            self.quiet_until = now + INCIDENT_QUIET_S
+        if self.quiet_until is not None and now < self.quiet_until:
             return []
         me = race.me
         corners = moment.corners or []

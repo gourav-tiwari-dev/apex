@@ -17,6 +17,11 @@ CALL_TTL_S = 1.0              # a spotter call even a second late is wrong
 # real overlap and repeat "still there" every few seconds while it lasts.
 CLEAR_NEEDS_ALONGSIDE_S = 1.0 # a car alongside for less than this passed by: no "clear"
 STILL_THERE_EVERY_S = 4.0
+# His call, live 25 Sep: "fix that damn spotter, it cuts all the radio calls - I know who is on my
+# right or left". Side-by-side calls (car left/right, still there, clear, three wide) are OFF: he
+# can see them, and 65 of 153 lines that race were these, each cutting the engineer mid-sentence.
+# The hazards he cannot see (stopped/slow car ahead, faster class behind) stay (track awareness).
+SIDE_BY_SIDE_CALLS = False
 # 25 Sep replay of the 24 Sep start: one car alongside for ~40 s down to the first chicane got
 # "still there" 10 times. The wait doubles after each one (4, 8, 16 s), so a long drag gets 4.
 STILL_THERE_MAX_S = 16.0
@@ -73,7 +78,8 @@ def sides_taken(moment):
 
 
 class Spotter:
-    def __init__(self):
+    def __init__(self, side_calls=SIDE_BY_SIDE_CALLS):
+        self.side_calls = side_calls
         self.left = False
         self.right = False
         self.three_wide = False
@@ -95,6 +101,8 @@ class Spotter:
             self.left = self.right = self.three_wide = False
             self.empty_since = None
             self.alongside_since = None
+            return []
+        if not self.side_calls:
             return []
         left, right = sides_taken(moment)
         calls = []

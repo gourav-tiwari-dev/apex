@@ -21,6 +21,11 @@ NO_YELLOW = {0, 11}
 # times in 27 minutes around a 13.6 km lap. Only the yellow in my sector or the next matters.
 # GUESSED: the flag list uses the game's own sector numbering (index 0 = sector 3), like mSector.
 NEXT_SECTOR = {1: 2, 2: 0, 0: 1}
+# The game numbers MY sector 1, 2, 0 (0 = sector 3); the sector flags are a list in track order
+# (slot 0 = sector 1). Comparing the two directly was off by one: live 25 Sep, all 4 yellows
+# called were in a sector he was neither in nor heading into ("wrong yellow flag calls", marked
+# twice). Checked on the tape: with this mapping none of the 4 fire.
+FLAG_SLOT = {1: 0, 2: 1, 0: 2}
 REPORT_EVERY_LAPS = 3
 REPORT_TTL_S = 20.0           # a gap report can wait for a straight, but not for ever
 
@@ -155,7 +160,8 @@ class RaceEngineer:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
         yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag not in NO_YELLOW]
-        yellow_now = me.sector in yellow_sectors or NEXT_SECTOR.get(me.sector) in yellow_sectors
+        here, next_one = FLAG_SLOT.get(me.sector), FLAG_SLOT.get(NEXT_SECTOR.get(me.sector))
+        yellow_now = here in yellow_sectors or next_one in yellow_sectors
         if yellow_now and not self.yellow and phase == GREEN:
             calls.append(urgent("YELLOW", "Yellow flag. Yellow.", now))
         self.yellow = yellow_now

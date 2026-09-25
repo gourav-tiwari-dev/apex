@@ -203,3 +203,13 @@ def test_praise_and_the_alarm_go_out_in_the_start_chaos():
     alarm = seat.instant("CLOSING_ALARM", "Car behind.", 10.0, seat="spotter", voice="spotter")
     assert governor.offer(praise)
     assert governor.offer(alarm)
+
+
+def test_no_racecraft_after_a_spin():
+    # live 25 Sep: spun at Indianapolis, and racecraft kept saying "mega defending"
+    from test_racecraft import step, rival
+    from live_telemetry import Event
+    seat = seat_with_gaps()
+    spin = Event(kind="SPIN", sim_time=10.0, speed_kmh=50.0, corner="Indianapolis", conclusion="spin")
+    assert step(seat, 10.0, opponents=[rival(4, 7.4)], events=[spin]) == []
+    assert step(seat, 25.0, opponents=[rival(4, 7.4)]) == []            # still quiet 15 s later

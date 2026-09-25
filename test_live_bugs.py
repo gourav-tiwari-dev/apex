@@ -28,10 +28,12 @@ def test_B_eleven_is_no_yellow_and_only_my_sector_or_the_next_one_counts():
     engineer = RaceEngineer()
     engineer.update(moment(0.0, race(0.0, {"sector_flags": [11, 11, 11]}, {"sector": 1})))
     assert engineer.update(moment(1.0, race(1.0, {"sector_flags": [11, 11, 11]}, {"sector": 1}))) == []
-    # yellow in sector 3 (index 0) while I am in sector 1: not mine, not next
-    assert engineer.update(moment(2.0, race(2.0, {"sector_flags": [1, 11, 11]}, {"sector": 1}))) == []
-    # yellow in sector 2 (index 2) while I am in sector 1: the next sector
-    assert kinds(engineer.update(moment(3.0, race(3.0, {"sector_flags": [11, 11, 1]}, {"sector": 1})))) == ["YELLOW"]
+    # the flags are in track order (slot 0 = sector 1); checked on the 25 Sep tape, where the old
+    # reading (slot = the game's sector number) called 4 yellows that were not his or next
+    # yellow in sector 3 (slot 2) while I am in sector 1: not mine, not next
+    assert engineer.update(moment(2.0, race(2.0, {"sector_flags": [11, 11, 1]}, {"sector": 1}))) == []
+    # yellow in sector 2 (slot 1) while I am in sector 1: the next sector
+    assert kinds(engineer.update(moment(3.0, race(3.0, {"sector_flags": [11, 1, 11]}, {"sector": 1})))) == ["YELLOW"]
 
 
 def test_H_no_spotter_in_the_garage_or_pits():
