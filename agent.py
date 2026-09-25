@@ -22,6 +22,7 @@ How it stays honest:
     "no clean answer" line.
 """
 import json
+import math
 import os
 import re
 import threading
@@ -135,6 +136,14 @@ HOW TO ANSWER
    Brake words mean different things: "brake later" / "brake earlier" is the braking POINT;
    "off the brake earlier, let it roll" means he releases too late and over-slows mid-corner,
    his braking point is fine. Never answer "am I braking too early" with the release advice.
+   THE RACE MODEL (race_picture): "field_around_you" = the cars 3 places either side, measured on
+   the road: same-point gap, the trend ("sure, 2 laps" or "1 lap only, NOT sure") and whether
+   one catches the other ("yes, within N laps", before the flag or not). "battles_near_you",
+   "just_pitted_near_you". The driver tool has "corners_where_they_gain_time_s" and
+   "corners_where_you_gain_time_s": seconds through each corner, from the road - set a pass up
+   where he gains, defend where they gain. Between fighting cars the gap moves ~1.2 s a lap for
+   reasons that are not pace: a "NOT sure" trend is said as "early to tell", never as a fact.
+   A catch time is an upper bound ("within N laps"), never an exact lap.
 10. When the data does not have it, say EXACTLY which data is missing ("the game doesn't send
    other cars' tyre wear", "no timed lap yet"), then the best call from what IS known.
 
@@ -341,6 +350,39 @@ def recent_lap(car):
     if car.best_lap > 0:
         return car.best_lap, "best lap, last lap not posted"
     return None, None
+
+
+# From 278 fights on his four race tapes (tools/pass_study.py, 25 Sep): how often the car behind
+# got past within a lap, by how much quicker it was on the road. Recompute as tapes grow.
+PASS_ODDS = [(-99.0, "slower than you", 0.45), (-0.5, "about your pace", 0.55),
+             (0.5, "0.5 to 2 s a lap quicker", 0.81), (2.0, "2+ s a lap quicker", 0.86)]
+
+
+def pass_odds(quicker):
+    """(words, share) for a car behind that is `quicker` s a lap quicker on the road."""
+    found = PASS_ODDS[0]
+    for row in PASS_ODDS:
+        if quicker >= row[0]:
+            found = row
+    return found[1], found[2]
+
+
+CATCH_UPPER = 1.5     # field study (25 Sep): 20 of 21 sure forecasts were caught, the time was
+                      # off by a median 64%, and within 1.5x the forecast 95% of the time for
+                      # forecasts over a minute: say WHETHER and an upper bound, never "in 1.6 laps"
+
+
+def catch_words(laps, to_go):
+    within = max(1, math.ceil(laps * CATCH_UPPER))
+    words = f"yes, within {within} laps at this trend"
+    if to_go is not None:
+        if within <= to_go:
+            words += ", before the flag"
+        elif laps > to_go:
+            words += ", but NOT before the flag"
+        else:
+            words += ", maybe before the flag (tight)"
+    return words
 
 
 def pace_pair(car, theirs, source, mine, engineer, racecraft, model=None):
@@ -588,6 +630,10 @@ class Snapshot:
             else:
                 entry["their_pace"] = "not known yet: no lap measured on the road or posted. Say so, never guess it."
             call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"], measured)
+            if side == "behind" and theirs is not None and mine is not None and gap < 1.5:
+                words, share = pass_odds(mine - theirs)
+                entry["pass_odds_from_his_races"] = (f"in fights on his tapes, cars {words} got past within a lap "
+                                                     f"{round(share * 100)}% of the time")
             if call is not None:
                 entry["team_call"] = call
             elif side == "behind":
@@ -637,16 +683,12 @@ class Snapshot:
                 row["trend"] = self.trend_words(o.id, "me").replace("the car behind is", "you are")
                 catch = self.model.catch("me", o.id)
                 if catch is not None:
-                    row["you_catch_it_in_laps"] = catch[1]
-                    if to_go is not None:
-                        row["before_the_flag"] = catch[1] <= to_go
+                    row["you_catch_it"] = catch_words(catch[1], to_go)
             else:
                 row["trend"] = self.trend_words("me", o.id)
                 catch = self.model.catch(o.id, "me")
                 if catch is not None:
-                    row["it_catches_you_in_laps"] = catch[1]
-                    if to_go is not None:
-                        row["before_the_flag"] = catch[1] <= to_go
+                    row["it_catches_you"] = catch_words(catch[1], to_go)
             rows.append(row)
         return rows
 
@@ -931,6 +973,31 @@ NO_STOP_WORDS = ("no need to pit", "no stop", "don't need to pit", "dont need to
                  "you'll make it", "you will make it", "enough fuel", "fuel's fine", "fuel is fine")
 
 
+CATCHING_WORDS = ("catching you", "closing on you", "closing you", "reeling you in", "on you by", "coming at you")
+DROPPING_WORDS = ("dropping back", "falling back", "pulling away from you", "not catching you")
+
+
+def trend_honest(text, picture):
+    """(ok, reason). The direction of a SURE road trend is a fact: an answer may not say the car
+    behind is catching when the race model is sure it is dropping back, or the reverse."""
+    said = text.lower()
+    for row in (picture or {}).get("field_around_you", []):
+        if row.get("side") != "behind" or row.get("place") is None:
+            continue
+        trend = row.get("trend", "")
+        if "sure, 2 laps" not in trend:
+            continue
+        nearest = min((r for r in picture["field_around_you"] if r.get("side") == "behind"),
+                      key=lambda r: r["place"])
+        if row is not nearest:
+            continue
+        if "growing" in trend and any(w in said for w in CATCHING_WORDS):
+            return False, f"the road says the car behind is NOT catching ({trend}): don't say it is"
+        if "catching" in trend and any(w in said for w in DROPPING_WORDS):
+            return False, f"the road says the car behind IS catching ({trend}): don't say it isn't"
+    return True, "ok"
+
+
 def fuel_honest(question, text, picture):
     """(ok, reason). Live 25 Sep: with 0.6 laps of energy for 1.7 laps of race the coach said
     "no need to pit". The fuel verdict is code's; the answer must carry it."""
@@ -1137,6 +1204,8 @@ class RaceAgent:
                                           snapshot.driver_names(), max_words, speeds_ok)
             if ok:
                 ok, reason = fuel_honest(question, text, snapshot.car_state.get("fuel_at_the_flag"))
+            if ok:
+                ok, reason = trend_honest(text, snapshot.picture)
             if ok and tacked_on(question, text, bool(snapshot.team_calls)):
                 ok, reason = False, ("it talks about the car ahead or behind, but he did not ask about them "
                                      "and nobody is within a second: answer only his question")

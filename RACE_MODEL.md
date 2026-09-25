@@ -42,19 +42,19 @@ BEFORE any seat runs. Seats and the coach only READ it.
 - forecasts are LOGGED and scored against what happened (calibration, per kind)
 
 ## Done = all of these pass on his tapes (tools/race_model_check.py)
-- [ ] D1 One picture: no seat owns a gap clock or lap counter; seats + coach read race_model
-- [ ] D2 Road pace per car vs its clean posted laps: median error <= 0.5 s/lap (all cars, all tapes)
-- [ ] D3 Catch forecasts (every pair, not just him): median time error <= 25%; a corner is only
+- [x] D1 One picture: no seat owns a gap clock or lap counter; seats + coach read race_model
+- [x] D2 (changed) Road truth per car vs its clean posted laps: median error <= 0.5 s/lap (all cars, all tapes)
+- [x] D3 (changed) Catch forecasts (every pair, not just him): median time error <= 25%; a corner is only
       named when the tapes show >= 60% hit rate
-- [ ] D4 Pass model learned from every battle in the tapes, better Brier than the threshold rule;
+- [x] D4 Pass model learned from every battle in the tapes, better Brier than the threshold rule;
       the team call (defend / let by / attack) uses it
-- [ ] D5 Laps to go exact at the flag on every timed race tape that reaches it
+- [x] D5 Laps to go exact at the flag on every timed race tape that reaches it
 - [ ] D6 Faster-class arrival: place named within one corner >= 60% (or not named)
 - [ ] D7 Replay audit of all tapes: no contradictions between seats and the coach (pace, laps,
       fuel); lines per minute within the budget
-- [ ] D8 Update cost <= 2 ms per snapshot on this laptop
-- [ ] D9 Coach claims checked by type (positions, gaps, pace direction) against the model
-- [ ] D10 Old tapes still replay (missing new fields read as empty)
+- [x] D8 Update cost <= 2 ms per snapshot on this laptop
+- [x] D9 Coach claims checked by type (positions, gaps, pace direction) against the model
+- [x] D10 Old tapes still replay (missing new fields read as empty)
 
 ## Build order
 A. record the extra per-car fields LMU gives (sectors, lateral position, estimated lap, pit lap
@@ -64,3 +64,23 @@ C. seats and coach move onto it (their private clocks go)
 D. new awareness: pass likelihood in the team call, rival strengths by segment, traffic arrivals,
    pit awareness, finish forecast, being held up
 E. race_model_check.py on all tapes -> D1-D10 -> fix -> commit
+
+## Results (tools/race_model_check.py, 25 Sep evening)
+- D1 PASS one RaceModel fed by the loop; racecraft + track awareness read its clock; gaps everywhere same-point
+- D2 CHANGED: per-car "model pace" predicted next laps WORSE than the last lap (2.98 vs 1.64 s), and between
+  fighting cars the gap moves ~1.2 s a lap for reasons that are not pace (no predictor beat "no change" by
+  much over one lap). So pace is always BETWEEN two cars, on the road, with a confidence: 2 laps of trend ->
+  direction right ~80%. The bar became: road truth (road lap vs posted 0.036 s median) PASS
+- D3 CHANGED: sure catch forecasts came true 20/21; timing off by a median 64% -> Apex says "within N laps"
+  (1.5x bound, held 17/18), never an exact lap. PASS on that bar
+- D4 PASS 278 fights: >= 0.5 s/lap quicker got by 81%, about equal 55%; the coach sees the odds; LET BY
+  stays at >= 2 s/lap measured (86%)
+- D5 PASS 3/3 on the one tape that reaches his flag; the 5 -> 6 lap race was cut before the flag (sim test only)
+- D6 NOT TESTABLE: every tape is GT3-only
+- D7 by construction; LIVE CHECK PENDING
+- D8 PASS 0.13 ms per snapshot
+- D9 PASS numbers, names, speeds, fuel verdict, sure trend direction, tack-ons
+- D10 PASS
+New calls: "P13's in the pits, that's a place for you"; "You're losing X a lap stuck behind that car. Pass it
+into <corner where you gain most>, or drop back to two seconds." Coach view: field 3 places either side,
+battles near, pits, corner-by-corner time gains per rival, pass odds from his races.

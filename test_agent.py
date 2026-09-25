@@ -383,3 +383,15 @@ def test_let_by_only_for_a_car_genuinely_fast_and_measured():
     assert team_call("behind", 0.4, 240.0, 241.5, 5).startswith("DEFEND")          # 1.5 s: fight it
     assert team_call("behind", 0.4, 238.0, 240.5, 5).startswith("LET BY")          # 2.5 s, measured
     assert team_call("behind", 0.4, 238.0, 240.5, 5, measured=False).startswith("DEFEND")
+
+
+def test_the_coach_cannot_contradict_a_sure_road_trend():
+    from agent import trend_honest
+    picture = {"field_around_you": [
+        {"place": 6, "side": "behind", "gap_s": 0.4, "trend": "the gap is growing 0.6 s a lap (sure, 2 laps)"},
+        {"place": 7, "side": "behind", "gap_s": 2.0, "trend": "the car behind is catching 0.8 s a lap (sure, 2 laps)"}]}
+    assert not trend_honest("Defend, mate, it's catching you.", picture)[0]      # P6 is dropping back
+    assert trend_honest("It's dropping back, mate. Clean laps.", picture)[0]
+    unsure = {"field_around_you": [{"place": 6, "side": "behind", "gap_s": 0.4,
+                                    "trend": "the car behind is catching 0.3 s a lap (1 lap only, NOT sure)"}]}
+    assert trend_honest("Early to tell, mate.", unsure)[0]

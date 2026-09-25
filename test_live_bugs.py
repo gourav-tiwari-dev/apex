@@ -99,10 +99,11 @@ def test_catching_the_car_ahead_says_by_which_lap():
     assert picture(engineer, 110.0, 1, me_now, [ann(6.0)]) == []          # first line: no trend yet
     calls = picture(engineer, 220.0, 2, me_now, [ann(6.4)])             # 2.0 -> 1.6
     catching = [c for c in calls if c.kind == "CATCHING"][0]
-    # on lap 2, 1.6 / 0.4 = 4 laps of closing: laps 2, 3, 4, 5, so on Ann during lap 5
-    assert catching.facts["catch_lap"] == 5
+    # on lap 2, 1.6 / 0.4 = 4 laps of closing; "by lap" is an upper bound (x1.5, 25 Sep field
+    # study: catch timing off by a median 64%, inside 1.5x ~95%): 6 laps -> by lap 7
+    assert catching.facts["catch_lap"] == 7
     # v3: no names ("I have to look up their names above, and the pronunciation is weird")
-    assert catching.template == "Car ahead, 1.6. You're taking 4 tenths a lap. On it by lap 5."
+    assert catching.template == "Car ahead, 1.6. You're taking 4 tenths a lap. On it by lap 7."
 
 
 def test_not_closing_gives_the_lap_time_that_catches_him_by_the_flag():

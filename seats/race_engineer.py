@@ -73,6 +73,13 @@ def car_behind(race):
     return None
 
 
+CATCH_UPPER = 1.5
+
+
+PITS_AHEAD_PLACES = 2          # a car this many places ahead pitting is worth a call
+HELD_UP_COST_S = 0.7           # stuck behind a car costing this much a lap vs clean air
+
+
 def sure_closing(model, front, back):
     """The race model's road trend: seconds a lap the back car takes out of the gap, but only
     when it is SURE (2 laps of trend). Between fighting cars the gap moves ~1.2 s a lap for
@@ -96,6 +103,9 @@ class RaceEngineer:
         self.last_report_lap = 0
         self.last_gap_ahead = None
         self.gaps_at_line = {}        # "ahead" / "behind" -> (identity, gap) at the last line
+        self.pits_said = set()        # (time, car) pit entries already called
+        self.clean_laps = []          # my road laps with nobody within a second ahead all lap
+        self.held_up_said = set()
         self.to_go_at_line = None     # laps to go as counted at the last line
         self.flag_called = False
         self.line_time = None         # sim time of the last line crossing
@@ -183,6 +193,10 @@ class RaceEngineer:
             self.line_time = now
         if moment.lap_wrapped and racing and moment.lap_count >= 1:
             calls.extend(self.race_picture(race, moment.lap_count, now, moment.model))
+            if moment.model is not None:
+                calls.extend(self.held_up(race, moment.model, moment.corners, now))
+        if racing and moment.new_race and moment.model is not None:
+            calls.extend(self.pits_ahead(race, moment.model, now))
 
         # where you are in the race, every few laps, said on a straight
         if moment.lap_wrapped and moment.lap_count >= self.last_report_lap + REPORT_EVERY_LAPS and moment.lap_count > 1:
@@ -221,6 +235,51 @@ class RaceEngineer:
             self.gaps_at_line["behind"] = (identity(behind), gap_behind)
         return calls
 
+    # ---- race awareness from the race model (25 Sep) ------------------------------------------
+    def pits_ahead(self, race, model, now):
+        """The car just ahead in my class went into the pit lane: that place is coming to me."""
+        calls = []
+        for when, key, what in model.pit_events:
+            if what != "in" or (when, key) in self.pits_said:
+                continue
+            car = model.car(key)
+            if car is None or car.car_class != race.me.car_class or car.place >= race.me.place \
+                    or race.me.place - car.place > PITS_AHEAD_PLACES:
+                continue
+            self.pits_said.add((when, key))
+            words = f"P{car.place}'s in the pits. That's a place for you."
+            calls.append(spoken("PITS_AHEAD", words, now, {"their_place": car.place}, template=words))
+        return calls
+
+    def held_up(self, race, model, corners, now):
+        """At the line: a lap spent within a second of the same car, not getting closer, and my
+        road laps behind it clearly slower than my laps in clean air -> say what it costs and the
+        two ways out. Real engineers make this call; Apex never did."""
+        me = race.me
+        lap = model.road_lap("me")
+        ahead, _, _, _ = same_class_neighbours(race, model)
+        stuck_since = model.close_since.get((ahead.id, "me")) if ahead is not None else None
+        followed = stuck_since is not None and lap is not None and now - stuck_since >= 0.9 * lap
+        if lap is not None and not followed:
+            self.clean_laps.append(lap)
+            return []
+        if not followed or len(self.clean_laps) < 1 or ahead.id in self.held_up_said:
+            return []
+        clean = min(self.clean_laps[-3:])
+        cost = round(lap - clean, 1)
+        trend = model.trend(ahead.id, "me")
+        closing = trend is not None and trend["closing_per_lap"] > 0.2
+        if cost < HELD_UP_COST_S or closing:
+            return []
+        self.held_up_said.add(ahead.id)
+        strong = None
+        if corners:
+            gains = model.corner_gains("me", ahead.id, corners)
+            strong = max(gains, key=gains.get) if gains and max(gains.values()) >= 0.15 else None
+        where = f"Pass it into {strong}" if strong else "Pass it"
+        words = f"You're losing {cost} a lap stuck behind that car. {where}, or drop back to two seconds."
+        return [spoken("HELD_UP", words, now, {"cost_s": cost, "corner": strong}, template=words)]
+
     def gain_since_last_line(self, side, car, gap):
         """How much the gap shrank over the last lap (> 0: shrinking), or None when this is not
         the same car as at the last line."""
@@ -239,7 +298,9 @@ class RaceEngineer:
         driver = ahead.driver
         gap = round(gap, 1)
         if gained >= TREND_S_PER_LAP:
-            catch_lap = lap + math.ceil(round(gap / gained, 3)) - 1
+            # "by lap N" is an upper bound: sure catch forecasts were right 20 of 21 times on his
+            # tapes, their timing off by a median 64%, inside 1.5x the forecast ~95% (25 Sep)
+            catch_lap = lap + math.ceil(round(gap / gained * CATCH_UPPER, 3)) - 1
             if final_lap is None or catch_lap <= final_lap:
                 self.last_said_lap["CATCHING"] = lap
                 facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": gained, "catch_lap": catch_lap}
