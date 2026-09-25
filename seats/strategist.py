@@ -55,6 +55,12 @@ class Strategist:
         self.last_lap_called = False
         self.fuel_now = None           # the latest fuel picture, for "how's the fuel?" on the radio
         self.line_time = None          # sim time when he last crossed the line
+        # v3 step 5b: every lap for "how were my last laps / my sectors" on the radio. The laps
+        # table in apex.db has no times for live sessions (all None, checked 25 Sep), so the
+        # sectors are timed here on Apex's own clock, like measured_lap
+        self.lap_records = []          # {"lap", "time_s", "sectors_s", "fuel_used", "valid"}
+        self.sector_marks = {}         # 1 / 2 -> sim time sector 1 / 2 ended this lap
+        self.last_sector = None
 
     def laps_left(self, race):
         lap_time = None
@@ -79,12 +85,22 @@ class Strategist:
         now = moment.now
         calls = []
 
+        # the game's sector numbers: 1, 2, then 0 for sector 3
+        if moment.new_race and me.sector != self.last_sector:
+            if self.last_sector == 1 and me.sector == 2:
+                self.sector_marks[1] = now
+            elif self.last_sector == 2 and me.sector == 0:
+                self.sector_marks[2] = now
+            self.last_sector = me.sector
+
         if moment.lap_wrapped and moment.lap_count >= 1:
             self.fuel_at_line.append(me.fuel)
             self.energy_at_line.append(me.virtual_energy)
             lap_time = measured_lap(me.last_lap, self.line_time, now)
             if lap_time is not None:
                 self.lap_times.append(lap_time)
+                self.lap_records.append(self.lap_record(moment.lap_count, lap_time, me, now))
+            self.sector_marks = {}
             self.line_time = now
             self.fuel_now = self.fuel_picture(race)
             fuel_call = self.fuel_check(race, moment.lap_count, now)
@@ -105,6 +121,17 @@ class Strategist:
                 calls.append(call("RAIN", f"Rain is starting, severity {race.session.raining}. Grip will drop.",
                                   now, {"rain": race.session.raining}, "Rain's coming. Grip's going away."))
         return calls
+
+    def lap_record(self, lap, lap_time, me, now):
+        sectors = None
+        one, two = self.sector_marks.get(1), self.sector_marks.get(2)
+        if self.line_time is not None and one is not None and two is not None and self.line_time < one < two < now:
+            sectors = [round(one - self.line_time, 2), round(two - one, 2), round(now - two, 2)]
+        used = None
+        if len(self.fuel_at_line) >= 2 and self.fuel_at_line[-2] > self.fuel_at_line[-1]:
+            used = round(self.fuel_at_line[-2] - self.fuel_at_line[-1], 2)
+        return {"lap": lap, "time_s": round(lap_time, 3), "sectors_s": sectors, "fuel_used": used,
+                "valid": me.last_lap > 0}
 
     def fuel_picture(self, race):
         """Laps of fuel (or virtual energy, whichever runs out first) spare at the flag, measured

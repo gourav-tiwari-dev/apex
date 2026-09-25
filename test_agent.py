@@ -255,7 +255,18 @@ def test_a_follow_up_carries_the_last_exchange():
     ask(agent, "The car behind is all over me, what do I do?", snapshot_at_lap_4())
     ask(agent, "But it keeps hitting me.", snapshot_at_lap_4())
     second_question = model.sent[1][1]["content"]
-    assert 'Just before this he asked: "The car behind is all over me' in second_question
+    assert 'Earlier on the radio, oldest first: he asked "The car behind is all over me' in second_question
+
+
+def test_follow_ups_carry_the_last_three_exchanges_oldest_first():
+    model = ScriptedModel(*[Message(content="CALL: DEFEND\nDefend it, mate. One line.") for n in range(5)])
+    agent = RaceAgent(Budget(), client=model)
+    for n in range(4):
+        ask(agent, f"Question {n}", snapshot_at_lap_4())
+    ask(agent, "And now?", snapshot_at_lap_4())
+    last = model.sent[4][1]["content"]
+    assert '"Question 0"' not in last
+    assert last.index('"Question 1"') < last.index('"Question 2"') < last.index('"Question 3"')
 
 
 def test_the_fallback_gives_the_fight_call_only_to_a_fight_question():
@@ -268,3 +279,54 @@ def test_the_fallback_gives_the_fight_call_only_to_a_fight_question():
 def test_a_fight_question_goes_to_the_agent_however_short():
     assert needs_agent("Car ahead is defending aggressively")      # live 24 Sep: got the bare gap
     assert needs_agent("He keeps diving")
+
+
+# ---- v3 step 5b: the wider tools --------------------------------------------------------------
+
+def test_the_new_tools_answer_from_the_snapshot():
+    snapshot = snapshot_at_lap_4()
+    table = snapshot.run_tool("standings", {})
+    assert table["your_place_overall"] == 5 and all("driver" not in row for row in table["cars"])
+    assert snapshot.run_tool("session", {})["session"] == "race"
+    assert snapshot.run_tool("lap_history", {})["note"].startswith("no full lap")
+    assert snapshot.run_tool("calculator", {"expression": "(240.4 - 240.0) * 3"})["result"] == 1.2
+    assert "error" in snapshot.run_tool("calculator", {"expression": "__import__('os')"})
+    rules = snapshot.run_tool("knowledge", {"topic": "can I overtake under yellow"})
+    assert rules["sections"][0]["topic"] == "Yellow flag"
+    assert "plan_in_order" in snapshot.run_tool("strategy", {})
+    assert "tyre_pressures_kpa" in snapshot.run_tool("car", {})
+
+
+def test_a_reminder_is_set_only_for_a_later_lap():
+    snapshot = snapshot_at_lap_4()
+    assert "error" in snapshot.run_tool("remind_me", {"lap": 3, "what": "box"})
+    assert snapshot.run_tool("remind_me", {"lap": 8, "what": "box this lap"})["ok"]
+    assert snapshot.actions == [{"remind_lap": 8, "what": "box this lap"}]
+
+
+def test_the_database_tool_reads_only(tmp_path):
+    import sqlite3
+    from race_tools import query_db
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE sessions (id INTEGER, track TEXT)")
+    conn.execute("INSERT INTO sessions VALUES (1, 'Le Mans')")
+    conn.commit()
+    conn.close()
+    assert query_db(str(db), "SELECT track FROM sessions")["rows"] == [["Le Mans"]]
+    assert "error" in query_db(str(db), "DELETE FROM sessions")
+    assert "error" in query_db(str(db), "SELECT 1; DROP TABLE sessions")
+    assert "error" in query_db(str(db), "WITH x AS (SELECT 1) INSERT INTO sessions VALUES (2, 'x')")
+
+
+def test_explain_mode_allows_a_longer_answer_and_speeds_only_when_asked():
+    from agent import asks_to_explain, asks_about_speed, check_answer
+    assert asks_to_explain("What's the plan for the rest of the race?")
+    assert asks_to_explain("why am I slow at Arnage") and not asks_to_explain("what's the gap")
+    long = " ".join(["word"] * 80)
+    assert not check_answer(long, [])[0]
+    assert check_answer(long, [], max_words=110)[0]
+    assert not check_answer("You did 120 km/h there, mate.", [120])[0]
+    assert asks_about_speed("what speed do I carry through Arnage")
+    assert check_answer("You did 120 km/h there, mate.", [120], speeds_ok=True)[0]
+

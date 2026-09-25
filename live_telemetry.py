@@ -11,7 +11,7 @@ from dataclasses import dataclass,asdict
 from queue import Full, Empty, Queue
 from datetime import datetime
 from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners,save_pass_attempts
-from radio import Governor, Budget
+from radio import Governor, Budget, Call, RACE_CONTROL
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from persona import Persona
@@ -692,6 +692,21 @@ FINISHED_GRACE_S = 10.0
 FLAG_TIMEOUT_S = 420.0   # a car that never takes the flag (parked, crashed out): stop anyway
 
 
+def database_file(conn):
+    """The file behind this connection, so the agent can open its own read-only one."""
+    return conn.execute("PRAGMA database_list").fetchone()[2] or None
+
+
+def due_reminders(reminders, lap, now):
+    """The reminders he asked for (through the agent) that fall on this lap: said at the line."""
+    due = [r for r in reminders if r["remind_lap"] <= lap]
+    for reminder in due:
+        reminders.remove(reminder)
+    return [Call(seat="race_engineer", kind="REMINDER", sim_time=now, priority=RACE_CONTROL, ttl=20.0,
+                 conclusion=f"Reminder: {r['what']}.", template=f"Reminder: {r['what']}.", asked=True)
+            for r in due]
+
+
 def contacts_by_car(conn, session_id):
     """Contacts this session, per other car, for the agent's driver tool."""
     counts = {}
@@ -769,6 +784,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     governor = Governor()
     # push-to-talk (M9): only live, and Apex races on without it if it is not set up
     answers = Answers(governor, engineer, strategist, performance, clean)
+    reminders = []            # {"remind_lap", "what"}: set by the agent, said at the line
     talk = None
     agent = None
     if not REPLAY:
@@ -800,6 +816,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 continue
             save_radio(conn, session_id, call, result["status"], result["line"],
                        result["reason"], result["latency_ms"])
+            if result["status"] == "spoken" and call.seat != "spotter" and call.kind != "ANSWER_REPEAT":
+                answers.last_line = result["line"]      # "say again" repeats the engineer, not "Clear"
 
     def log_dropped_calls():
         for call, reason in governor.dropped:
@@ -872,6 +890,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             if lap_counter.wrapped:
                 save_lap(conn, session_id, lap_count - 1, validity)
                 validity = 1
+                for reminder in due_reminders(reminders, lap_count, frame.elapsed_time):
+                    if governor.offer(reminder):
+                        desk.prepare(reminder)
 
             if frame.lap_invalidated:
                 validity = 0
@@ -931,7 +952,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         # a real question: the agent looks at a still picture of the race
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,
                                             engineer, strategist, performance, racecraft, governor,
-                                            team_habits, contacts_by_car(conn, session_id))
+                                            team_habits, contacts_by_car(conn, session_id),
+                                            db_path=database_file(conn), session_id=session_id)
                         agent.ask(heard.text, snapshot, frame.elapsed_time)
                         voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
                         print(f"[asked the agent: {heard.text!r}]")
@@ -953,6 +975,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         quick = answers.answer(heard_text, source.race, lap_count, frame.elapsed_time)
                         quick.facts["agent_gave_up"] = result["call"].template
                         result["call"] = quick
+                    for action in result.get("actions", []):
+                        reminders.append(action)             # "remind me to box on lap 12"
                     print(f"[agent: {result['call'].template}  ({result['call'].facts['seconds']} s)]")
                     if governor.offer(result["call"]):
                         desk.prepare(result["call"])

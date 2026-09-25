@@ -177,7 +177,7 @@ def phrases_cloned():
                     f.write(audio)
                 segments, _ = ears.transcribe(trial, language="en", beam_size=5)
                 heard = " ".join(s.text.strip() for s in segments)
-                rate = error_rate(speakable(text, clone=True), heard)
+                rate = heard_right(text, heard)
                 if best is None or rate < best[0]:
                     best = (rate, audio, heard)
                 if rate == 0:
@@ -198,7 +198,17 @@ def phrases_cloned():
     print(f"done: {kept} of {len(wanted)} sentences in Max's voice")
 
 
-PHRASE_TAKES = 3
+# 25 Sep, first 75 sentences at 3 takes: only 18 kept. The clone garbles short numbered lines
+# ("It's hit you 4 times" -> "I'd set you for time", "P25" -> "Day 25"), so more takes
+PHRASE_TAKES = 6
+
+
+def heard_right(text, heard):
+    """Misheard share, against the words as written and as the clone was told to say them
+    ("P four", "Tairt Roozh"), numbers compared as digits: the better of the two."""
+    from persona import words_to_digits
+    as_written = error_rate(words_to_digits(text.lower()), words_to_digits(heard.lower()))
+    return min(as_written, error_rate(speakable(text, clone=True), heard))
 SPOTTER_VOICE_NAME = voice.SPOTTER_VOICE
 
 
