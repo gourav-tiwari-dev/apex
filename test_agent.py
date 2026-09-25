@@ -349,3 +349,16 @@ def test_the_car_behind_gets_the_team_call_for_when_it_arrives():
     behind = snapshot.picture["behind"]
     if "team_call" not in behind:
         assert behind["team_call_when_it_reaches_you"].split(":")[0] in ("DEFEND", "LET BY")
+
+
+def test_pace_is_never_his_start_lap_or_best_lap():
+    # live 25 Sep: lap 2 invalid (-1), best = lap 1 with the start (4:17.9) -> "17 s a lap quicker"
+    from dataclasses import replace
+    from agent import my_pace, recent_lap
+    snapshot_race = snapshot_at_lap_4()
+    engineer = RaceEngineer()
+    engineer.my_lap = 242.0                              # Apex's own clock for that lap
+    me = replace(snapshot_race.race.me, laps=2, last_lap=-1.0, best_lap=257.9)
+    assert my_pace(me, engineer) == 242.0
+    assert my_pace(replace(me, laps=1), engineer) is None          # lap 1 is never pace
+    assert recent_lap(replace(behind_car(0.0), laps=1, last_lap=280.0)) == (None, None)

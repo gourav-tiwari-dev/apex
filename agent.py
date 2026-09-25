@@ -332,12 +332,27 @@ NOT_A_FIGHT_S = 1.0     # further apart than this, nobody is diving at anybody y
 
 def recent_lap(car):
     """(lap time, where it came from). The game posts -1 for a lap it did not count
-    (Kossman on 23 Sep), so the best lap stands in, labelled as such."""
+    (Kossman on 23 Sep), so the best lap stands in, labelled as such. A car that has only
+    done lap 1 has no pace yet: lap 1 carries the start."""
+    if car.laps < 2:
+        return None, None
     if car.last_lap > 0:
         return car.last_lap, "last lap"
     if car.best_lap > 0:
         return car.best_lap, "best lap, last lap not posted"
     return None, None
+
+
+def my_pace(me, engineer):
+    """His lap for pace comparisons: the game's last lap, or Apex's own clock for it when the
+    game posted -1. Never his best lap: live 25 Sep his lap 2 was invalid, his only valid lap
+    was lap 1 with the start (4:17.9), and the coach said the car behind was "17 seconds a lap
+    quicker" three times. Lap 1 is never pace."""
+    if me.laps < 2:
+        return None
+    if me.last_lap > 0:
+        return me.last_lap
+    return engineer.my_lap
 
 
 def race_maths(side, gap, their_lap, my_lap, laps_to_go):
@@ -445,7 +460,7 @@ class Snapshot:
         self.standings = race_tools.standings(race)
         self.session = race_tools.session_info(race, self.picture.get("laps_to_go"))
         self.laps = race_tools.lap_history(list(getattr(strategist, "lap_records", [])))
-        self.drivers = self.every_driver(race, performance, racecraft, contacts_this_race)
+        self.drivers = self.every_driver(race, performance, racecraft, contacts_this_race, engineer)
         self.habits = habits
         self.corners = self.every_corner(performance)
         self.car_state = self.car(race, strategist)
@@ -526,9 +541,7 @@ class Snapshot:
             if before is not None and before[1] is not None:
                 entry["gap_trend"] = trend_words(side, before[1] - gap)
             theirs, source = recent_lap(car)
-            mine, _ = recent_lap(me)
-            if mine is None:
-                mine = engineer.my_lap       # Apex's own clock when the game posts -1
+            mine = my_pace(me, engineer)
             if theirs is not None:
                 entry["their_lap"] = f"{lap_text(theirs)} ({source})"
             if theirs is not None and mine is not None:
@@ -551,7 +564,7 @@ class Snapshot:
             picture[side] = entry
         return picture
 
-    def every_driver(self, race, performance, racecraft, contacts_this_race):
+    def every_driver(self, race, performance, racecraft, contacts_this_race, engineer):
         me = race.me
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
         drivers = {}
@@ -564,7 +577,7 @@ class Snapshot:
                      "in_pits": opponent.in_pits,
                      "where": road_words(me, opponent)}
             theirs, source = recent_lap(opponent)
-            mine, _ = recent_lap(me)
+            mine = my_pace(me, engineer)
             if theirs is not None and mine is not None:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} (their {source})"
             else:
