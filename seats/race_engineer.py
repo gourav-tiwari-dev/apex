@@ -81,6 +81,8 @@ def car_behind(race):
 CATCH_UPPER = 1.5
 
 
+OWN_SPIN_YELLOW_S = 20.0       # the yellow he causes himself is not news to him
+YELLOW_AGAIN_S = 30.0
 PITS_AHEAD_PLACES = 2          # a car this many places ahead pitting is worth a call
 HELD_UP_COST_S = 0.7           # stuck behind a car costing this much a lap vs clean air
 
@@ -109,6 +111,8 @@ class RaceEngineer:
         self.last_gap_ahead = None
         self.gaps_at_line = {}        # "ahead" / "behind" -> (identity, gap) at the last line
         self.pits_said = set()        # (time, car) pit entries already called
+        self.own_spin_at = None
+        self.yellow_said_at = None
         self.clean_laps = []          # my road laps with nobody within a second ahead all lap
         self.held_up_said = set()
         self.to_go_at_line = None     # laps to go as counted at the last line
@@ -162,8 +166,15 @@ class RaceEngineer:
         yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag not in NO_YELLOW]
         here, next_one = FLAG_SLOT.get(me.sector), FLAG_SLOT.get(NEXT_SECTOR.get(me.sector))
         yellow_now = here in yellow_sectors or next_one in yellow_sectors
-        if yellow_now and not self.yellow and phase == GREEN:
+        # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow" twice
+        # right after he spun at Indianapolis)
+        if any(event.kind == "SPIN" for event in moment.events):
+            self.own_spin_at = now
+        own_yellow = self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
+        recent = self.yellow_said_at is not None and now - self.yellow_said_at < YELLOW_AGAIN_S
+        if yellow_now and not self.yellow and phase == GREEN and not own_yellow and not recent:
             calls.append(urgent("YELLOW", "Yellow flag. Yellow.", now))
+            self.yellow_said_at = now
         self.yellow = yellow_now
 
         # penalties

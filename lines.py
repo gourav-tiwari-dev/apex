@@ -24,7 +24,7 @@ CLOSERS = {
     "PRAISE": [("Fucking lovely.", "Lovely."), ("Simply lovely.", "Simply lovely.")],
     "LOCKUP": [("", ""), ("Bloody hell.", "Careful.")],
     "OFF_TRACK": [("", ""), ("Reset. Next corner.", "Reset. Next corner.")],
-    "SPIN": [("Shit happens. Go again.", "It happens. Go again.")],
+    "SPIN": [("", "")],     # a safety call: "wait for the traffic, then rejoin", nothing added
     "DAMAGE": [("", "")],
     "SETTLED": [("Now we fucking race.", "Now we race."), ("Let's go.", "Let's go.")],
     "ATTACK_PLAN": [("", ""), ("Patience, mate.", "Patience, mate.")],
