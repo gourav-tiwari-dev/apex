@@ -125,7 +125,7 @@ def test_a_pass_is_not_praised_until_it_is_held_then_it_is():
     step(seat, 110.0, lap=3, new_race=False, corner="T11 Parabolica", **after)     # the braking zone
     calls = step(seat, 115.0, lap=3, corner=None, **after)                         # through it, still ahead
     praise = [c for c in calls if c.kind == "PASS_PRAISE"]
-    assert praise and praise[0].template.startswith("Clear. ")
+    assert praise and not praise[0].template.startswith("Clear.")         # the spotter's word, not Max's
     assert "fucking" in praise[0].template.lower() or "lovely" in praise[0].template.lower()
 
 

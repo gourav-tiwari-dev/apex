@@ -6,8 +6,8 @@ nobody has published or measured is marked UNVERIFIED, and the agent must say so
 
 ## Yellow flag
 keys: yellow, caution, overtake under yellow, pass under yellow, flag
-- Single yellow: caution, slow down, NO OVERTAKING until past the incident. (LMU wiki, Rules)
-- The penalty for passing under yellow in LMU: UNVERIFIED (not published). Give the place back if unsure.
+- A yellow means someone has crashed or stopped: be careful, expect a car in the road. (LMU wiki, Rules)
+- LMU gives NO penalty for passing under a yellow: the race runs as normal, the flag is a warning to be cautious. (Gourav, from racing it, 25 Sep 2026; the wiki's "no overtaking" is not enforced)
 - Apex reads yellows from the game's sector flags and the local yellow flag; "Yellow flag. Yellow." is said the moment one is shown.
 
 ## Blue flag
@@ -43,8 +43,8 @@ keys: start, formation, lights, rolling start, jump start, lap one, lap 1, first
 
 ## Full course yellow and safety car
 keys: full course yellow, fcy, safety car, sc, slow zone, red flag, restart
-- Full course yellow: everyone slows to a set speed and keeps the gaps. Safety car: queue behind it until the track is clear. Red flag: the race is stopped, return to the pits slowly. (LMU wiki, Rules)
-- The FCY speed: UNVERIFIED.
+- LMU has NO race restarts after yellow or red flags: the race keeps running as it runs. (Gourav, from racing it, 25 Sep 2026)
+- The wiki describes full course yellow, safety car and red flag procedures (LMU wiki, Rules), but in his ranked races they do not stop or restart the race: treat any of them as "be careful", never as "the race will be neutralised".
 
 ## Chequered flag
 keys: chequered, checkered, finish, flag, cool down, last lap

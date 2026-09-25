@@ -580,7 +580,9 @@ class Racecraft:
         pool = BRILLIANT if move in BRILLIANT_MOVES else SOLID
         hype = self.pick(pool[self.praise_turn % len(pool)])
         self.praise_turn += 1
-        words = f"Clear. {hype} {MOVE_WORDS[move]}"
+        # no "Clear." first (his call, 25 Sep): it doubled the spotter's "Clear.", and the cloned
+        # voice said it as "Pit." in 12 of 12 takes
+        words = f"{hype} {MOVE_WORDS[move]}"
         if self.ahead is not None and self.gap_ahead is not None:
             words += f" Next one, {tenths_words(self.gap_ahead)}."
         return self.instant("PASS_PRAISE", words, now, {"move": move, "gap_ahead_s": self.gap_ahead})

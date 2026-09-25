@@ -83,7 +83,7 @@ def units(kinds=None):
     # mood (voice.mood_of), the mood a live render of the whole line would get, so a joined
     # praise line does not switch from fired to dry halfway through
     by_kind = {
-        "PASS_PRAISE": {"Clear."} | {f"Next one, {gap}." for gap in gap_words(0.1, 9.9)}
+        "PASS_PRAISE": {f"Next one, {gap}." for gap in gap_words(0.1, 9.9)}
                        | {text for pair in BRILLIANT + SOLID for text in pair} | set(MOVE_WORDS.values()),
         "STICK_IT": {"Stick it. They're in your tow."} | {f"Cover the inside into {name}." for name in corners},
         "CLOSING_ON": {"Closing fast on the car ahead."}

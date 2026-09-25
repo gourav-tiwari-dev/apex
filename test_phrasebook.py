@@ -60,9 +60,9 @@ REAL_INSTANT_LINES = {       # from the 23 and 24 Sep replays, 25 Sep
                 "Hypercar behind, 1.2 seconds. Hold your line, let it by on the exit.",
                 "Two LMP2s fighting behind. Stay predictable, hold your line."],
     "engineer": ["Stick it. They're in your tow. Cover the inside into Porsche Curves.",
-                 "Clear. WHAT A FUCKING MOVE! Get in there! Brave through there. Next one, 1.1 seconds.",
-                 "Clear. Lovely. That's how you fucking do it. Great tow. Next one, 8 tenths.",
-                 "Clear. Good job. Clean as you like. Better exit did it.",
+                 "WHAT A FUCKING MOVE! Get in there! Brave through there. Next one, 1.1 seconds.",
+                 "Lovely. That's how you fucking do it. Great tow. Next one, 8 tenths.",
+                 "Good job. Clean as you like. Better exit did it.",
                  "They're back past. Go again. You're quicker out of Tertre Rouge.",
                  "Closing fast on the car ahead. 5 tenths.", "Closing fast on the car ahead. A tenth.",
                  "P19. Car ahead's in trouble.", "Mega defending, mate. They've got fucking nothing.",
@@ -152,7 +152,8 @@ def test_a_line_not_in_the_bank_is_rendered_live_as_before():
 def test_max_says_each_sentence_in_the_mood_of_the_call_it_belongs_to():
     from voice import mood_of
     moods = phrasebook.units()["engineer"]
-    for text in ("Clear.", "Next one, 8 tenths.", "WHAT A FUCKING MOVE! Get in there!", "Great tow."):
+    assert "Clear." not in moods                      # dropped from praise (his call, 25 Sep)
+    for text in ("Next one, 8 tenths.", "WHAT A FUCKING MOVE! Get in there!", "Great tow."):
         assert moods[text] == mood_of("PASS_PRAISE")
     assert moods["Cover the inside into Arnage."] == mood_of("STICK_IT")
     assert moods["This fight's costing you 1.4 seconds a lap."] == mood_of("FIGHT_COST")
