@@ -298,8 +298,11 @@ def test_the_new_tools_answer_from_the_snapshot():
 
 
 def test_a_reminder_is_set_only_for_a_later_lap():
-    snapshot = snapshot_at_lap_4()
+    snapshot = snapshot_at_lap_4()                       # lap 5 of a race ending on lap 5
+    assert "no lap 8" in snapshot.run_tool("remind_me", {"lap": 8, "what": "box this lap"})["error"]
+    snapshot.picture["laps_to_go"] = 5                   # now it ends on lap 9
     assert "error" in snapshot.run_tool("remind_me", {"lap": 3, "what": "box"})
+    assert "error" in snapshot.run_tool("remind_me", {"lap": 12, "what": "box"})
     assert snapshot.run_tool("remind_me", {"lap": 8, "what": "box this lap"})["ok"]
     assert snapshot.actions == [{"remind_lap": 8, "what": "box this lap"}]
 
@@ -330,3 +333,19 @@ def test_explain_mode_allows_a_longer_answer_and_speeds_only_when_asked():
     assert asks_about_speed("what speed do I carry through Arnage")
     assert check_answer("You did 120 km/h there, mate.", [120], speeds_ok=True)[0]
 
+
+
+def test_an_answer_about_something_else_may_not_tack_on_the_car_behind():
+    from agent import tacked_on
+    answer = "ABS 9, mate. The car behind is 0.7 a lap quicker, focus on that."
+    assert tacked_on("What ABS setting do I have?", answer, in_fight=False)
+    assert not tacked_on("What ABS setting do I have?", answer, in_fight=True)       # a fight: it matters
+    assert not tacked_on("Is the car behind closing?", answer, in_fight=False)       # he asked
+    assert not tacked_on("What ABS setting do I have?", "ABS 9, mate.", in_fight=False)
+
+
+def test_the_car_behind_gets_the_team_call_for_when_it_arrives():
+    snapshot = snapshot_at_lap_4()
+    behind = snapshot.picture["behind"]
+    if "team_call" not in behind:
+        assert behind["team_call_when_it_reaches_you"].split(":")[0] in ("DEFEND", "LET BY")

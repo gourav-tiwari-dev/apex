@@ -78,3 +78,11 @@ keys: tow, slipstream, draft, drafting, slip
 keys: can you see, mirrors, intentions, data, missing, know, cameras, what do you know
 - Sees: every car's position on the track, speed, gaps, lap times, pit state, impacts; his own car in full (tyres, brakes, fuel, energy, damage, settings); flags and weather.
 - Cannot see: mirrors, racing lines, what another driver intends, other cars' tyre wear or damage (online; UNVERIFIED whether the game sends them).
+
+## The radio itself
+keys: radio, talk, straights, quiet, shut up, only talk, stop telling, every lap, gaps every lap, remind, repeat, say again, voice
+- Already the rule: nothing but the spotter and flags mid-corner (braking or turning hard); coaching waits for a straight. (radio.py)
+- The engineer gets about 2 lines a minute; the spotter, flags and his own questions are never held. (radio.py, 24 Sep)
+- The start is spotter and flags only until the race settles. (seats/settle.py)
+- Gaps and the race picture are said at the line when they matter; there is no "every lap" switch.
+- His switches: "quiet for N laps", "radio back on", "say again", and reminders on a later lap. Nothing else can be switched from the car.

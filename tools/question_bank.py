@@ -20,7 +20,7 @@ QUESTIONS = [
     ("gaps", "GAP_BEHIND", "Gap behind", ()),
     ("gaps", "GAP_BEHIND", "How close is the car behind?", ()),
     ("gaps", "GAP_BEHIND", "Who's behind?", ()),
-    ("gaps", "agent", "Tell me the gaps every lap from now on", ("remind_me", "race_picture")),
+    ("gaps", "RADIO_REQUEST", "Tell me the gaps every lap from now on", ("remind_me", "race_picture")),
     ("gaps", "agent", "Is the gap to the car ahead going up or down?", PIC),
     ("gaps", "agent", "Am I pulling away from the car behind?", PIC),
     ("gaps", "agent", "How much did I gain on the car ahead last lap?", PIC),
@@ -294,8 +294,8 @@ QUESTIONS = [
     ("radio", "agent", "Remind me to box on lap 10", ("remind_me",)),
     ("radio", "agent", "Remind me to check the fuel in two laps", ("remind_me",)),
     ("radio", "agent", "Tell me when it's two laps to go", ("remind_me",)),
-    ("radio", "agent", "Only talk to me on the straights", ()),
-    ("radio", "agent", "Stop telling me about the car behind", ()),
+    ("radio", "RADIO_REQUEST", "Only talk to me on the straights", ()),
+    ("radio", "RADIO_REQUEST", "Stop telling me about the car behind", ()),
     # ---- the rest ----------------------------------------------------------------------------------------
     ("other", "agent", "F***, I lost it.", ("race_events",)),                                  # his
     ("other", "agent", "What the fuck, what is?", ()),                                          # his, a mishearing

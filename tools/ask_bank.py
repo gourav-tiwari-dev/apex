@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--cap", type=float, default=25.0)
     parser.add_argument("--tape", default=DEFAULT_TAPE)
     parser.add_argument("--lap", type=int, default=4)
+    parser.add_argument("--only", help="just these questions, separated by |")
     args = parser.parse_args()
 
     print("replaying the race to freeze it ...")
@@ -72,6 +73,9 @@ def main():
     budget = Budget(cap_rs=args.cap)
     agent = RaceAgent(budget, client=None)
     chosen = spread([q for q in QUESTIONS if q[1] == "agent"], args.agent)
+    if args.only:
+        wanted = args.only.split("|")
+        chosen = [q for q in QUESTIONS if q[2] in wanted]
     for n, (category, route, question, expected_tools) in enumerate(chosen, 1):
         if not budget.allows_llm():
             print(f"budget cap Rs {args.cap} reached after {n - 1} questions")

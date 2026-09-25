@@ -169,19 +169,24 @@ def race_events(db_path, session_id):
     conn = read_only(db_path)
     try:
         marks = ",".join("?" * len(shown))
-        rows = conn.execute(f"SELECT kind, lap_count, corner FROM events WHERE session_id = ? AND kind IN ({marks}) "
+        rows = conn.execute(f"SELECT kind, lap_count, corner, other_car FROM events WHERE session_id = ? AND kind IN ({marks}) "
                             "ORDER BY sim_time", (session_id, *shown)).fetchall()
         counts = {}
-        for kind, _, _ in rows:
+        for kind, _, _, _ in rows:
             counts[kind.lower()] = counts.get(kind.lower(), 0) + 1
-        latest = [{"what": kind.lower(), "lap": lap, "corner": corner} for kind, lap, corner in rows[-12:]]
+        # contacts get their own full list: 13 wheelspins pushed both contacts out of the last 12
+        # events on the 25 Sep bank run, and "who hit me?" got "can't see who"
+        contacts = [{"lap": lap, "corner": corner, "other_car": other}
+                    for kind, lap, corner, other in rows if kind == "CONTACT"]
+        latest = [{"what": kind.lower(), "lap": lap, "corner": corner}
+                  for kind, lap, corner, other in rows if kind not in ("WHEELSPIN", "CONTACT")][-10:]
         passes = conn.execute("SELECT corner, lap_count, outcome FROM pass_attempts WHERE session_id = ? ORDER BY id",
                               (session_id,)).fetchall()
         said = conn.execute("SELECT kind, line FROM radio_log WHERE session_id = ? AND status = 'spoken' "
                             "ORDER BY sim_time DESC LIMIT 8", (session_id,)).fetchall()
     finally:
         conn.close()
-    return {"counts_this_session": counts, "latest": latest,
+    return {"counts_this_session": counts, "contacts": contacts, "latest_other_events": latest,
             "pass_attempts": [{"corner": c, "lap": lap, "outcome": o} for c, lap, o in passes],
             "radio_said_last_newest_first": [line for _, line in said]}
 

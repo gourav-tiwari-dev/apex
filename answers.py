@@ -77,6 +77,11 @@ INTENTS = {
                    "how much fuel"],
     "BATTERY": ["battery"],
     "LAP_VALID": ["valid", "lap valid", "invalid", "was that lap valid"],
+    # v3 5b: asking the radio to behave differently. There is no such switch, and on the 25 Sep
+    # bank run the model promised one anyway ("I'll only key up on the straights"), twice.
+    # Code answers honestly: what the radio already does, and the switches he has.
+    "RADIO_REQUEST": ["only talk to me", "talk to me on", "stop telling me", "talk less", "less talking",
+                      "every lap", "dont tell me", "stop calling"],
     # v3 5b: a line lost under the engine or a spotter call
     "REPEAT": ["repeat", "repeat that", "say again", "say that again", "come again", "what did you say",
                "didnt catch", "didnt hear", "one more time"],
@@ -162,7 +167,7 @@ JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "ho
 
 def needs_agent(text):
     intent, phrase = matched(text)
-    if intent == "QUIET":
+    if intent in ("QUIET", "RADIO_REQUEST"):
         return False              # "quiet, I need to focus on this fight": obeyed at once, whatever else he says
     if intent is None or words_beyond(text, intent):
         return True
@@ -237,10 +242,13 @@ class Answers:
         elif intent == "QUIET":
             laps = laps_asked(text)
             self.governor.quiet_until_lap = lap + laps
-            words = f"Fine, I'll shut up for {laps} laps. Spotter stays on."
+            words = f"Fine, I'll shut up for {laps} {'lap' if laps == 1 else 'laps'}. Spotter stays on."
         elif intent == "RADIO_ON":
             self.governor.quiet_until_lap = None
             words = "Radio's back, mate."
+        elif intent == "RADIO_REQUEST":
+            words = ("Can't switch that, mate. Already the rule: nothing but the spotter mid-corner, two lines a "
+                     "minute. You've got quiet for some laps, radio back on, say again, and reminders.")
         elif intent == "REPEAT":
             words = self.last_line or "Nothing to repeat yet, mate."
         else:
@@ -282,10 +290,12 @@ class Answers:
             # the same fallback "laps left" uses (25 Sep bank run: one said "2 laps to go" while
             # the other said "need a timed lap first")
             to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None)
-        if to_go is None or to_go < 1 or ahead.last_lap <= 0:
+        # its last lap, or its best when the game posted -1 for the last one (the agent's rule too)
+        theirs = ahead.last_lap if ahead.last_lap > 0 else ahead.best_lap
+        if to_go is None or to_go < 1 or theirs <= 0:
             return f"Car ahead is {round(gap, 1)} up. No lap time for it yet."
-        target = ahead.last_lap - gap / to_go
-        return f"You need {lap_text(target)} to catch the car ahead by the flag. It's doing {lap_text(ahead.last_lap)}."
+        target = theirs - gap / to_go
+        return f"You need {lap_text(target)} to catch the car ahead by the flag. It's doing {lap_text(theirs)}."
 
     def fuel(self):
         picture = self.strategist.fuel_now

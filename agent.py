@@ -102,6 +102,8 @@ HOW TO ANSWER
    An override must be said out loud with its reason ("Team says defend, but that car's already
    hit you twice: let it go"). Code checks every override against the data.
    Never promise a later call ("I'll tell you where"): nothing will call him back. Say where NOW.
+   Never tell him to let a car by unless its team call (or team_call_when_it_reaches_you) says
+   LET BY, or you override it for a reason the data backs.
 6. A missing fact stays missing: if a pace or lap time says "not known", say you don't have it.
    Never fill it in ("same pace") from nothing.
 7. Answer the question he asked: asked for a lap time, give the lap time first. Mention the
@@ -127,6 +129,12 @@ HOW TO ANSWER
    the last resort, for questions about past races).
    Rules and penalties come ONLY from the knowledge tool. A fact it marks UNVERIFIED is said
    as "not confirmed". Never invent a rule, a number or a penalty.
+   Never promise a change to how the radio works: the only switches are "quiet for N laps",
+   "radio back on" and remind_me. The knowledge tool's "The radio itself" section says what
+   the radio already does.
+   Brake words mean different things: "brake later" / "brake earlier" is the braking POINT;
+   "off the brake earlier, let it roll" means he releases too late and over-slows mid-corner,
+   his braking point is fine. Never answer "am I braking too early" with the release advice.
 10. When the data does not have it, say EXACTLY which data is missing ("the game doesn't send
    other cars' tyre wear", "no timed lap yet"), then the best call from what IS known.
 
@@ -154,6 +162,11 @@ VOICE_REMINDER = ("Answer ONLY this question, in Max's voice: blunt, 'mate', and
                   "(fuck, fucking, shit, bloody), aimed at the situation or the other cars, never at Gourav. "
                   "About 35 words.")
 VOICE_REMINDER_CLEAN = "Answer ONLY this question, in Max's voice: blunt, 'mate', no swearing. About 35 words."
+# 25 Sep bank run: "the car behind is 0.7 a lap quicker" was tacked onto ~45 of 78 answers
+# (tyres, ABS, sectors, history) although rule 7 forbids it. The rule now sits next to the
+# question, and code refuses the answer when it happens anyway.
+NO_TACK_ON = ("Do NOT mention the car ahead or behind unless the question is about them or a car is "
+              "within 1 second (IN A FIGHT).")
 
 TOOLS = [
     {"name": "race_picture",
@@ -526,6 +539,11 @@ class Snapshot:
             call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
             if call is not None:
                 entry["team_call"] = call
+            elif side == "behind":
+                # 25 Sep bank run: a car 1.7 s back, 0.7 s a lap quicker, got "don't fight it,
+                # let it go" five times. The team's rule for when it arrives is decided now.
+                entry["team_call_when_it_reaches_you"] = team_call(side, NOT_A_FIGHT_S / 2, theirs, mine,
+                                                                   picture["laps_to_go"])
             if gap >= NOT_A_FIGHT_S:
                 entry["fight"] = f"not a fight yet: {round(gap, 1)} s is more than {NOT_A_FIGHT_S:g} s"
             else:
@@ -677,6 +695,10 @@ class Snapshot:
         what = str(arguments.get("what", "")).strip()
         if lap <= self.lap or not what:
             return {"error": f"the reminder needs a lap after this one (this is lap {self.lap}) and words"}
+        to_go = self.picture.get("laps_to_go")
+        if to_go and lap > self.lap + to_go - 1:
+            # 25 Sep bank run: "reminder set for lap 10" in a race that ends on lap 6
+            return {"error": f"the race ends on lap {self.lap + to_go - 1}: there is no lap {lap}"}
         self.actions.append({"remind_lap": lap, "what": what[:80]})
         return {"ok": f"reminder set for lap {lap}: {what[:80]}"}
 
@@ -692,7 +714,14 @@ class Snapshot:
         if name == "strategy":
             return self.strategy()
         if name == "race_events":
-            return race_tools.race_events(self.db_path, self.session_id)
+            events = race_tools.race_events(self.db_path, self.session_id)
+            # the other car in a contact, as its place now (never a name): "who hit me?"
+            from race_state import identity
+            places = {identity(o): f"P{o.place}" for o in self.race.opponents}
+            for contact in events.get("contacts", []):
+                if contact.get("other_car"):
+                    contact["other_car"] = places.get(contact["other_car"], "a car no longer in the race")
+            return events
         if name == "setup":
             return race_tools.setup_advice(self.db_path, self.session_id, self.race)
         if name == "knowledge":
@@ -760,6 +789,25 @@ def asks_to_explain(question):
 def asks_about_speed(question):
     lowered = question.lower()
     return any(words in lowered for words in SPEED_WORDS)
+
+
+NEIGHBOUR_WORDS = ("car behind", "car ahead", "one behind", "car in front", "the fucker behind")
+ABOUT_NEIGHBOURS = ("behind", "ahead", "in front", "gap", "catch", "defend", "attack", "pass", "fight", "hit",
+                    "dive", "diving", "him", "he ", "car", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9",
+                    "strategy", "plan", "position", "place", "push", "update", "lost it", "doing ok", "move",
+                    "what the fuck", "straights", "every lap", "last lap", "risk")
+
+
+def tacked_on(question, text, in_fight):
+    """True when the answer talks about the car ahead or behind although the question is not
+    about them and nobody is within a second (25 Sep bank run: 45 of 78 answers did)."""
+    if in_fight:
+        return False
+    asked = question.lower()
+    if any(word in asked for word in ABOUT_NEIGHBOURS):
+        return False
+    said = text.lower()
+    return any(word in said for word in NEIGHBOUR_WORDS)
 
 
 def check_answer(text, known_numbers, clean=False, names=(), max_words=MAX_WORDS, speeds_ok=False):
@@ -912,6 +960,8 @@ class RaceAgent:
             voice = voice.replace("About 35 words.", "He asked for the reasons: up to about 70 words, the reasons in order.")
         if speeds_ok:
             voice += " He asked about speed: speeds in km/h are allowed in this answer."
+        if not snapshot.team_calls:
+            voice += " " + NO_TACK_ON
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})\n\n{voice}"}]
         costs = []
@@ -945,6 +995,9 @@ class RaceAgent:
             if ok:
                 ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean,
                                           snapshot.driver_names(), max_words, speeds_ok)
+            if ok and tacked_on(question, text, bool(snapshot.team_calls)):
+                ok, reason = False, ("it talks about the car ahead or behind, but he did not ask about them "
+                                     "and nobody is within a second: answer only his question")
             if ok:
                 return text, {"costs": costs, "tools": tools_used, "rounds": round_number, "refused": refused,
                               "call": call, "override": override}
