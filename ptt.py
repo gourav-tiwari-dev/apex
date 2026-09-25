@@ -154,6 +154,7 @@ class Heard:
     text: str
     seconds_of_speech: float
     transcribe_ms: int          # from letting go of the button to having the words
+    confidence: float | None = None   # Whisper's mean log-probability; below -1.0 it guessed
 
 
 class Ears:
@@ -184,9 +185,11 @@ class Ears:
             # names go into the prompt, so Whisper expects them.
             segments, _ = self.model.transcribe(audio, language="en", beam_size=1, vad_filter=False,
                                                 initial_prompt=(RADIO_WORDS + " " + self.track_words).strip())
+            segments = list(segments)
             text = " ".join(segment.text for segment in segments).strip()
             took = round((time.perf_counter() - released_at) * 1000)
-            self.results.put(Heard(text, round(len(audio) / SAMPLE_RATE, 1), took))
+            confidence = (round(sum(s.avg_logprob for s in segments) / len(segments), 2) if segments else None)
+            self.results.put(Heard(text, round(len(audio) / SAMPLE_RATE, 1), took, confidence))
 
     def listen(self, audio):
         self.jobs.put((audio, time.perf_counter()))

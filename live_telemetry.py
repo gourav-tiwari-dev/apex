@@ -23,7 +23,7 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
-from answers import Answers, needs_agent, intent_of, fix_mishearing
+from answers import Answers, needs_agent, intent_of, fix_mishearing, garbled
 from agent import RaceAgent, Snapshot
 from race_model import RaceModel
 import ptt as push_to_talk
@@ -957,6 +957,15 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
             if talk is not None or heard_now:
                 for heard in heard_now:
                     heard.text = fix_mishearing(heard.text)
+                    if garbled(heard.text, getattr(heard, "confidence", None)) and intent_of(heard.text) is None:
+                        say_again = Call(seat="race_engineer", kind="ANSWER_UNHEARD", sim_time=frame.elapsed_time,
+                                         priority=RACE_CONTROL, ttl=10.0, conclusion="Didn't catch that, mate. Say again.",
+                                         template="Didn't catch that, mate. Say again.", asked=True,
+                                         facts={"heard": heard.text, "confidence": heard.confidence})
+                        print(f"[garbled ({heard.confidence}): {heard.text!r} -> say again]")
+                        if governor.offer(say_again):
+                            desk.prepare(say_again)
+                        continue
                     if needs_agent(heard.text) and source.race is not None and source.race.me is not None:
                         # a real question: the agent looks at a still picture of the race
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,

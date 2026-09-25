@@ -61,3 +61,10 @@ def test_what_the_recognizer_wrote_live_still_gets_the_right_answer():
 def test_fuel_gets_the_tank_from_the_first_lap():
     words = say("How's the fuel?", fuel=54.2, virtual_energy=0.81)
     assert words.startswith("54.2 litres in. Energy 81 percent.")
+
+
+def test_a_guessed_transcription_gets_say_again_not_a_made_up_answer():
+    from answers import garbled
+    assert garbled("3-1-1, Faucet's down.", -1.4)                  # live 25 Sep
+    assert not garbled("How's the fuel?", -0.3)
+    assert garbled("   ", None)

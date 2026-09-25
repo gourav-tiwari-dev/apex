@@ -114,6 +114,17 @@ def fix_mishearing(text):
     return fixed
 
 
+# Whisper's own rule: a transcription whose mean log-probability is below -1.0 is a guess
+# (its logprob_threshold). Live 25 Sep: "3-1-1, Faucet's down" went to the coach and came back
+# as a made-up fight call. A guess gets "say again" instead. GUESSED for his voice: the value
+# is logged with every question to tune it.
+GARBLED_BELOW = -1.0
+
+
+def garbled(text, confidence):
+    return not text.strip() or (confidence is not None and confidence < GARBLED_BELOW)
+
+
 def matched(text):
     """(intent, the phrase that matched): the longest phrase found in what he said."""
     heard = " " + clean(text) + " "
