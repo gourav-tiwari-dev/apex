@@ -118,6 +118,8 @@ class TrackClock:
                     self.lap_length = opponent.lap_dist
         if self.my_laps is None:
             self.my_laps = race.me.laps
+        elif self.lap_length and self.last_my_lap_dist is not None:
+            self.follow_game_laps(race.me.laps)
         if self.lap_length is None:
             return
         for opponent in race.opponents:
@@ -125,6 +127,20 @@ class TrackClock:
                 continue
             trail = self.theirs.setdefault(opponent.id, Trail())
             trail.add(self.repaired(trail, opponent.laps * self.lap_length + opponent.lap_dist), now)
+
+    def follow_game_laps(self, game_laps):
+        """My lap count is the game's, like every other car's. Counting my own line crossings put me a
+        lap up after a standing start (live 25 Sep: the formation lap crossed the line, the game still
+        said lap 0), so nobody was on my lap: "you're leading" from P18, cars "243 s behind" that were
+        3 s behind, no battles all race. Only mid-lap: at the line the two counters tick apart."""
+        where = self.last_my_lap_dist / self.lap_length
+        if not 0.1 < where < 0.9 or game_laps == self.my_laps:
+            return
+        shift = (game_laps - self.my_laps) * self.lap_length
+        self.my_laps = game_laps
+        self.mine.distance = [d + shift for d in self.mine.distance]
+        self.history.clear()           # gaps measured against the old count
+        self.profile.clear()
 
     def repaired(self, trail, distance):
         """The lap count and the lap distance tick at slightly different moments at the line; for

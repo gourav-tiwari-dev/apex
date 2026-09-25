@@ -30,10 +30,20 @@ def test_short_on_energy_is_called_box_this_lap_unasked():
     assert [c.template for c in calls if c.kind == "FUEL"][0].startswith("Box this lap for fuel.")
 
 
-def test_plenty_of_fuel_says_push_and_never_nags():
+def test_plenty_of_fuel_says_push_once_and_never_nags():
     s = Strategist()
-    calls = drive(s, energy_start=0.90, energy_per_lap=0.10, metres=3000)
-    assert s.fuel_now["verdict"] == "fine" and not [c for c in calls if c.kind == "FUEL"]
+    calls = drive(s, energy_start=0.90, energy_per_lap=0.10, metres=6000)
+    fuel = [c for c in calls if c.kind == "FUEL"]
+    assert s.fuel_now["verdict"] == "fine"
+    assert len(fuel) == 1 and fuel[0].template.endswith("Push.") and not fuel[0].immediate
+
+
+def test_tight_fuel_is_said_not_only_save_or_box():
+    # live 25 Sep: 0.3 laps spare the whole race and the radio never said "tight"
+    s = Strategist()
+    calls = drive(s, energy_start=0.13, energy_per_lap=0.10, metres=3000)
+    fuel = [c for c in calls if c.kind == "FUEL"]
+    assert s.fuel_now["verdict"] == "tight" and fuel[0].template.startswith("Energy's tight")
 
 
 def test_the_verdicts():
@@ -74,3 +84,31 @@ def test_after_a_save_call_fine_means_the_saving_is_working_not_push():
     drive(s, energy_start=0.16, energy_per_lap=0.10, metres=3000)      # now it makes the flag, just
     assert s.fuel_now["verdict"] == "saving"
     assert fuel_words(s.fuel_now).startswith("Saving's working")
+
+
+def test_laps_to_go_uses_the_session_lap_not_the_farthest_car():
+    # live 25 Sep, lap 1 at Le Mans: the farthest car was 1.9 km in, so the lap looked 1.9 km long
+    from race_state import laps_to_go
+    leader = replace(rival(5, 3.0), place=1, laps=0, lap_dist=1880.0, last_lap=236.0, best_lap=236.0)
+    snap = race(200.0, {"time_remaining": 1159.0, "max_laps": 2147483647, "lap_length": 13624.0},
+                {"laps": 0, "place": 20}, opponents=[leader])
+    assert laps_to_go(snap, None) == 6            # the leader crosses 5 more times before the clock
+
+
+def test_laps_to_go_after_the_leader_takes_the_flag():
+    # live 25 Sep, his last lap: the leader had finished and Apex still counted one more lap
+    from race_state import laps_to_go
+    leader = replace(rival(5, 3.0), place=1, laps=6, lap_dist=39.0, last_lap=236.0, best_lap=236.0,
+                     finish_status=1)
+    snap = race(1622.0, {"time_remaining": -235.8, "max_laps": 2147483647, "lap_length": 13624.0},
+                {"laps": 5, "place": 12}, opponents=[leader])
+    assert laps_to_go(snap, 240.0) == 1           # his current lap is his last
+
+
+def test_a_lap_at_lights_out_is_not_a_lap_time():
+    # live 25 Sep: the formation was timed as a 2:23 "lap, your best"
+    s = Strategist()
+    snap = race(187.0, {"max_laps": 2147483647}, {"laps": 0, "last_lap": 0.0})
+    s.line_time = 44.0
+    s.update(moment(187.0, snap, lap=1, wrapped=True))
+    assert s.lap_times == []

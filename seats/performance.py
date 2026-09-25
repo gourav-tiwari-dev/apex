@@ -24,8 +24,9 @@ from balance import BalanceMeter, FIX
 # said: v1's "coasting" is any throttle under 50% with no brake, which is correct part-throttle
 # driving through the Porsche Curves, and on 23 Sep the model turned its "no braking" into
 # "No fucking braking at Arnage" - an instruction not to brake into a hairpin.
-SPOKEN_KINDS = {"SPIN", "OFF_TRACK", "LOCKUP"}
+SPOKEN_KINDS = {"SPIN", "OFF_TRACK", "LOCKUP", "SLIDE_CAUGHT"}
 SPIN_TTL_S = 10.0
+SLIDE_TTL_S = 4.0              # said while he still feels it, or not at all
 INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
 STALE_AFTER_S = 6.0      # v1's STALE_THRESHOLD: advice about a corner 6 s ago is useless
 
@@ -78,7 +79,14 @@ def call_from_event(event, event_id):
     # the event keeps v1's wording for the log; the radio gets it without the speed
     said = {"LOCKUP": f"Locked the fronts into {event.corner}.",
             "OFF_TRACK": f"Wide at {event.corner}.",
-            "SPIN": "Spun. Wait for the traffic, then rejoin. Cars coming."}[event.kind]
+            "SPIN": "Spun. Wait for the traffic, then rejoin. Cars coming.",
+            "SLIDE_CAUGHT": "Big moment. Caught it. Good hands."}[event.kind]
+    if event.kind == "SPIN" and "after contact" in (event.conclusion or ""):
+        said = "You got hit and spun. Wait for the traffic, then rejoin. Cars coming."
+    if event.kind == "SLIDE_CAUGHT":
+        return Call(seat="performance", kind="SLIDE_CAUGHT", sim_time=event.sim_time, priority=ENGINEER,
+                    ttl=SLIDE_TTL_S, conclusion=said, facts={"corner": event.corner, "degrees": event.magnitude},
+                    template=said, evidence={"event_id": event_id}, immediate=True)
     if event.kind == "SPIN":
         # live 25 Sep: two spins at Indianapolis expired unspoken while racecraft kept saying
         # "mega defending". A spin is a safety call: said at once, and it lives long enough

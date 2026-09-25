@@ -619,7 +619,7 @@ class Snapshot:
         picture = {"session": {10: "race", 11: "race", 12: "race", 13: "race"}.get(session.session, "practice or qualifying"),
                    "lap": lap, "place": me.place,
                    "laps_to_go": engineer.to_go_at_line if engineer.to_go_at_line is not None
-                   else laps_to_go(race, me.last_lap if me.last_lap > 0 else None),
+                   else laps_to_go(race, me.last_lap if me.last_lap > 0 else None, self.model),
                    "my_last_lap": lap_text(me.last_lap), "my_best_lap": lap_text(me.best_lap),
                    "time_left_s": round(session.time_remaining) if session.time_remaining > 0 else None,
                    "quiet_until_lap": governor.quiet_until_lap}

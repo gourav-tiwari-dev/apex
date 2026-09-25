@@ -380,7 +380,29 @@ def same_class_neighbours(race, model=None):
     return ahead, gap_ahead, behind, gap_behind
 
 
-def laps_to_go(race, lap_time):
+def track_length(race):
+    """The lap in metres: the session's own figure. Live 25 Sep: the farthest car's distance
+    stood in for it, and on lap 1 that is ~1.9 km of a 13.6 km lap, so a 20-minute race at Le Mans
+    looked 9.9 laps long and the fuel call said "short by 3.8 laps"."""
+    length = getattr(race.session, "lap_length", None)
+    if length and length > 1000:
+        return length
+    return max([o.lap_dist for o in race.opponents] + [0.0])
+
+
+def rolling_lap(model, key):
+    """The car's last 13.6 km of road in seconds (race model), or None. Wherever it starts, so
+    no standing start, no pit stop line, no -1 from an invalid lap."""
+    if model is None:
+        return None
+    try:
+        lap = model.road_lap(key)
+    except Exception:
+        return None
+    return lap if lap and lap > 30 else None
+
+
+def laps_to_go(race, lap_time, model=None):
     """Laps still to drive, this one included, counted at the line. A lap race: max laps minus
     laps done. A timed race: the flag drops when the overall LEADER first crosses the line after
     the clock runs out, and I finish that same lap (minus any laps I am down).
@@ -397,15 +419,27 @@ def laps_to_go(race, lap_time):
         if lap_time is None or lap_time <= 0:
             return None
         return math.ceil((session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time)
-    candidates = (lap_time, me.last_lap, me.best_lap) if leader is me else (leader.last_lap, leader.best_lap, lap_time)
+    # the leader's pace: the rolling lap on the road first. Live 25 Sep, lap 2: the game posted -1
+    # for the leader's laps and his own lap 1 (4:23, a standing start) made the race a lap short
+    # only once the leader's last lap of road is all racing: 15% into lap 2 (live 25 Sep, lap 1:
+    # the window still held formation-lap road and fuel said "fine, push" at 0.3 laps spare)
+    length = track_length(race)
+    clean = leader.laps >= 2 or (leader.laps == 1 and length > 1000 and leader.lap_dist > 0.15 * length)
+    rolling = rolling_lap(model, "me" if leader is me else leader.id) if clean else None
+    candidates = ((rolling, lap_time, me.last_lap, me.best_lap) if leader is me
+                  else (rolling, leader.last_lap, leader.best_lap, lap_time))
     leader_lap = next((t for t in candidates if t is not None and t > 0), None)
     if leader_lap is None:
         return None
-    lap_length = max([o.lap_dist for o in race.opponents] + [0.0])
+    lap_length = track_length(race)
     done = (leader.lap_dist / lap_length) if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None else 0.0
     to_line = (1.0 - min(max(done, 0.0), 1.0)) * leader_lap
     more = 0 if session.time_remaining <= to_line else math.ceil((session.time_remaining - to_line) / leader_lap)
     leader_finishes_on = leader.laps + 1 + more
+    if getattr(leader, "finish_status", 0) == 1:
+        # the leader has taken the flag: the race is those laps (live 25 Sep: on his last lap
+        # Apex still counted one more and said "box this lap for fuel")
+        leader_finishes_on = leader.laps
     return max(0, leader_finishes_on - me.laps_behind_leader - me.laps)
 
 
@@ -421,7 +455,7 @@ def leader_margin(race):
     if leader is None:
         return None
     leader_lap = next((t for t in (leader.last_lap, leader.best_lap) if t and t > 0), None)
-    lap_length = max([o.lap_dist for o in race.opponents] + [0.0])
+    lap_length = track_length(race)
     if leader_lap is None or lap_length < 1000:
         return None
     to_line = (1.0 - min(max(leader.lap_dist / lap_length, 0.0), 1.0)) * leader_lap

@@ -352,7 +352,7 @@ class Answers:
         if to_go is None:
             # the same fallback "laps left" uses (25 Sep bank run: one said "2 laps to go" while
             # the other said "need a timed lap first")
-            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None)
+            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None, self.model)
         # its last lap, or its best when the game posted -1 for the last one (the agent's rule too)
         theirs = ahead.last_lap if ahead.last_lap > 0 else ahead.best_lap
         if to_go is None or to_go < 1 or theirs <= 0:
@@ -388,7 +388,7 @@ class Answers:
     def laps_left(self, race):
         to_go = self.engineer.to_go_at_line
         if to_go is None:
-            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None)
+            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None, self.model)
         if to_go is None:
             return "Need a timed lap to count it."
         if to_go <= 1:

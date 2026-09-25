@@ -216,3 +216,45 @@ def test_last_lap_call():
 def test_side_by_side_calls_are_off_by_default():
     # his call, 25 Sep: "I know who is on my right or left", and they cut every engineer line
     assert Spotter().update(moment(0.0, nearby=near(0.0, (3.0, 1.0)))) == []
+
+
+# ---- spins and caught slides (26 Sep: slip angle, not yaw rate) ------------------------------
+
+def driving(t, heading_deg, moving_deg, x=0.0, z=0.0):
+    """A frame at (x, z) pointing heading_deg, after moving along moving_deg (0 = +z)."""
+    import math
+    from live_telemetry import CarState
+    h = math.radians(heading_deg)
+    # the nose is -z in the car's frame: pointing along h means ori[2], ori[8] = -sin h, -cos h
+    ori = [1, 0, -math.sin(h), 0, 1, 0, 0, 0, -math.cos(h)]
+    return replace(frame(t, (x, 0.0, z)), ori=ori, speed_kmh=100.0)
+
+
+def run_frames(detector, headings):
+    import math
+    events, x, z = [], 0.0, 0.0
+    for i, (heading, moving) in enumerate(headings):
+        m = math.radians(moving)
+        x, z = x + 0.3 * math.sin(m), z + 0.3 * math.cos(m)
+        event = detector.update(driving(i * 0.01, heading, moving, x, z))
+        if event is not None:
+            events.append(event)
+    return events
+
+
+def test_a_car_facing_backwards_is_a_spin_and_a_hit_before_it_says_so():
+    from live_telemetry import SpinDetector
+    spin = SpinDetector()
+    spin.last_car_contact = 0.1
+    straight = [(0, 0)] * 20
+    turning = [(a, 0) for a in range(0, 180, 6)]
+    events = run_frames(spin, straight + turning)
+    assert [e.kind for e in events] == ["SPIN"] and "after contact" in events[0].conclusion
+
+
+def test_a_slide_that_comes_back_is_a_big_moment_not_a_spin():
+    from live_telemetry import SpinDetector, SlideCaughtDetector
+    slide = [(0, 0)] * 20 + [(a, 0) for a in range(0, 21)] + [(a, 0) for a in range(20, -1, -1)] + [(0, 0)] * 20
+    assert run_frames(SpinDetector(), slide) == []
+    caught = run_frames(SlideCaughtDetector(), slide)
+    assert [e.kind for e in caught] == ["SLIDE_CAUGHT"] and caught[0].magnitude == 20

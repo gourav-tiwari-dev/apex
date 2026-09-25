@@ -19,6 +19,7 @@ TYRE_HOT_C = 105.0
 TYRE_NAMES = ["front left", "front right", "rear left", "rear right"]
 CALL_TTL_S = 25.0
 RACE_SESSIONS = range(10, 14)
+GREEN_PHASE = 5
 
 # Live 25 Sep: Apex was restarted mid-race, had no laps at the line, and so no fuel picture.
 # He had 0.6 laps of energy for 1.7 laps of race; the radio read out litres, the coach said
@@ -40,6 +41,9 @@ VERDICT_WORDS = {
     "saving": "Saving's working, {spare} laps spare. Keep lifting into the big stops.",
 }
 PUSH_AGAIN_SPARE = 1.0         # after saving, "push" again only with a full lap spare
+# how bad each verdict is: the live picture speaks on its first verdict and whenever it gets worse
+# (live 25 Sep: 0.3 laps spare the whole race and the radio never said "tight")
+VERDICT_RANK = {"fine": 0, "saving": 1, "tight": 1, "save": 2, "box": 3}
 
 
 def verdict_of(spare, laps_left):
@@ -83,6 +87,7 @@ def measured_lap(game_lap, line_time, now):
 
 class Strategist:
     def __init__(self):
+        self.model = None             # the race model: the leader's rolling lap
         self.fuel_at_line = []         # fuel in the tank each time I crossed the line
         self.energy_at_line = []
         self.lap_times = []
@@ -114,10 +119,10 @@ class Strategist:
         lap_time = None
         if self.lap_times:
             lap_time = statistics.median(self.lap_times[-3:])
-        elif race.me.last_lap > 0 or race.me.best_lap > 0:
+        elif race.me.laps >= 2 and (race.me.last_lap > 0 or race.me.best_lap > 0):
             # Apex started mid-race (25 Sep): no line crossings timed yet, the game's own lap
             lap_time = race.me.last_lap if race.me.last_lap > 0 else race.me.best_lap
-        return laps_to_go(race, lap_time)
+        return laps_to_go(race, lap_time, self.model)
 
     def usage_per_lap(self, readings):
         used = []
@@ -132,6 +137,7 @@ class Strategist:
         race = moment.race
         if race is None or race.me is None:
             return []
+        self.model = moment.model
         me = race.me
         now = moment.now
         calls = []
@@ -151,18 +157,24 @@ class Strategist:
                 self.sector_marks[2] = now
             self.last_sector = me.sector
 
-        if moment.lap_wrapped and moment.lap_count >= 1:
+        if moment.lap_wrapped and me.laps == 0:
+            self.line_time = now
+        # a line crossing counts once the game has a race lap done: at lights out he crosses the
+        # line with none, and Apex timed the formation as a 2:23 "lap" (live 25 Sep)
+        if moment.lap_wrapped and moment.lap_count >= 1 and me.laps >= 1:
             self.fuel_at_line.append(me.fuel)
             self.energy_at_line.append(me.virtual_energy)
             lap_time = measured_lap(me.last_lap, self.line_time, now)
-            if lap_time is not None:
+            if lap_time is not None and me.laps >= 2:      # lap 1 is a standing start: not pace
                 self.lap_times.append(lap_time)
                 self.lap_records.append(self.lap_record(moment.lap_count, lap_time, me, now))
             self.sector_marks = {}
             self.line_time = now
             # the live picture (burn per metre) wins; the line picture fills in before it exists
             self.fuel_now = self.live_picture(race, 0.0) or self.fuel_picture(race)
-            fuel_call = self.fuel_check(race, moment.lap_count, now) if racing else None
+            # the line check only while the live picture has nothing yet (they said "tight" twice)
+            live = self.live_picture(race, 0.0) is not None
+            fuel_call = self.fuel_check(race, moment.lap_count, now) if racing and not live else None
             if fuel_call is not None:
                 calls.append(fuel_call)
             calls.extend(self.tyre_check(me, now))
@@ -204,8 +216,11 @@ class Strategist:
 
     # ---- fuel, measured all the time ------------------------------------------------------------
     def see_burn(self, race, lap_dist):
+        length = getattr(race.session, "lap_length", None)
+        if length and length > 1000:
+            self.track_m = length                  # the session's lap, not the farthest car so far
         for car in race.opponents:
-            if self.track_m is None or car.lap_dist > self.track_m:
+            if not (length and length > 1000) and (self.track_m is None or car.lap_dist > self.track_m):
                 self.track_m = car.lap_dist
         if self.track_m is None or self.track_m < 1000:
             return
@@ -213,6 +228,9 @@ class Strategist:
             self.wraps += 1
         self.last_lap_dist = lap_dist
         me = race.me
+        if race.session.game_phase != GREEN_PHASE:
+            self.burn = []                     # the formation lap burns at half pace: not race burn
+            return
         if me.in_pits:
             self.burn = []                     # pit lane and refuelling: start again after it
             return
@@ -262,7 +280,7 @@ class Strategist:
         if not options:
             return None
         spare, limit = min(options)
-        spare = round(spare, 1)
+        spare = round(spare, 1) + 0.0          # + 0.0: never "-0.0 laps spare"
         return {"spare_laps": spare, "laps_left": round(remaining, 1), "limit": limit,
                 "verdict": verdict_of(spare, remaining), "measured": "live, over the last lap driven"}
 
@@ -281,17 +299,20 @@ class Strategist:
             picture["verdict"] = "saving"
         self.fuel_now = picture
         verdict = picture["verdict"]
-        changed = verdict != self.last_live_verdict
+        before = self.last_live_verdict
         self.last_live_verdict = verdict
-        bad = verdict in ("save", "box")
-        if not bad or not (changed or (verdict == "box" and self.box_said_lap != moment.lap_count)):
+        first = before is None
+        worse = before is not None and VERDICT_RANK[verdict] > VERDICT_RANK[before]
+        box_again = verdict == "box" and self.box_said_lap != moment.lap_count
+        if not (first or worse or box_again):
             return []
+        bad = verdict in ("save", "box")
         if verdict == "box":
             self.box_said_lap = moment.lap_count
         words = fuel_words(picture)
         fuel_call = call("FUEL", words, now, {"spare_laps": abs(picture["spare_laps"]),
                                              "laps_left": picture["laps_left"]}, words, priority=ENGINEER)
-        fuel_call.immediate = True           # not held for the talk budget: this ends races
+        fuel_call.immediate = bad            # save / box are not held for the talk budget: they end races
         return [fuel_call]
 
     def lap_record(self, lap, lap_time, me, now):

@@ -641,17 +641,101 @@ class WheelspinDetector(Detector):
         rear = [slip_ratio(frame.wheel_rot[i], radii[i], speed_ms) for i in (2, 3)]
         return max(rear) > SPIN_SLIP
 
+def slip_angle(frame, before):
+    """Degrees between where the car points and where it is going (0 = straight on, 180 =
+    backwards), from two frames about 0.1 s apart. None when it cannot be told (old tapes carry
+    no position, or the car is barely moving)."""
+    if frame.pos is None or frame.ori is None or before is None or before.pos is None:
+        return None
+    dx = frame.pos[0] - before.pos[0]
+    dz = frame.pos[2] - before.pos[2]
+    if math.hypot(dx, dz) < 0.2:
+        return None
+    # the car's nose is -z in its own frame (driving straight on reads 180 degrees otherwise)
+    pointing = math.atan2(-frame.ori[2], -frame.ori[8])
+    going = math.atan2(dx, dz)
+    difference = (pointing - going + math.pi) % (2 * math.pi) - math.pi
+    return abs(math.degrees(difference))
+
+
+SPUN_DEGREES = 90.0           # pointing more than this away from where it is going: spun
+SLIDE_DEGREES = 15.0          # a slide worth a word
+SLIDE_OVER_DEGREES = 5.0      # back under this: the slide is caught
+SLIDE_MIN_KMH = 60.0
+SPIN_MIN_KMH = 5.0
+HIT_BEFORE_SPIN_S = 5.0       # an impact this soon before the spin: he was hit
+
+
 class SpinDetector(Detector):
+    """Live 25 Sep: he was punted round at Porsche Curves (nose went 6 -> 180 degrees, yaw rate
+    never over 0.9) and nothing was said; a 19-degree slide he caught at Mulsanne Chicane 1 was
+    called "Spun" (yaw spiked). The old rule was yaw rate over 1.7 rad/s. A spin is now the car
+    pointing more than 90 degrees from where it is going. Old tapes without position keep the
+    yaw rule."""
     def __init__(self):
         super().__init__()
-        self.kind="SPIN"
+        self.kind = "SPIN"
+        self.cooldown = 10.0          # one incident can swing past 90 degrees twice (25 Sep: 1045 and 1048 s)
+        self.last_fire_time = -self.cooldown     # free to fire from the first second
+        self.recent = []              # the last ~0.1 s of frames, for the direction of travel
+        self.last_car_contact = None  # sim time of the last contact WITH A CAR (set by the race loop)
+
     def build_event(self, frame):
-        e= super().build_event(frame)
-        corner = e.corner or "the straight "
-        e.conclusion = f"rear stepped out at {corner}"
+        e = super().build_event(frame)
+        corner = e.corner or "the straight"
+        # "you got hit" only when the contact detector saw a car there: a wall is an impact too
+        hit = self.last_car_contact is not None and 0 <= frame.elapsed_time - self.last_car_contact <= HIT_BEFORE_SPIN_S
+        e.conclusion = f"spun after contact at {corner}" if hit else f"spun at {corner}"
         return e
-    def is_triggered(self,frame):
-        return abs( frame.yaw_rate)>1.7 
+
+    def is_triggered(self, frame):
+        self.recent.append(frame)
+        while len(self.recent) > 1 and frame.elapsed_time - self.recent[0].elapsed_time > 0.1:
+            self.recent.pop(0)
+        if frame.pos is None or frame.ori is None:
+            return abs(frame.yaw_rate) > 1.7
+        slip = slip_angle(frame, self.recent[0])
+        return slip is not None and slip > SPUN_DEGREES and frame.speed_kmh > SPIN_MIN_KMH
+
+
+class SlideCaughtDetector:
+    """A big moment he saved: more than 15 degrees of slide above 60 km/h that came back
+    straight without ever passing 90 (a spin). Fires on the save, so it is praise, not a
+    warning. His words, 25 Sep: "tell me mate you caught a big moment", not "you spun"."""
+    def __init__(self):
+        self.kind = "SLIDE_CAUGHT"
+        self.recent = []
+        self.worst = None             # the biggest slide angle of the slide in progress
+        self.cooldown = 10.0
+        self.last_fire_time = -100.0
+
+    def update(self, frame):
+        self.recent.append(frame)
+        while len(self.recent) > 1 and frame.elapsed_time - self.recent[0].elapsed_time > 0.1:
+            self.recent.pop(0)
+        slip = slip_angle(frame, self.recent[0])
+        if slip is None:
+            return None
+        if self.worst is None:
+            if slip > SLIDE_DEGREES and frame.speed_kmh > SLIDE_MIN_KMH:
+                self.worst = slip
+            return None
+        self.worst = max(self.worst, slip)
+        if self.worst > SPUN_DEGREES:
+            if slip < SLIDE_OVER_DEGREES:
+                self.worst = None     # that was a spin, the spin detector has it
+            return None
+        if slip < SLIDE_OVER_DEGREES:
+            worst = self.worst
+            self.worst = None
+            if frame.elapsed_time - self.last_fire_time < self.cooldown:
+                return None
+            self.last_fire_time = frame.elapsed_time
+            corner = corner_at(current_corners, frame.lap_dist) or "the straight"
+            return Event(kind=self.kind, sim_time=frame.elapsed_time, speed_kmh=frame.speed_kmh,
+                         corner=corner, lap_dist=frame.lap_dist, magnitude=round(worst),
+                         conclusion=f"caught a {round(worst)} degree slide at {corner}")
+        return None
     
 
  
@@ -748,13 +832,15 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         tele_recorder = Recorder(tape_out)
         print(f"Recording to {tape_out}")
 
+    spin_detector = SpinDetector()
     detectors = [
         HardBrakingDetector(),
         LockUpDetector(),
         CornerEntryDetection(),
         ThrottleLift(),
         OffTrackDetector(),
-        SpinDetector(),
+        spin_detector,
+        SlideCaughtDetector(),
         RearSnapDetector(),
         WheelspinDetector()]
 
@@ -915,6 +1001,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 print(contact)
                 save_event(conn, session_id, contact)
                 frame_events.append(contact)
+                if contact.kind == "CONTACT":
+                    spin_detector.last_car_contact = contact.sim_time
             for detector in detectors:
                 event = detector.update(frame)
                 if event:

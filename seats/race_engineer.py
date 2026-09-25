@@ -210,7 +210,8 @@ class RaceEngineer:
         racing = moment.session_type in RACE_SESSIONS and phase == GREEN and not me.in_pits
         if moment.lap_wrapped:
             from seats.strategist import measured_lap
-            self.my_lap = measured_lap(me.last_lap, self.line_time, now) or self.my_lap
+            if me.laps >= 1:                  # at lights out the "lap" is the formation (2:23, 25 Sep)
+                self.my_lap = measured_lap(me.last_lap, self.line_time, now) or self.my_lap
             self.line_time = now
         if moment.lap_wrapped and racing and moment.lap_count >= 1:
             calls.extend(self.race_picture(race, moment.lap_count, now, moment.model))
@@ -231,7 +232,7 @@ class RaceEngineer:
 
     def race_picture(self, race, lap, now, model=None):
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
-        to_go = laps_to_go(race, self.my_lap)
+        to_go = laps_to_go(race, self.my_lap, model)
         self.to_go_at_line = to_go
         final_lap = None
         if to_go is not None:
