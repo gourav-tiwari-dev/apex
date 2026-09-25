@@ -11,7 +11,9 @@ from race_state import race_snapshot_from_dict
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # the tapes of whole races (24 Sep 201632 is the start of 202800's race)
 RACE_TAPES = ["tape_20260923_201605.jsonl.gz", "tape_20260924_202800.jsonl.gz",
-              "tape_20260925_123131.jsonl.gz", "tape_20260925_144141.jsonl.gz"]
+              "tape_20260925_123131.jsonl.gz", "tape_20260925_144141.jsonl.gz",
+              # 25 Sep night: standing start + formation lap, timed race, the leader took the flag first
+              "tape_20260925_235830.jsonl.gz"]
 
 
 def snapshots(tape):

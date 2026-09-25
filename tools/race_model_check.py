@@ -68,16 +68,22 @@ def d4_passes():
 
 
 def d5_laps_to_go():
+    """With the race model fed, as live: the leader's rolling lap is the pace (26 Sep)."""
     from race_state import laps_to_go
+    from race_model import RaceModel
     checked, right = 0, 0
     for tape in RACE_TAPES:
         rows, last_laps, finish = [], None, None
+        model = None
         for s in snapshots(tape):
+            if model is None:
+                model = RaceModel(lap_length=s.session.lap_length if (getattr(s.session, "lap_length", None) or 0) > 1000 else None)
+            model.see_race(s, s.sim_time)
             me = s.me
             if me.finish_status == 1 and finish is None:
                 finish = me.laps
             if last_laps is not None and me.laps > last_laps and me.finish_status == 0:
-                rows.append((me.laps, laps_to_go(s, me.last_lap if me.last_lap > 0 else None)))
+                rows.append((me.laps, laps_to_go(s, me.last_lap if me.last_lap > 0 else None, model)))
             last_laps = me.laps
         if finish is not None:
             for done, predicted in rows:

@@ -91,3 +91,47 @@ Two-way conversation with the engineer: it takes HIS point of view, he can OVERR
 rest of the race and acts on it like a real person. Research first (real driver-engineer radio
 exchanges, how engineers adapt to the driver's call, mixed-initiative dialogue / shared plans),
 then build.
+
+## 26 Sep (night): his live race of 25 Sep, what broke and the fixes (commits 5b3a778, f25fa14, next)
+Truth from the tape first, then the fix. 20-min Le Mans race, standing start with a formation lap, 6 laps.
+| He heard | Truth (tape) | Cause | Fix |
+|---|---|---|---|
+| "Box, short by 3.8 laps" (lap 1) | 0.33 laps spare all race, finished with 2.6 L | lap length = farthest car so far (1.9 km of 13.6) + formation timed as a 2:23 lap | session lap length; laps only count once the game shows a race lap done |
+| "3.6 spare, push" -> "short 0.7" (lap 2) | 0.3 spare | pace from his standing-start lap 1 / formation in the burn | the LEADER's rolling lap on the road (race model), only once it is clean racing |
+| "Box this lap" on his LAST lap | finishing | the leader had taken the flag, Apex still counted a lap | leader finish_status = finished -> the race is those laps |
+| never "tight" | tight all race | only save / box were ever said | the live verdict speaks when first known and whenever it gets worse |
+| "Nobody ahead, you're leading" (P18), "243 s back", no battle calls | car ahead 9 s, car behind 3.8 s, a fight on lap 1 at 0.26 / 0.33 s | HIS lap count came from his own line crossings: the formation crossing put him a lap up on everyone | his lap count follows the game's, mid-lap only |
+| no call when punted round at Porsche Curves | nose 6 -> 180 deg, yaw never over 0.9 rad/s | spin = yaw rate > 1.7 | spin = pointing > 90 deg from travel; "you got hit" when the contact detector saw a CAR |
+| "Spun" for a slide he caught | 19 deg slide, back straight in 1.5 s | same yaw rule | SLIDE_CAUGHT: > 15 deg above 60 km/h, back under 5 without passing 90 -> "Big moment. Caught it." |
+| quali: "No clean answer" twice | - | ghost cars within a second made every answer need a DEFEND/ATTACK line | fights only in races; no CALL line off the fight; qualifying picture + start-from-the-back plan |
+Done check: race_model_check D1-D5, D8-D10 PASS with tonight's tape added (D5 laps to go 8/8 exact);
+tools/spin_check.py lists spins / caught slides on every tape (sparse, plausible, not ground-truthed).
+
+## Adaptability (26 Sep): his orders stand - RESEARCH then BUILD (orders.py)
+His ask: "if I said don't give me that bullshit, we will push, no holding back, then it should act like
+a real person"; "it doesn't remember the decisions"; "plans change with race conditions".
+Research (26 Sep):
+- Crew Chief (sim racing engineer) keeps radio commands for the whole session: "keep quiet / I know what
+  I'm doing", "don't tell me the gaps", "tell me the gaps" (anton2641.gitlab.io/CrewChiefV4 voice commands).
+- Playbook delegation (Miller & Parasuraman 2007, Human Factors 49(1)): the human sets the play and its
+  limits, automation works inside them; human-adaptable automation gave better awareness, acceptance and
+  workload balance than automation deciding alone.
+- Verstappen, Brazil 2022 ("don't ask that again to me... I gave my reasons"): once the driver has decided,
+  the team says the cost once and does not re-ask. Team radio in general: headlines, pre-agreed plans.
+- Grounding (Clark & Brennan): acknowledge so both sides know the order stands; repair on disagreement.
+Build:
+- orders.py StandingOrders: pace (push / save / bring_home), fight (fight / let_quick_go), coaching (off/on),
+  gaps (every_lap / off / normal), "back to normal". Heard by code for the plain phrasings (0 of the 300 bank
+  questions misread; the 1 match is a real order), by the coach's ORDER line for the rest. Said back
+  ("Copy. We push, no holding back. I'll only come back on fuel if it won't make the flag.").
+- Every seat's call passes through it (Governor.offer): push silences tight/save fuel lines; a real
+  shortfall is said ONCE as his call ("You said push, your call. Straight: short by 0.7. Box this lap or you
+  stop."); no coaching; no gaps / gaps every lap; bring it home drops attack plans; fight drops "settle".
+  What he ASKS for he always gets.
+- The coach gets standing_orders + his_decisions_this_race with every question, rule 11 (his calls stand,
+  cost once, never argue again, concede when he is right), and code refuses a LET BY under a fight order.
+- plan_now: rebuilt from live facts (fuel verdict, damage, last lap) + his orders on every question.
+- "always / never / from now on" -> the order is kept in the standing_orders table for future races.
+NOT built (say so): a spoken "plan change" call of its own - the spoken changes stay with the seats that
+own them (FUEL, DAMAGE, LAST_LAP); a model of his mood/stress. Live check pending: he has not used orders
+in a race yet (UNVERIFIED end to end with the real voice + model).

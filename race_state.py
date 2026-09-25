@@ -395,6 +395,9 @@ def rolling_lap(model, key):
     no standing start, no pit stop line, no -1 from an invalid lap."""
     if model is None:
         return None
+    clock = getattr(model, "clock", None)
+    if clock is not None and not getattr(clock, "fixed_length", True):
+        return None                # a guessed, growing track length warps the trail (old tapes)
     try:
         lap = model.road_lap(key)
     except Exception:
@@ -421,11 +424,15 @@ def laps_to_go(race, lap_time, model=None):
         return math.ceil((session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time)
     # the leader's pace: the rolling lap on the road first. Live 25 Sep, lap 2: the game posted -1
     # for the leader's laps and his own lap 1 (4:23, a standing start) made the race a lap short
-    # only once the leader's last lap of road is all racing: 15% into lap 2 (live 25 Sep, lap 1:
-    # the window still held formation-lap road and fuel said "fine, push" at 0.3 laps spare)
+    # only once the leader's last lap of road is all racing: 5% into lap 2, so the window starts
+    # after the launch (live 25 Sep, lap 1: the window still held formation-lap road and fuel said
+    # "fine, push" at 0.3 laps spare; at 15% the lap-1 line fell back to his 4:23 standing start)
     length = track_length(race)
-    clean = leader.laps >= 2 or (leader.laps == 1 and length > 1000 and leader.lap_dist > 0.15 * length)
+    clean = leader.laps >= 2 or (leader.laps == 1 and length > 1000 and leader.lap_dist > 0.05 * length)
     rolling = rolling_lap(model, "me" if leader is me else leader.id) if clean else None
+    posted = [t for t in ((leader.last_lap, leader.best_lap) if leader is not me else (me.last_lap, me.best_lap)) if t and t > 0]
+    if rolling is not None and posted and abs(rolling - min(posted)) > 0.2 * min(posted):
+        rolling = None             # a rolling lap 20% off anything the game posted is a broken trail
     candidates = ((rolling, lap_time, me.last_lap, me.best_lap) if leader is me
                   else (rolling, leader.last_lap, leader.best_lap, lap_time))
     leader_lap = next((t for t in candidates if t is not None and t > 0), None)

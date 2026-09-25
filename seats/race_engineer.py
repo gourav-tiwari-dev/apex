@@ -104,6 +104,7 @@ def sure_closing(model, front, back):
 
 class RaceEngineer:
     def __init__(self):
+        self.orders = None            # his standing orders: "gaps every lap"
         self.phase = None
         self.formation_called = False
         self.blue_flag = False
@@ -224,7 +225,8 @@ class RaceEngineer:
         # he joined 3 minutes late, nobody was within two minutes, and the radio went quiet for the
         # race - a real engineer talks a lone driver through his laps)
         alone = racing and self.alone(race, moment.model)
-        due = moment.lap_count >= self.last_report_lap + (1 if alone else REPORT_EVERY_LAPS)
+        every_lap = alone or (self.orders is not None and self.orders.gaps_every_lap())   # his order
+        due = moment.lap_count >= self.last_report_lap + (1 if every_lap else REPORT_EVERY_LAPS)
         if moment.lap_wrapped and due and moment.lap_count > 1:
             self.last_report_lap = moment.lap_count
             calls.append(self.gap_report(race, now, moment.model, moment.lap_count))

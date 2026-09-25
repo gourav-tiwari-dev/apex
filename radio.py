@@ -95,6 +95,7 @@ class Governor:
         self.dropped = []         # (call, reason) - calls that never went out, for the log
         self.lap = 0              # the lap he is on, kept up to date by the session loop
         self.quiet_until_lap = None
+        self.orders = None             # his standing orders (orders.StandingOrders), set by the race loop
         self.settled = True       # False from lights out until seats/settle.py says the race settled
         self.engineer_air_times = []   # sim times of the counted lines, for the talk budget
         self.said_at = {}              # the words of every coaching line -> when it went on air
@@ -127,6 +128,13 @@ class Governor:
         caller does not spend a model call or a voice render on a line nobody will hear."""
         if call.kind == "FINISH":
             self.chequered = True
+        if self.orders is not None:
+            # his standing orders first: "we push" silences "lift and coast" (26 Sep)
+            adjusted = self.orders.adjust(call)
+            if adjusted is None:
+                self.dropped.append((call, "his_order"))
+                return False
+            call = adjusted
         reason = self.hold_reason(call)
         if reason is None and not (call.urgent or call.asked) and call.template:
             said = self.said_at.get(call.template)

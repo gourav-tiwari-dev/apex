@@ -15,6 +15,7 @@ from radio import Governor, Budget, Call, RACE_CONTROL
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer
+from orders import StandingOrders
 from persona import Persona
 from voice import Voice, RadioDesk
 from seats.performance import call_from_event, PerformanceEngineer
@@ -24,7 +25,7 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
-from answers import Answers, needs_agent, intent_of, fix_mishearing, garbled
+from answers import Answers, needs_agent, intent_of, fix_mishearing, garbled, is_mark
 from agent import RaceAgent, Snapshot
 from race_model import RaceModel
 import ptt as push_to_talk
@@ -878,6 +879,10 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     governor = Governor()
     # push-to-talk (M9): only live, and Apex races on without it if it is not set up
     answers = Answers(governor, engineer, strategist, performance, clean)
+    # his standing orders: kept for the race, honoured by every seat and the coach (26 Sep)
+    orders = StandingOrders()
+    governor.orders = orders
+    engineer.orders = orders
     answers.model = model          # the fixed answers read the same gaps as every seat
     reminders = []            # {"remind_lap", "what"}: set by the agent, said at the line
     heard_confidence = {}     # question -> Whisper's confidence, until the coach answers it
@@ -888,6 +893,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
     if talk is not None:
         agent = RaceAgent(budget, clean)      # after the budget: it spends from it (24 Sep crash)
+        agent.orders = orders
     # one voice for the whole launch when apex.py passes it in: the cloned voice takes about
     # 30 s to load and warm up, which must not happen again between qualifying and the race
     own_voice = voice is None
@@ -925,6 +931,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         conn = connect_db()
         session_started = datetime.now().isoformat(timespec="seconds")
         session_id = start_session(conn, session_started, tape_out, REPLAY_SPEED, launch_id)
+        orders.load(conn)          # what he said "for good" in earlier races ("never tell me the gaps")
         # what team memory knows about every rival, for the racecraft plans
         lap_one_facts = memory_facts(conn, "lap_one")
         if lap_one_facts:
@@ -1059,6 +1066,19 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         if governor.offer(say_again):
                             desk.prepare(say_again)
                         continue
+                    heard_order = None if is_mark(heard.text) else orders.hear(heard.text, lap_count, frame.elapsed_time)
+                    if heard_order is not None:
+                        # an order: kept for the race and said back, no model needed
+                        words, given = heard_order
+                        ack = Call(seat="race_engineer", kind="ANSWER_ORDER", sim_time=frame.elapsed_time,
+                                   priority=RACE_CONTROL, ttl=10.0, conclusion=words, template=words, asked=True,
+                                   facts={"heard": heard.text, "orders": [f"{o.topic}={o.stance}" for o in given],
+                                          "confidence": getattr(heard, "confidence", None)})
+                        orders.save(conn)
+                        print(f"[order: {heard.text!r} -> {ack.facts['orders'] or 'back to normal'}]")
+                        if governor.offer(ack):
+                            desk.prepare(ack)
+                        continue
                     if needs_agent(heard.text) and source.race is not None and source.race.me is not None:
                         # a real question: the agent looks at a still picture of the race
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,
@@ -1092,6 +1112,14 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         result["call"] = quick
                     for action in result.get("actions", []):
                         reminders.append(action)             # "remind me to box on lap 12"
+                    for topic, stance in result.get("orders", []):
+                        try:
+                            orders.set(topic, stance, heard_text, lap_count, frame.elapsed_time, "coach")
+                            print(f"[order from the coach: {topic}={stance}]")
+                        except ValueError:
+                            print(f"[coach gave an order that does not exist: {topic}={stance}]")
+                    if result.get("orders"):
+                        orders.save(conn)
                     # .get: when the coach gave up, the quick answer stands in and has no timing
                     # (live 25 Sep: KeyError 'seconds' ended the session)
                     print(f"[agent: {result['call'].template}  ({result['call'].facts.get('seconds', '?')} s)]")

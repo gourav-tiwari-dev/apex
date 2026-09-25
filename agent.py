@@ -33,6 +33,7 @@ from persona import MODEL, BANNED, PROFANITY, GENDERED, numbers_in, number_is_ba
 from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go
 import race_tools
+from orders import current_plan
 
 MAX_ROUNDS = 4                 # tool rounds before it must answer
 # asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
@@ -148,6 +149,24 @@ HOW TO ANSWER
      enough to gain places on pace, so where his pace beats the cars around him (standings,
      class_times_spread) he picks them off one at a time, after lap 1, cleanly; say which of his
      corners are strong if the corner tool knows. Never pretend the session can be restarted.
+
+11. HIS CALLS STAND. He is the driver: he sees mirrors, grip and feel that Apex cannot.
+   - "standing_orders" (in what is already given) are HIS decisions for this race. Honour them
+     in every answer. If the data says an order will cost him (fuel won't make the flag, a car
+     is far quicker), say the cost ONCE with the number and then go with him; never argue it
+     again ("I gave my reasons" - Verstappen, Brazil 2022). "his_decisions_this_race" is the
+     history: an answer never contradicts a decision he made unless he changes it.
+   - When he tells you how the rest of the race goes ("we push", "fight everyone", "no more
+     coaching", "gaps every lap", "back to normal"), acknowledge it in a few words ("Copy, we
+     push.") and put ORDER lines FIRST, before any CALL line, one of:
+       ORDER: pace=push | pace=save | pace=bring_home
+       ORDER: fight=fight | fight=let_quick_go
+       ORDER: coaching=off | coaching=on
+       ORDER: gaps=every_lap | gaps=off | gaps=normal
+     Only for an instruction about the rest of the race, never for a question.
+   - When he disagrees with you ("that's wrong", "he's slower", "no"), check the data. If he is
+     right, say so plainly and correct yourself. If the data disagrees, give the number once, then
+     go with his call.
    THE RACE MODEL (race_picture): "field_around_you" = the cars 3 places either side, measured on
    the road: same-point gap, the trend ("sure, 2 laps" or "1 lap only, NOT sure") and whether
    one catches the other ("yes, within N laps", before the flag or not). "battles_near_you",
@@ -317,6 +336,24 @@ def fallback(snapshot, question=""):
                     words += " " + FALLBACK_WARNINGS[reason]
             return words
     return "Radio's lagging, mate. Ask me again."
+
+
+def split_orders(raw):
+    """The coach's ORDER lines ("ORDER: pace=push") -> ([(topic, stance)], the rest). An ORDER line
+    is how the coach records a standing order he gave in words the code's phrases did not catch;
+    it is never spoken, and code checks it against the orders that exist."""
+    orders = []
+    kept = []
+    for line in (raw or "").splitlines():
+        head = line.strip()
+        if head.upper().startswith("ORDER:"):
+            for part in head[6:].split(","):
+                if "=" in part:
+                    topic, stance = part.split("=", 1)
+                    orders.append((topic.strip().lower(), stance.strip().lower()))
+            continue
+        kept.append(line)
+    return orders, "\n".join(kept)
 
 
 def split_call(raw):
@@ -559,6 +596,7 @@ class Snapshot:
         # fights exist in races only: in qualifying the other cars are ghosts on the timing sheet, and
         # a "car within a second" made every answer need a DEFEND/ATTACK line (live 25 Sep: "qualifying
         # is fucked up" twice got "No clean answer on that one")
+        self.orders = None                     # his standing orders (set by the agent before it thinks)
         racing = self.picture.get("session") == "race"
         self.team_calls = {side: self.picture[side]["team_call"] for side in ("ahead", "behind")
                            if racing and self.picture.get(side) and self.picture[side].get("team_call")}
@@ -595,6 +633,17 @@ class Snapshot:
         if any(t > HOT_TYRE_C for t in self.car_state.get("tyre_temps_c", [])):
             supported.add("tyres")
         return supported
+
+    def check_orders(self, call, override):
+        """(ok, reason): his standing orders bind the coach. He said fight: no LET BY unless the
+        car is damaged or the tyres are gone, and then it is said as his decision."""
+        orders = self.orders
+        if orders is None:
+            return True, "ok"
+        if call == "LET BY" and orders.get("fight") == "fight" and override not in ("damage", "tyres"):
+            return False, ("he gave a standing order: nobody gets past without a fight. Do not tell him to "
+                           "let it by; help him fight it cleanly (CALL: DEFEND)")
+        return True, "ok"
 
     def check_call(self, call, override, question=None):
         """(ok, reason): in a fight the call must be the team's, or an override the data backs.
@@ -1129,6 +1178,7 @@ class RaceAgent:
         self.clean = clean
         self.thinking = thinking
         self.exchanges = []         # the last questions and answers, for follow-ups
+        self.orders = None          # his standing orders (orders.StandingOrders), set by the race loop
         # live 24 Sep: the first question timed out on a cold connection (TLS, DNS) while the
         # provider was fine a minute later. One tiny call at startup opens it before he asks.
         if client is None:
@@ -1195,7 +1245,8 @@ class RaceAgent:
                                "seconds": info["seconds"], "refused": info.get("refused"),
                                "call": info.get("call"), "override": info.get("override")},
                         asked=True, phrase=False)
-            self.results.put({"call": call, "costs": info.get("costs", []), "actions": list(snapshot.actions)})
+            self.results.put({"call": call, "costs": info.get("costs", []), "actions": list(snapshot.actions),
+                              "orders": info.get("orders", [])})
 
     def model_turn(self, messages, timeout=MODEL_TIMEOUT_S):
         started = time.perf_counter()
@@ -1213,6 +1264,10 @@ class RaceAgent:
         # no budget check: push-to-talk never stops (his call, 25 Sep - the Rs 5 cap silenced the
         # coach after 7 answers in a live race). Every call is still charged and logged.
         system = AGENT_PROMPT + ("\n" + CLEAN_RULE if self.clean else "")
+        if snapshot.picture.get("session") == "race":
+            snapshot.picture["plan_now"] = current_plan(self.orders, snapshot.car_state.get("fuel_at_the_flag"),
+                                                        bool(snapshot.car_state.get("damage")),
+                                                        snapshot.picture.get("laps_to_go"))
         picture = json.dumps(without_empty(snapshot.picture))
         # the voice goes right next to the question: in the system prompt alone it got lost
         # (1 answer in 4 swore on 24 Sep), the same lesson as the persona's per-line flag
@@ -1232,7 +1287,10 @@ class RaceAgent:
         # question now; the tools stay for everything else.
         near = {side: without_empty(snapshot.drivers[side]) for side in ("ahead", "behind") if side in snapshot.drivers}
         habits = (snapshot.habits or [])[:3]
-        given = json.dumps({"driver_ahead": near.get("ahead"), "driver_behind": near.get("behind"), "his_habits": habits})
+        snapshot.orders = self.orders
+        standing = self.orders.for_coach() if self.orders is not None else {}
+        given = json.dumps({"driver_ahead": near.get("ahead"), "driver_behind": near.get("behind"), "his_habits": habits,
+                            **standing})
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})"
                                                 f"\n(Already given, no need to call driver or my_habits for these: {given})\n\n{voice}"}]
@@ -1263,6 +1321,7 @@ class RaceAgent:
                     messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
                 continue
             raw = message.content or ""
+            given_orders, raw = split_orders(raw)
             call, override, text = split_call(raw)                 # the CALL line is never spoken
             text = neutral_pronouns(text)     # a free fix instead of a paid rewrite round (25 Sep)
             ok, reason = snapshot.check_call(call, override, question)
@@ -1277,8 +1336,10 @@ class RaceAgent:
                 ok, reason = False, ("it talks about the car ahead or behind, but he did not ask about them "
                                      "and nobody is within a second: answer only his question")
             if ok:
+                ok, reason = snapshot.check_orders(call, override)
+            if ok:
                 return text, {"costs": costs, "tools": tools_used, "rounds": round_number, "refused": refused,
-                              "call": call, "override": override}
+                              "call": call, "override": override, "orders": given_orders}
             if refused is not None:
                 break                   # one rewrite only
             refused = reason

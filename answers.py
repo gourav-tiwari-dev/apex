@@ -290,8 +290,8 @@ class Answers:
             self.governor.quiet_until_lap = None
             words = "Radio's back, mate."
         elif intent == "RADIO_REQUEST":
-            words = ("Can't switch that, mate. Already the rule: nothing but the spotter mid-corner, two lines a "
-                     "minute. You've got quiet for some laps, radio back on, say again, and reminders.")
+            words = ("Can't switch that one, mate. What you can: quiet for some laps, radio back on, gaps every lap "
+                     "or no gaps, no coaching, we push, we save, fight everyone, back to normal.")
         elif intent == "MARK":
             words = "Marked."
         elif intent == "REPEAT":
