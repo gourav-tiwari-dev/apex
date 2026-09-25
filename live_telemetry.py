@@ -978,7 +978,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         result["call"] = quick
                     for action in result.get("actions", []):
                         reminders.append(action)             # "remind me to box on lap 12"
-                    print(f"[agent: {result['call'].template}  ({result['call'].facts['seconds']} s)]")
+                    # .get: when the coach gave up, the quick answer stands in and has no timing
+                    # (live 25 Sep: KeyError 'seconds' ended the session)
+                    print(f"[agent: {result['call'].template}  ({result['call'].facts.get('seconds', '?')} s)]")
                     if governor.offer(result["call"]):
                         desk.prepare(result["call"])
             on_air = governor.step(frame.elapsed_time, in_corner)
