@@ -27,7 +27,7 @@ import statistics
 from radio import Call, RACECRAFT, ENGINEER, SPOTTER
 from seats.spotter import side_and_overlap, sides_taken, CAR_LENGTH_M, LANE_MIN_M, LANE_MAX_M
 from seats.performance import tenths_words
-from race_state import identity, same_class_neighbours
+from race_state import same_lap, identity, same_class_neighbours
 from gaps import TrackClock, ON_YOU_S
 
 FIGHT_GAP_S = 1.0             # a same-class car within a second ahead is a fight
@@ -481,7 +481,7 @@ class Racecraft:
         me = race.me
         order = {}
         for opponent in race.opponents:
-            if opponent.car_class != me.car_class or opponent.laps_behind_leader != me.laps_behind_leader:
+            if opponent.car_class != me.car_class or not same_lap(me, opponent, self.model):
                 continue
             if abs(opponent.place - me.place) <= 3:
                 order[opponent.id] = opponent.place < me.place

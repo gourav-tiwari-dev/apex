@@ -155,7 +155,10 @@ def test_gap_report_every_three_laps_with_its_numbers_as_facts():
     snapshot = race(1.0, opponents=[behind_car(0.8)])
     calls = engineer.update(moment(1.0, snapshot, lap=3, wrapped=True))
     assert kinds(calls) == ["GAP_REPORT"]
-    assert calls[0].facts == {"place": 5, "gap_ahead_s": 1.2, "gap_behind_s": 0.8}
+    # 25 Sep: gaps come from the cars themselves (standings / road), never the game's
+    # time_behind_next - no car ahead here, so no gap ahead
+    assert calls[0].facts["place"] == 5 and calls[0].facts["gap_behind_s"] == 1.0
+    assert "gap_ahead_s" not in calls[0].facts
     assert engineer.update(moment(2.0, snapshot, lap=4, wrapped=True)) == []    # not every lap
 
 

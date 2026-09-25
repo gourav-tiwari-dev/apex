@@ -20,6 +20,7 @@ from seats.spotter import sides_taken, GREEN
 # GUESSED, then checked on the 24 Sep lap 1s (see test_settle.py): 15 s with nobody
 # alongside and nobody swapping places around him
 SETTLE_S = 15.0
+SAY_GAP_UP_TO_S = 30.0
 # his call, 25 Sep: the start took 167 s to "settle" and swallowed his 3-car pass on the
 # straight (7 praise lines dropped). The chaos now lasts 60 s at most.
 CHAOS_MAX_S = 60.0
@@ -135,10 +136,13 @@ class RaceSettle:
         me = race.me
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
         words = [f"Settled. P{me.place}, {places_moved(self.place_at_start or me.place, me.place)}."]
-        if ahead is not None and gap_ahead is not None:
+        # only a gap worth hearing (live 25 Sep, online: "Car ahead 148.4. Car behind -213.6.")
+        if ahead is not None and gap_ahead is not None and 0 <= gap_ahead <= SAY_GAP_UP_TO_S:
             words.append(f"Car ahead {gap_ahead:.1f}.")
-        if behind is not None and gap_behind is not None:
+        if behind is not None and gap_behind is not None and 0 <= gap_behind <= SAY_GAP_UP_TO_S:
             words.append(f"Car behind {gap_behind:.1f}.")
+        if len(words) == 1:
+            words.append("Nobody close. Race the track.")
         text = " ".join(words)
         return Call(seat="race_engineer", kind="SETTLED", sim_time=now, priority=ENGINEER,
                     ttl=SUMMARY_TTL_S, conclusion=text, template=text, phrase=False,

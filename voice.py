@@ -229,6 +229,27 @@ async def render(text, voice, role=None, mood=None):
     return bytes(audio)
 
 
+EDGE_TIMEOUT_S = 4.0           # edge-tts renders in ~1.3 s; past this the network is struggling
+
+
+async def render_with_timeout(text, voice, role, mood):
+    return await asyncio.wait_for(render(text, voice, role, mood), EDGE_TIMEOUT_S)
+
+
+def online_or_offline(text, voice, role, mood):
+    """(audio, which voice): Microsoft's online voice, or - when the network is weak or gone -
+    Windows' own offline voice (live 25 Sep: weak internet silenced the radio for a whole race and
+    crashed the debrief). Never raises: a line is better said plainly than not at all."""
+    try:
+        return radio_ready(asyncio.run(render_with_timeout(text, voice, role, mood))), "standard"
+    except Exception:
+        import offline_voice
+        audio = offline_voice.render(text, voice_index=1 if role == "spotter" else 0)
+        if audio is None:
+            return None, "no_voice"
+        return radio_ready(audio), "offline"
+
+
 class Voice:
     """The one owner of the speaker. Everything Apex says goes through here, so nothing can
     talk over anything else by accident (23 Sep: the brief, a yellow and the spotter overlapped)."""
@@ -358,7 +379,7 @@ class Voice:
             if audio is not None:
                 return audio, "azure"
         role = "spotter" if voice == SPOTTER_VOICE else "engineer"
-        return radio_ready(asyncio.run(render(speakable(text), voice, role, mood))), "standard"
+        return online_or_offline(speakable(text), voice, role, mood)
 
     def render_spotter(self, text, mood="urgent"):
         """The spotter's voice: Azure's with emotion when it is up, else edge-tts."""
@@ -368,7 +389,7 @@ class Voice:
             audio = self.azure.render(speakable(text), "spotter", mood)
             if audio is not None:
                 return audio, "azure"
-        return radio_ready(asyncio.run(render(speakable(text), SPOTTER_VOICE, "spotter", mood))), "standard"
+        return online_or_offline(speakable(text), SPOTTER_VOICE, "spotter", mood)
 
     def play(self, audio, text):
         """Blocks until the line is done. Waits for an urgent clip to finish first, never talks

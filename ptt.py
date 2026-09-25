@@ -227,12 +227,17 @@ class PushToTalk:
             held = time.perf_counter() - self.pressed_at
             audio = self.mic.stop()
             self.pressed_at = None
-            if self.verbose:
-                loudest = float(abs(audio).max()) if len(audio) else 0.0
-                print(f"  [button up: held {held:.1f} s, recorded {len(audio) / SAMPLE_RATE:.1f} s, loudest {loudest:.3f} (0 = silence, 1 = full scale)]")
+            # always in the log (live 25 Sep: "push to talk not working", and nothing in the log
+            # could say whether R1 was pressed, the mic was silent, or the words were lost)
+            loudest = float(abs(audio).max()) if len(audio) else 0.0
+            print(f"[ptt: held {held:.1f} s, recorded {len(audio) / SAMPLE_RATE:.1f} s, loudest {loudest:.3f}"
+                  f"{' - too short, ignored' if held < SHORTEST_PRESS_S else ''}]")
             if SHORTEST_PRESS_S <= held <= LONGEST_PRESS_S:
                 self.ears.listen(audio)
         heard = self.ears.finished()
+        for h in heard:
+            if not h.text:
+                print(f"[ptt: heard nothing ({h.seconds_of_speech} s of audio)]")
         if self.verbose:
             return heard
         return [h for h in heard if h.text]

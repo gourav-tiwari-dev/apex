@@ -22,11 +22,22 @@ async def _tts_to_memory(text: str):
 
 
 def speak(text: str):
-    audio = asyncio.run(_tts_to_memory(text))
+    """The brief and the debrief. Online voice first; with a weak or dead network, Windows' own
+    offline voice (25 Sep: a dropped connection crashed Apex in the debrief)."""
+    kind = "mp3"
+    try:
+        audio = asyncio.run(asyncio.wait_for(_tts_to_memory(text), 6.0))
+    except Exception:
+        import offline_voice
+        wav = offline_voice.render(text)
+        if wav is None:
+            print(f"  (no voice available) {text}")
+            return
+        audio, kind = io.BytesIO(wav), "wav"
 
     audio.seek(0)
 
-    pygame.mixer.music.load(audio, "mp3")
+    pygame.mixer.music.load(audio, kind)
     pygame.mixer.music.play()
 
     while pygame.mixer.music.get_busy():

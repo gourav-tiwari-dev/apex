@@ -99,6 +99,7 @@ class TrackAwareness:
         self.lap_length = None
         self.said_at = {}              # hazard / opportunity key -> when it was last called
         self.normal = NormalSpeed()
+        self.model = None
         self.clock = TrackClock()      # same-point gaps between the cars ahead
         self.group_since = None        # (id of the car ahead, since when its group has held together)
         self.last_group_call = None
@@ -130,6 +131,7 @@ class TrackAwareness:
     def update(self, moment):
         race = moment.race
         shared = moment.model is not None
+        self.model = moment.model
         if shared:
             self.clock = moment.model.clock          # the one clock the whole team reads
         if race is not None and race.me is not None and moment.new_race:
@@ -275,8 +277,9 @@ class TrackAwareness:
         car directly ahead of him, so cars joining or leaving the front of a train do not make
         it "new" (the first version keyed on every car in it and called it 57 times)."""
         me = race.me
+        from race_state import same_lap
         rivals = [car for car in race.opponents
-                  if car.car_class == me.car_class and car.laps_behind_leader == me.laps_behind_leader
+                  if car.car_class == me.car_class and same_lap(me, car, self.model)
                   and not car.in_pits and car.place < me.place]
         rivals.sort(key=lambda car: car.place, reverse=True)          # nearest first
         if not rivals or rivals[0].place != me.place - 1:

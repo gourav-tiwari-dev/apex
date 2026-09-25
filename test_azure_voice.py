@@ -104,3 +104,20 @@ def test_the_standard_voice_carries_the_mood_in_speed_loudness_and_pitch():
     faster = int(praise[0].strip("+%")) > int(plan[0].strip("+%"))
     assert praise != plan and faster                           # praise quicker than a plan
     assert prosody("spotter", "dry") == prosody("spotter", "urgent")   # the spotter is always sharp
+
+
+def test_a_dead_network_falls_back_to_the_offline_windows_voice():
+    # live 25 Sep: weak internet silenced the radio and crashed the debrief
+    import voice as voice_module
+    original = voice_module.render
+
+    async def dead(*args, **kwargs):
+        raise OSError("getaddrinfo failed")
+    voice_module.render = dead
+    try:
+        audio, engine = voice_module.online_or_offline("Box this lap.", voice_module.ENGINEER_VOICE, "engineer", "urgent")
+    finally:
+        voice_module.render = original
+    assert engine in ("offline", "no_voice")              # never raises, never hangs
+    if engine == "offline":
+        assert audio[:4] == b"RIFF"

@@ -510,7 +510,8 @@ def trend_words(side, shrink):
 
 
 def road_words(me, opponent):
-    if opponent.laps_behind_leader != me.laps_behind_leader:
+    from race_state import same_lap
+    if not same_lap(me, opponent):
         return "on a different lap"
     gap = round(me.time_behind_leader - opponent.time_behind_leader, 1)
     if gap > 0:

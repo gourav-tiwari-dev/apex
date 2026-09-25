@@ -11,6 +11,10 @@ from radio import Call, MEMORY
 FORMATION = 3
 REMIND_BEFORE_M = 400.0
 RECALL_TTL_S = 15.0
+# live 25 Sep: his team memory has a habit at nearly every corner, and "you've had trouble there"
+# went out at 6 corners in a row in 3 minutes ("it kept saying you were bad at every corner").
+# Only the worst ones, one a lap.
+HABIT_CORNERS_PER_RACE = 2
 
 
 class MemoryRecall:
@@ -19,6 +23,7 @@ class MemoryRecall:
         self.corner_habits = corner_habits or {}   # corner -> fact summary
         self.lap_one_said = False
         self.reminded = set()
+        self.reminded_lap = None
 
     def update(self, moment):
         calls = []
@@ -37,13 +42,17 @@ class MemoryRecall:
 
         corners = moment.corners or []
         in_pits = race is not None and race.me is not None and race.me.in_pits
-        if moment.corner is None and corners and not in_pits and moment.lap_count >= 1:
+        worst = sorted(self.corner_habits, key=lambda name: -(self.corner_habits[name].get("value") or 0))
+        worst = set(worst[:HABIT_CORNERS_PER_RACE])
+        if (moment.corner is None and corners and not in_pits and moment.lap_count >= 1
+                and self.reminded_lap != moment.lap_count):
             distance = moment.frame.lap_dist
             for corner in sorted(corners, key=lambda c: c["start"]):
                 name = corner["name"]
                 ahead = corner["start"] - distance
-                if 0 < ahead <= REMIND_BEFORE_M and name in self.corner_habits and name not in self.reminded:
+                if 0 < ahead <= REMIND_BEFORE_M and name in worst and name not in self.reminded:
                     self.reminded.add(name)
+                    self.reminded_lap = moment.lap_count
                     fact = self.corner_habits[name]
                     calls.append(Call(
                         seat="memory", kind="CORNER_HABIT", sim_time=now, priority=MEMORY, ttl=RECALL_TTL_S,

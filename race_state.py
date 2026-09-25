@@ -340,6 +340,19 @@ def read_opponent(scoring, car):
     return opponent
 
 
+def same_lap(me, opponent, model=None):
+    """Is this car racing on my lap? From the road when the race model has both cars: within half a
+    lap of me. Never from the game's laps-behind-leader: in his online warning lobby (25 Sep) it
+    said cars were 1-2 laps behind while everyone was on lap 0, every car was filtered out, and
+    racecraft and battle awareness were silent the whole race. Without the model: a lapped car is
+    one with two or more fewer laps done (at the line the counts are one apart for a moment)."""
+    if model is not None and model.lap_length:
+        mine, theirs = model.distance("me"), model.distance(opponent.id)
+        if mine is not None and theirs is not None:
+            return abs(mine - theirs) < model.lap_length / 2
+    return abs(opponent.laps - me.laps) < 2
+
+
 def same_class_neighbours(race, model=None):
     """The same-class cars just ahead of and behind me in the race, and the time gaps to them.
     Only cars on my lap: a lapped car is not a fight. With the race model the gaps are its
@@ -348,7 +361,7 @@ def same_class_neighbours(race, model=None):
     ahead = None
     behind = None
     for opponent in race.opponents:
-        if opponent.car_class != me.car_class or opponent.laps_behind_leader != me.laps_behind_leader:
+        if opponent.car_class != me.car_class or not same_lap(me, opponent, model):
             continue
         if opponent.place < me.place and (ahead is None or opponent.place > ahead.place):
             ahead = opponent

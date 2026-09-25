@@ -87,6 +87,10 @@ PITS_AHEAD_PLACES = 2          # a car this many places ahead pitting is worth a
 HELD_UP_COST_S = 0.7           # stuck behind a car costing this much a lap vs clean air
 
 
+ALONE_S = 5.0                  # nobody of his class this close either side: he is on his own
+REPORT_MAX_GAP_S = 30.0        # a gap bigger than this is "nobody close", not a number to chase
+
+
 def sure_closing(model, front, back):
     """The race model's road trend: seconds a lap the back car takes out of the gap, but only
     when it is SURE (2 laps of trend). Between fighting cars the gap moves ~1.2 s a lap for
@@ -215,10 +219,14 @@ class RaceEngineer:
         if racing and moment.new_race and moment.model is not None:
             calls.extend(self.pits_ahead(race, moment.model, now))
 
-        # where you are in the race, every few laps, said on a straight
-        if moment.lap_wrapped and moment.lap_count >= self.last_report_lap + REPORT_EVERY_LAPS and moment.lap_count > 1:
+        # where you are in the race: every few laps, and EVERY lap when he is on his own (live 25 Sep:
+        # he joined 3 minutes late, nobody was within two minutes, and the radio went quiet for the
+        # race - a real engineer talks a lone driver through his laps)
+        alone = racing and self.alone(race, moment.model)
+        due = moment.lap_count >= self.last_report_lap + (1 if alone else REPORT_EVERY_LAPS)
+        if moment.lap_wrapped and due and moment.lap_count > 1:
             self.last_report_lap = moment.lap_count
-            calls.append(self.gap_report(race, now))
+            calls.append(self.gap_report(race, now, moment.model, moment.lap_count))
         return calls
 
     def race_picture(self, race, lap, now, model=None):
@@ -369,25 +377,44 @@ class RaceEngineer:
                           now, facts, template=f"Gap behind growing, {gap}. Keep doing that.")
         return None
 
-    def gap_report(self, race, now):
+    def alone(self, race, model):
+        """No car of his class within ALONE_S ahead or behind on the road."""
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
+        near = [g for g in (gap_ahead, gap_behind) if g is not None and 0 <= g <= ALONE_S]
+        return not near
+
+    def gap_report(self, race, now, model=None, lap=None):
+        """Place, his lap against his best, and the cars either side with the road trend. Gaps come
+        from the race model: the game's own gap said "closing 43.8" and "car behind -213.6" in his
+        online lobby (25 Sep). A gap over REPORT_MAX_GAP_S is said as "nobody close"."""
         me = race.me
         facts = {"place": me.place}
         parts = [f"P{me.place}."]
-        if me.place > 1 and me.laps_behind_leader == 0:
-            gap_ahead = round(me.time_behind_next, 1)
-            facts["gap_ahead_s"] = gap_ahead
-            parts.append(f"Gap to the car ahead {gap_ahead} seconds.")
-            if self.last_gap_ahead is not None:
-                change = round(self.last_gap_ahead - gap_ahead, 1)
-                if abs(change) >= 0.2:
-                    facts["gap_change_s"] = abs(change)
-                    direction = "closing" if change > 0 else "losing"
-                    parts.append(f"You are {direction} {abs(change)} since the last report.")
-            self.last_gap_ahead = gap_ahead
-        behind = car_behind(race)
-        if behind is not None:
-            gap_behind = round(behind.time_behind_next, 1)
-            facts["gap_behind_s"] = gap_behind
-            parts.append(f"Car behind {gap_behind} seconds back.")
+        if self.my_lap:
+            best = me.best_lap if me.best_lap > 0 else self.my_lap
+            minutes, seconds = lap_time_parts(self.my_lap)
+            facts.update({"lap_minutes": minutes, "lap_seconds": seconds})
+            if abs(self.my_lap - best) < 0.05:
+                parts.append(f"{minutes}:{seconds:04.1f}, your best.")
+            else:
+                off = round(self.my_lap - best, 1)
+                facts["off_best_s"] = off
+                parts.append(f"{minutes}:{seconds:04.1f}, {off} off your best.")
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
+        if ahead is not None and gap_ahead is not None and 0 <= gap_ahead <= REPORT_MAX_GAP_S:
+            gap = round(gap_ahead, 1)
+            facts["gap_ahead_s"] = gap
+            words = f"Car ahead {gap}."
+            closing = sure_closing(model, ahead.id, "me") if model is not None else None
+            if closing is not None and abs(closing) >= 0.2:
+                facts["closing_s"] = abs(round(closing, 1))
+                words += f" You're taking {abs(round(closing, 1))} a lap." if closing > 0 else f" Losing {abs(round(closing, 1))} a lap."
+            parts.append(words)
+        elif ahead is not None:
+            parts.append("Nobody close ahead.")
+        if behind is not None and gap_behind is not None and 0 <= gap_behind <= REPORT_MAX_GAP_S:
+            gap = round(gap_behind, 1)
+            facts["gap_behind_s"] = gap
+            parts.append(f"Car behind {gap} back.")
         conclusion = " ".join(parts)
         return spoken("GAP_REPORT", conclusion, now, facts, template=conclusion)
