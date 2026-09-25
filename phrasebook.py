@@ -33,7 +33,8 @@ JOIN_PAUSE_S = 0.12          # between two sentences, like a breath on the radio
 # live 25 Sep: "the engineer is barely audible, I don't hear half the sentence; the spotter is
 # loud and clear". Every line is now levelled to the same loudness (RMS), with a soft limiter so
 # it never cracks (0.25 cracked on 24 Sep with the clone).
-TARGET_RMS = 0.18
+TARGET_RMS = 0.14
+LIMIT = 0.92                 # the loudest a sample may ever be, as a share of full scale
 EDGE_PAD_S = 0.08            # kept either side of a trimmed sentence (soft "s"/"c" starts)
 QUIET = 0.01                 # below this share of full scale is silence, for trimming
 
@@ -137,8 +138,11 @@ def levelled(samples):
     rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
     if rms < 1e-4:
         return samples
-    x = np.tanh(x * (TARGET_RMS / rms) * 1.2) / np.tanh(1.2)
-    return (x * 32767.0 * 0.98).astype(np.int16)
+    # tanh never passes 1, so LIMIT is a hard ceiling. The first version divided by tanh(1.2),
+    # reached 1.2x full scale, and int16 WRAPPED from +max to -max: 531 of 555 banked sentences
+    # cracked ("like bass bursting, nothing audible", live 25 Sep). np.clip is the safety net.
+    x = LIMIT * np.tanh(x * (TARGET_RMS / rms))
+    return np.clip(x * 32767.0, -32767, 32767).astype(np.int16)
 
 
 def decode_mp3(mp3_bytes):

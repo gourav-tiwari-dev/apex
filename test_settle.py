@@ -150,3 +150,13 @@ def test_no_seat_line_names_a_driver():
         source = open(path, encoding="utf8").read()
         spoken_lines = re.findall(r'template\s*=\s*f"[^"]*"', source)
         assert not [l for l in spoken_lines if "driver" in l], path
+
+
+def test_praise_and_stick_it_go_out_in_the_start_chaos():
+    # his call, 25 Sep: a 3-car pass on the straight at the start got no praise
+    from radio import Governor, Call, RACECRAFT
+    governor = Governor()
+    governor.settled = False
+    praise = Call("racecraft", "PASS_PRAISE", 10.0, RACECRAFT, 6.0, "p", template="WHAT A MOVE!", immediate=True)
+    plan = Call("racecraft", "ATTACK_PLAN", 10.0, RACECRAFT, 6.0, "a", template="Pass into Arnage.")
+    assert governor.offer(praise) and not governor.offer(plan)

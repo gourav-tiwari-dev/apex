@@ -194,11 +194,12 @@ def test_defending_that_held_gets_praise():
     assert "DEFEND_HELD" in kinds(calls)
 
 
-def test_praise_and_stick_it_are_held_in_the_start_chaos_but_the_alarm_is_not():
+def test_praise_and_the_alarm_go_out_in_the_start_chaos():
+    # his call, 25 Sep (was: praise held): a 3-car pass at the start deserves the praise
     governor = Governor()
     governor.settled = False
     seat = seat_with_gaps()
     praise = seat.praise("late_brake", 10.0)
     alarm = seat.instant("CLOSING_ALARM", "Car behind.", 10.0, seat="spotter", voice="spotter")
-    assert not governor.offer(praise)
+    assert governor.offer(praise)
     assert governor.offer(alarm)

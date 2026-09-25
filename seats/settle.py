@@ -20,6 +20,9 @@ from seats.spotter import sides_taken, GREEN
 # GUESSED, then checked on the 24 Sep lap 1s (see test_settle.py): 15 s with nobody
 # alongside and nobody swapping places around him
 SETTLE_S = 15.0
+# his call, 25 Sep: the start took 167 s to "settle" and swallowed his 3-car pass on the
+# straight (7 praise lines dropped). The chaos now lasts 60 s at most.
+CHAOS_MAX_S = 60.0
 NEIGHBOUR_PLACES = 2
 # a brawl that never calms still hands over to the engineer after this many laps of chaos
 SETTLE_WITHIN_LAPS = 2
@@ -70,6 +73,7 @@ class RaceSettle:
         self.last_neighbourhood = None
         self.place_at_start = None
         self.chaos_lap = None        # the lap the chaos began on (lights out or a restart)
+        self.chaos_since = None      # when it began
 
     def is_race(self, moment):
         if moment.session_type is not None:
@@ -90,6 +94,7 @@ class RaceSettle:
             self.calm_since = None
             self.last_neighbourhood = None
             self.chaos_lap = moment.lap_count
+            self.chaos_since = moment.now
             if self.place_at_start is None or self.last_phase != FULL_COURSE_YELLOW:
                 self.place_at_start = race.me.place
         self.last_phase = phase
@@ -97,7 +102,8 @@ class RaceSettle:
             return []
 
         now = moment.now
-        brawl_too_long = moment.lap_count - self.chaos_lap >= SETTLE_WITHIN_LAPS
+        brawl_too_long = (moment.lap_count - self.chaos_lap >= SETTLE_WITHIN_LAPS
+                          or (self.chaos_since is not None and now - self.chaos_since >= CHAOS_MAX_S))
         if not self.calm(moment):
             self.calm_since = None
             if not brawl_too_long:

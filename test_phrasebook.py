@@ -157,3 +157,11 @@ def test_max_says_each_sentence_in_the_mood_of_the_call_it_belongs_to():
         assert moods[text] == mood_of("PASS_PRAISE")
     assert moods["Cover the inside into Arnage."] == mood_of("STICK_IT")
     assert moods["This fight's costing you 1.4 seconds a lap."] == mood_of("FIGHT_COST")
+
+
+def test_levelling_never_wraps_the_samples():
+    # live 25 Sep: the limiter reached 1.2x full scale and int16 wrapped: the engineer cracked
+    from phrasebook import levelled
+    loud = (np.sin(np.arange(24000) / 3) * 30000).astype(np.int16)
+    out = levelled(loud).astype(np.int32)
+    assert np.abs(out).max() <= 32767 and np.abs(np.diff(out)).max() < 40000

@@ -40,6 +40,7 @@ DEFAULT_COOLDOWN_S = 8.0
 ENGINEER_LINES_PER_WINDOW = 2
 ENGINEER_WINDOW_S = 60.0
 NEVER_COUNTED_SEATS = ("spotter", "race_control")
+CHAOS_ALLOWED = ("PASS_PRAISE", "STICK_IT")
 # the same words again inside this window are dropped (replay of 24 Sep: "cover the inside
 # into Arnage" four times, "stick it, cover Mulsanne Corner" twice in 8 s)
 SAME_WORDS_S = 240.0
@@ -112,6 +113,9 @@ class Governor:
         # lap he will never drive. After the flag only the spotter and his answers talk.
         if self.chequered and call.kind != "FINISH":
             return "chequered"
+        # his call, 25 Sep: earned praise and "stick it" go out even in the start chaos
+        if call.kind in CHAOS_ALLOWED:
+            return "quiet" if self.quiet() else None
         if self.quiet():
             return "quiet"
         if not self.settled:
