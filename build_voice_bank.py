@@ -150,11 +150,12 @@ def phrases_standard():
     print(f"done: {len(jobs) - failed} saved, {failed} failed (run again to retry the failed ones)")
 
 
-def phrases_cloned():
+def phrases_cloned(kinds=None, takes=None):
     """Max's voice. Each sentence: up to PHRASE_TAKES takes, checked by a transcriber; a sentence
     no take says clearly is left out, and a line that needs it is rendered live (still Max)."""
     import phrasebook
-    moods = phrasebook.units()["engineer"]
+    moods = phrasebook.units(kinds)["engineer"]
+    takes = takes or PHRASE_TAKES
     wanted = phrasebook.missing("clone", moods)
     print(f"{len(wanted)} sentences to render in Max's voice")
     voice.CLONE_TIMEOUT_S = CLONE_LINE_TIMEOUT_S
@@ -169,7 +170,7 @@ def phrases_cloned():
     try:
         for n, text in enumerate(wanted, 1):
             best = None
-            for take in range(PHRASE_TAKES):
+            for take in range(takes):
                 audio = clone.render(speakable(text, clone=True), moods[text], seed=2000 + take)
                 if audio is None:
                     continue
@@ -215,7 +216,10 @@ SPOTTER_VOICE_NAME = voice.SPOTTER_VOICE
 if __name__ == "__main__":
     if "--phrases" in sys.argv:
         if "--clone" in sys.argv:
-            phrases_cloned()
+            # e.g. --kinds PASS_PRAISE,STICK_IT --takes 12: another go at the lines that matter most
+            kinds = sys.argv[sys.argv.index("--kinds") + 1].split(",") if "--kinds" in sys.argv else None
+            takes = int(sys.argv[sys.argv.index("--takes") + 1]) if "--takes" in sys.argv else None
+            phrases_cloned(kinds, takes)
         else:
             phrases_standard()
     elif "--clone" in sys.argv:

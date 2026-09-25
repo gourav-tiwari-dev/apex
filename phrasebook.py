@@ -59,7 +59,7 @@ def reputation_sentences():
     return sentences
 
 
-def units():
+def units(kinds=None):
     """book -> every unit (one or more whole sentences) to pre-render. The spotter's is a set;
     the engineer's maps each unit to the mood Max says it in. The engineer units are rendered
     twice: in the standard voice and in Max's."""
@@ -102,6 +102,9 @@ def units():
     for kind, texts in by_kind.items():
         for text in texts:
             engineer.setdefault(text, mood_of(kind))
+    if kinds is not None:
+        engineer = {text: mood for text, mood in engineer.items()
+                    if any(text in by_kind.get(kind, ()) for kind in kinds)}
     return {"spotter": spotter, "engineer": engineer}
 
 
