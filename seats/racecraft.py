@@ -64,6 +64,7 @@ ALARM_TTL_S = 4.0
 # from 0.5 to 1.0 s about nothing. A weak tow, as LMU players say, and only inside 0.5 s.
 TOW_S = 0.5
 CLEAR_GAP_S = 1.0             # out of the tow and out of reach
+PASS_DONE_GAP_S = 0.5         # after a braking zone, this far back = the pass is done
 STICK_WARN_M = 200.0          # "cover the inside" needs this much road before the corner
 SWITCHBACK_WINDOW_S = 15.0    # passed back within this = a switchback
 # replaying 24 Sep: side by side for a lap, the order flipped back and forth and gave
@@ -591,7 +592,11 @@ class Racecraft:
                     stick_now = True               # two cars passed at once: one "stick it"
                     calls.append(self.instant("STICK_IT", f"Stick it. They're in your tow. Cover the inside into {nearest[0]}.",
                                               now, {"corner": nearest[0]}))
-            held = pass_["braking_zones_held"] >= 1 or (gap is not None and gap >= CLEAR_GAP_S)
+            # live 25 Sep: praise came for a car still 0.1-0.4 s behind for 45 s ("I did not make
+            # the overtake completely") and for a place being swapped back ("wrong call"). A pass
+            # is done when the car is at least half a second back after a braking zone, or clear.
+            held = gap is not None and ((pass_["braking_zones_held"] >= 1 and gap >= PASS_DONE_GAP_S)
+                                        or gap >= CLEAR_GAP_S)
             if not held:
                 continue
             del self.open_passes[car_id]

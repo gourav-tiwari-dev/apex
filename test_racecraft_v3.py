@@ -122,8 +122,13 @@ def test_a_pass_is_not_praised_until_it_is_held_then_it_is():
     stick = [c for c in calls if c.kind == "STICK_IT"][0]
     assert "T11 Parabolica" in stick.template
     after = dict(me_changes={"place": 4, "time_behind_leader": 7.6}, opponents=[rival(5, 7.9, car_id=5)])
+    seat.clock.gap_behind = lambda car_id, now: 0.3
     step(seat, 110.0, lap=3, new_race=False, corner="T11 Parabolica", **after)     # the braking zone
     calls = step(seat, 115.0, lap=3, corner=None, **after)                         # through it, still ahead
+    # live 25 Sep: still 0.3 s behind is not a finished pass ("I did not make the overtake completely")
+    assert "PASS_PRAISE" not in kinds(calls)
+    seat.clock.gap_behind = lambda car_id, now: 0.6
+    calls = step(seat, 120.0, lap=3, corner=None, **after)                         # half a second back: done
     praise = [c for c in calls if c.kind == "PASS_PRAISE"]
     assert praise and not praise[0].template.startswith("Clear.")         # the spotter's word, not Max's
     assert "fucking" in praise[0].template.lower() or "lovely" in praise[0].template.lower()
