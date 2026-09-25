@@ -319,6 +319,9 @@ class Answers:
 
     def fuel(self, race=None):
         picture = self.strategist.fuel_now
+        if picture is not None and "verdict" in picture:
+            from seats.strategist import fuel_words
+            return fuel_words(picture)             # the verdict, not just numbers (25 Sep)
         if picture is None:
             # live 25 Sep: "Need two laps to measure the fuel" was all he got. The tank is known
             # from the first second; only the laps it lasts needs two laps at the line.
@@ -327,7 +330,10 @@ class Answers:
             words = f"{round(race.me.fuel, 1)} litres in."
             if race.me.virtual_energy > 0:
                 words += f" Energy {round(race.me.virtual_energy * 100)} percent."
-            return words + " Laps it lasts after two laps at the line."
+            low = race.me.fuel_capacity > 0 and race.me.fuel / race.me.fuel_capacity < 0.1
+            if low or 0 < race.me.virtual_energy < 0.1:
+                return words + " That's LOW. Usage in half a lap: check your screen, be ready to box."
+            return words + " Usage measured in half a lap."
         spare = picture["spare_laps"]
         what = "Fuel" if picture["limit"] == "fuel" else "Energy"
         if spare >= 0.5:

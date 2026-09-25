@@ -846,6 +846,30 @@ def tacked_on(question, text, in_fight):
     return any(word in said for word in NEIGHBOUR_WORDS)
 
 
+FUEL_QUESTION = ("fuel", "energy", "pit", "box", "stop", "make it", "tank", "litre", "liter", "refuel")
+NO_STOP_WORDS = ("no need to pit", "no stop", "don't need to pit", "dont need to pit", "no need to box",
+                 "you'll make it", "you will make it", "enough fuel", "fuel's fine", "fuel is fine")
+
+
+def fuel_honest(question, text, picture):
+    """(ok, reason). Live 25 Sep: with 0.6 laps of energy for 1.7 laps of race the coach said
+    "no need to pit". The fuel verdict is code's; the answer must carry it."""
+    asked = question.lower()
+    if not any(word in asked for word in FUEL_QUESTION):
+        return True, "ok"
+    said = text.lower()
+    verdict = picture.get("verdict") if isinstance(picture, dict) else None
+    if verdict == "box" and not any(w in said for w in ("box", "pit")):
+        return False, "the fuel verdict is BOX THIS LAP (car tool, fuel_at_the_flag): say it first"
+    if verdict == "save" and not any(w in said for w in ("lift", "coast", "save", "short")):
+        return False, "the fuel verdict is SHORT: lift and coast every braking zone, say it first"
+    if verdict in ("box", "save") and any(w in said for w in NO_STOP_WORDS):
+        return False, "that contradicts the fuel verdict: he does NOT make it as he is"
+    if verdict is None and any(w in said for w in NO_STOP_WORDS):
+        return False, "fuel usage is not measured yet: say it is not known and to check the screen, never 'no need to pit'"
+    return True, "ok"
+
+
 def check_answer(text, known_numbers, clean=False, names=(), max_words=MAX_WORDS, speeds_ok=False):
     """(ok, reason). known_numbers: every number the tools returned or he said.
     names: the other drivers in this race; none may be said (v3, 24 Sep)."""
@@ -1031,6 +1055,8 @@ class RaceAgent:
             if ok:
                 ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean,
                                           snapshot.driver_names(), max_words, speeds_ok)
+            if ok:
+                ok, reason = fuel_honest(question, text, snapshot.car_state.get("fuel_at_the_flag"))
             if ok and tacked_on(question, text, bool(snapshot.team_calls)):
                 ok, reason = False, ("it talks about the car ahead or behind, but he did not ask about them "
                                      "and nobody is within a second: answer only his question")

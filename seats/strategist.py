@@ -4,6 +4,7 @@ weather turning, and the last lap.
 Fuel is measured, never assumed: litres used per lap come from my own laps in this session,
 so the first call waits until two full laps are done.
 """
+import math
 import statistics
 
 from radio import Call, STRATEGY, ENGINEER
@@ -17,6 +18,38 @@ SPARE_COMFORTABLE = 0.5        # laps of fuel spare above which it is simply "fi
 TYRE_HOT_C = 105.0
 TYRE_NAMES = ["front left", "front right", "rear left", "rear right"]
 CALL_TTL_S = 25.0
+
+# Live 25 Sep: Apex was restarted mid-race, had no laps at the line, and so no fuel picture.
+# He had 0.6 laps of energy for 1.7 laps of race; the radio read out litres, the coach said
+# "no need to pit", nothing warned him. Usage is now measured CONTINUOUSLY, per metre driven,
+# so it is known about 1.5 km after any start, restart or refuel.
+LIVE_MIN_M = 1500.0            # track driven before the live usage counts
+LIVE_KEEP_LAPS = 1.2           # usage over the last lap or so: the current pace of burn
+# GUESSED: lift and coast plus short-shifting saves about 8% of usage (tune from his laps)
+LIFT_AND_COAST_SAVES = 0.08
+FUEL_RECHECK_S = 15.0
+VERDICT_WORDS = {
+    "fine": "{what}'s fine to the flag, {spare} laps spare. Push.",
+    "tight": "{what}'s tight, {spare} laps spare. Lift and coast into the big stops.",
+    "save": "{what}'s short by {short} laps. Lift and coast every braking zone and short-shift, or you won't make it.",
+    "box": "Box this lap for fuel. {what} won't make the flag, short by {short} laps.",
+}
+
+
+def verdict_of(spare, laps_left):
+    if spare >= SPARE_COMFORTABLE:
+        return "fine"
+    if spare >= 0:
+        return "tight"
+    if -spare <= LIFT_AND_COAST_SAVES * max(laps_left, 0.5):
+        return "save"
+    return "box"
+
+
+def fuel_words(picture):
+    what = "Fuel" if picture["limit"] == "fuel" else "Energy"
+    return VERDICT_WORDS[picture["verdict"]].format(what=what, spare=picture["spare_laps"],
+                                                    short=abs(picture["spare_laps"]))
 
 
 def call(kind, conclusion, now, facts, template, priority=STRATEGY):
@@ -55,6 +88,13 @@ class Strategist:
         self.last_lap_called = False
         self.fuel_now = None           # the latest fuel picture, for "how's the fuel?" on the radio
         self.line_time = None          # sim time when he last crossed the line
+        self.track_m = None            # lap length, the longest lap distance any car showed
+        self.burn = []                 # (distance driven, fuel, energy) since the last refuel
+        self.wraps = 0
+        self.last_lap_dist = None
+        self.last_live_check = None
+        self.last_live_verdict = None
+        self.box_said_lap = None
         # v3 step 5b: every lap for "how were my last laps / my sectors" on the radio. The laps
         # table in apex.db has no times for live sessions (all None, checked 25 Sep), so the
         # sectors are timed here on Apex's own clock, like measured_lap
@@ -85,6 +125,9 @@ class Strategist:
         now = moment.now
         calls = []
 
+        if moment.new_race:
+            calls.extend(self.live_fuel(race, moment, now))
+
         # the game's sector numbers: 1, 2, then 0 for sector 3
         if moment.new_race and me.sector != self.last_sector:
             if self.last_sector == 1 and me.sector == 2:
@@ -102,7 +145,8 @@ class Strategist:
                 self.lap_records.append(self.lap_record(moment.lap_count, lap_time, me, now))
             self.sector_marks = {}
             self.line_time = now
-            self.fuel_now = self.fuel_picture(race)
+            # the live picture (burn per metre) wins; the line picture fills in before it exists
+            self.fuel_now = self.live_picture(race, 0.0) or self.fuel_picture(race)
             fuel_call = self.fuel_check(race, moment.lap_count, now)
             if fuel_call is not None:
                 calls.append(fuel_call)
@@ -121,6 +165,97 @@ class Strategist:
                 calls.append(call("RAIN", f"Rain is starting, severity {race.session.raining}. Grip will drop.",
                                   now, {"rain": race.session.raining}, "Rain's coming. Grip's going away."))
         return calls
+
+    # ---- fuel, measured all the time ------------------------------------------------------------
+    def see_burn(self, race, lap_dist):
+        for car in race.opponents:
+            if self.track_m is None or car.lap_dist > self.track_m:
+                self.track_m = car.lap_dist
+        if self.track_m is None or self.track_m < 1000:
+            return
+        if self.last_lap_dist is not None and lap_dist < self.last_lap_dist - self.track_m / 2:
+            self.wraps += 1
+        self.last_lap_dist = lap_dist
+        me = race.me
+        if me.in_pits:
+            self.burn = []                     # pit lane and refuelling: start again after it
+            return
+        distance = self.wraps * self.track_m + lap_dist
+        if self.burn and (me.fuel > self.burn[-1][1] + 0.5 or distance < self.burn[-1][0]):
+            self.burn = []                     # refuelled, or a reset
+        self.burn.append((distance, me.fuel, me.virtual_energy))
+        while self.burn and distance - self.burn[0][0] > LIVE_KEEP_LAPS * self.track_m:
+            self.burn.pop(0)
+
+    def live_usage(self):
+        """(litres a lap, energy a lap) from the burn over the last lap or so, or None."""
+        if len(self.burn) < 2 or not self.track_m:
+            return None
+        (d0, f0, e0), (d1, f1, e1) = self.burn[0], self.burn[-1]
+        driven = d1 - d0
+        if driven < LIVE_MIN_M:
+            return None
+        return (f0 - f1) / driven * self.track_m, (e0 - e1) / driven * self.track_m
+
+    def laps_remaining(self, race, lap_dist):
+        """Laps of driving still to do, the part of this lap included (1.7, not "2 to go")."""
+        if not self.track_m:
+            return None
+        me, session = race.me, race.session
+        done_this_lap = min(max(lap_dist / self.track_m, 0.0), 1.0)
+        if session.max_laps and session.max_laps < 10000:
+            return max(session.max_laps - me.laps - done_this_lap, 0.0)
+        lap_time = statistics.median(self.lap_times[-3:]) if self.lap_times else None
+        if lap_time is None:
+            lap_time = me.last_lap if me.last_lap > 0 else (me.best_lap if me.best_lap > 0 else None)
+        if lap_time is None or session.time_remaining <= 0:
+            return None
+        to_line = (1 - done_this_lap) * lap_time
+        # a timed race: laps are started until the clock runs out, and the last one is finished
+        after = math.ceil(max(session.time_remaining - to_line, 0.0) / lap_time)
+        return (1 - done_this_lap) + after
+
+    def live_picture(self, race, lap_dist):
+        usage = self.live_usage()
+        remaining = self.laps_remaining(race, lap_dist)
+        if usage is None or remaining is None:
+            return None
+        litres, energy = usage
+        options = []
+        if litres > 0.05:
+            options.append((race.me.fuel / litres - remaining, "fuel"))
+        if energy > 0.0005 and race.me.virtual_energy > 0:
+            options.append((race.me.virtual_energy / energy - remaining, "energy"))
+        if not options:
+            return None
+        spare, limit = min(options)
+        spare = round(spare, 1)
+        return {"spare_laps": spare, "laps_left": round(remaining, 1), "limit": limit,
+                "verdict": verdict_of(spare, remaining), "measured": "live, over the last lap driven"}
+
+    def live_fuel(self, race, moment, now):
+        """Keeps fuel_now fresh, and speaks up the moment the verdict turns bad, unasked."""
+        self.see_burn(race, moment.frame.lap_dist)
+        if self.last_live_check is not None and now - self.last_live_check < FUEL_RECHECK_S:
+            return []
+        self.last_live_check = now
+        picture = self.live_picture(race, moment.frame.lap_dist)
+        if picture is None:
+            return []
+        self.fuel_now = picture
+        verdict = picture["verdict"]
+        changed = verdict != self.last_live_verdict
+        self.last_live_verdict = verdict
+        bad = verdict in ("save", "box")
+        if not bad or not (changed or (verdict == "box" and self.box_said_lap != moment.lap_count)):
+            return []
+        if verdict == "box":
+            self.box_said_lap = moment.lap_count
+        words = fuel_words(picture)
+        fuel_call = call("FUEL", words, now, {"spare_laps": abs(picture["spare_laps"]),
+                                             "laps_left": picture["laps_left"]}, words, priority=ENGINEER)
+        fuel_call.immediate = True           # not held for the talk budget: this ends races
+        return [fuel_call]
 
     def lap_record(self, lap, lap_time, me, now):
         sectors = None
@@ -148,7 +283,8 @@ class Strategist:
             if energy_spare < spare:
                 spare = energy_spare
                 limit = "energy"
-        return {"spare_laps": spare, "laps_left": laps_left, "limit": limit}
+        return {"spare_laps": spare, "laps_left": laps_left, "limit": limit,
+                "verdict": verdict_of(spare, laps_left), "measured": "at the line"}
 
     def fuel_check(self, race, lap, now):
         if lap < self.last_fuel_check_lap + RECHECK_EVERY_LAPS and self.last_fuel_state is not None:
