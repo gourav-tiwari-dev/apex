@@ -104,7 +104,9 @@ HOW TO ANSWER
    hit you twice: let it go"). Code checks every override against the data.
    Never promise a later call ("I'll tell you where"): nothing will call him back. Say where NOW.
    Never tell him to let a car by unless its team call (or team_call_when_it_reaches_you) says
-   LET BY, or you override it for a reason the data backs.
+   LET BY, or you override it for a reason the data backs. NEVER let a SLOWER car by. One
+   contact alone does not justify giving a place: the car must also be clearly quicker, or have
+   hit him twice. If he says he wants to fight it, help him fight it cleanly.
 6. A missing fact stays missing: if a pace or lap time says "not known", say you don't have it.
    Never fill it in ("same pace") from nothing.
 7. Answer the question he asked: asked for a lap time, give the lap time first. Mention the
@@ -367,6 +369,7 @@ def pass_odds(quicker):
     return found[1], found[2]
 
 
+CONTACT_LET_BY_QUICKER_S = 0.5   # contact once + at least this much quicker: a let-by is fair
 CATCH_UPPER = 1.5     # field study (25 Sep): 20 of 21 sure forecasts were caught, the time was
                       # off by a median 64%, and within 1.5x the forecast 95% of the time for
                       # forecasts over a minute: say WHETHER and an upper bound, never "in 1.6 laps"
@@ -524,6 +527,7 @@ class Snapshot:
     def __init__(self, race, lap, lap_dist, corners, engineer, strategist, performance,
                  racecraft, governor, habits, contacts_this_race, db_path=None, session_id=None, model=None):
         self.model = model                 # the race model: the one picture (25 Sep)
+        self.quicker_by = {}               # "ahead" / "behind" -> s a lap that car is quicker than me
         self.corners_map = corners or []
         self.picture = self.race_picture(race, lap, engineer, governor, racecraft)
         self.lap = lap
@@ -586,6 +590,18 @@ class Snapshot:
             return False, "start with the CALL line (CALL: DEFEND / LET BY / ATTACK / FOLLOW), then the answer"
         if call in team_words and override is None:
             return True, "ok"
+        # live 25 Sep: "that Mercedes has hit you once and it's 1.9 s a lap SLOWER, let it go".
+        # Never give a place to a slower car; contact alone is not enough - the car must also be
+        # quicker, or have hit him at least twice (his rule: no place without a fight unless it is
+        # genuinely fast, or his situation is bad).
+        if call == "LET BY":
+            quicker = self.quicker_by.get("behind")
+            if quicker is not None and quicker < 0:
+                return False, (f"the car behind is {-quicker:.1f} s a lap SLOWER: never let a slower car by. "
+                               "Defend one line, or follow the team call")
+            if override == "contact" and self.contacts_in_fight < 2 and (quicker is None or quicker < CONTACT_LET_BY_QUICKER_S):
+                return False, ("one contact is not a reason to give the place to a car that is not clearly quicker: "
+                               "defend, give it room, one line")
         supported = self.override_evidence()
         if override in supported:
             return True, "ok"
@@ -624,6 +640,8 @@ class Snapshot:
             if theirs is not None:
                 entry["their_lap"] = f"{lap_text(theirs)} ({source})"
             theirs, mine, measured, how = pace_pair(car, theirs, source, mine, engineer, racecraft, self.model)
+            if theirs is not None and mine is not None:
+                self.quicker_by[side] = round(mine - theirs, 2)      # + = that car is quicker than me
             if theirs is not None and mine is not None:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
                 entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
@@ -726,8 +744,9 @@ class Snapshot:
             edges = racecraft.edges_against(key)
             # named for what they measure: speed carried through the middle, NOT braking (24 Sep:
             # "corners_they_are_quicker" came back as "quicker in every braking zone")
-            entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge <= -3.0)
-            entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge >= 3.0)
+            if self.model is None or not self.corners_map:
+                entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge <= -3.0)
+                entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge >= 3.0)
             entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
             entry["pass_attempts_this_race"] = [a[4] for a in racecraft.attempts if a[0] == key]
             entry["history"] = racecraft.rivals.get(key)

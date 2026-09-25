@@ -395,3 +395,17 @@ def test_the_coach_cannot_contradict_a_sure_road_trend():
     unsure = {"field_around_you": [{"place": 6, "side": "behind", "gap_s": 0.4,
                                     "trend": "the car behind is catching 0.3 s a lap (1 lap only, NOT sure)"}]}
     assert trend_honest("Early to tell, mate.", unsure)[0]
+
+
+def test_never_let_a_slower_car_by_and_one_contact_is_not_enough():
+    # live 25 Sep: "that Mercedes hit you once and it's 1.9 s a lap slower, let it go"
+    snapshot = snapshot_at_lap_4()
+    snapshot.team_calls = {"behind": "DEFEND: similar pace"}
+    snapshot.quicker_by["behind"] = -1.9
+    snapshot.contacts_in_fight = 1
+    ok, reason = snapshot.check_call("LET BY", "contact")
+    assert not ok and "SLOWER" in reason
+    snapshot.quicker_by["behind"] = 0.2
+    assert not snapshot.check_call("LET BY", "contact")[0]              # one contact, not quicker
+    snapshot.contacts_in_fight = 2
+    assert snapshot.check_call("LET BY", "contact")[0]                  # hit twice: fair

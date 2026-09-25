@@ -141,6 +141,8 @@ def matched(text):
 
 def intent_of(text):
     """The intent with the longest phrase found in what he said, or None."""
+    if is_mark(text):
+        return "MARK"
     return matched(text)[0]
 
 
@@ -199,7 +201,13 @@ JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "ho
                   "aggressively")
 
 
+def is_mark(text):
+    return clean(text).startswith("mark")
+
+
 def needs_agent(text):
+    if is_mark(text):
+        return False
     intent, phrase = matched(text)
     if intent in ("QUIET", "RADIO_REQUEST", "MARK"):
         return False              # "quiet, I need to focus on this fight": obeyed at once, whatever else he says
@@ -305,16 +313,34 @@ class Answers:
         if ahead is None or gap is None:
             return "Nobody ahead in your class. You're leading it."
         words = f"Car ahead, {round(gap, 1)}."
-        if ahead.last_lap > 0:
+        trend = self.trend_words(ahead.id, "me", "You're catching", "It's pulling away")
+        if trend:
+            return words + " " + trend
+        if ahead.last_lap > 0 and ahead.laps >= 2:
             words += f" Lapping {lap_text(ahead.last_lap)}."
         return words
+
+    def trend_words(self, front, back, closing, growing):
+        """The race model's road trend in a few words, only when it is sure (2 laps)."""
+        if self.model is None:
+            return None
+        t = self.model.trend(front, back)
+        if t is None or not t["sure"]:
+            return None
+        amount = abs(t["closing_per_lap"])
+        if amount < 0.1:
+            return "Gap's steady."
+        return f"{closing if t['closing_per_lap'] > 0 else growing} {amount:.1f} a lap."
 
     def gap_behind(self, race):
         ahead, gap_ahead, behind, gap = same_class_neighbours(race, self.model)
         if behind is None or gap is None:
             return "Nobody behind in your class."
         words = f"Car behind, {round(gap, 1)}."
-        if behind.last_lap > 0:
+        trend = self.trend_words("me", behind.id, "It's catching", "It's dropping back")
+        if trend:
+            return words + " " + trend
+        if behind.last_lap > 0 and behind.laps >= 2:
             words += f" Lapping {lap_text(behind.last_lap)}."
         return words
 
@@ -453,7 +479,7 @@ class Answers:
         if s.game_phase == 6:
             words = "Full course yellow."
         elif yellow_sectors:
-            words = f"Yellow in sector {' and '.join(yellow_sectors)}. No overtaking there."
+            words = f"Yellow in sector {' and '.join(yellow_sectors)}. Careful there, someone's in trouble."
         else:
             words = "No yellows."
         if race.me.flag == 6:
