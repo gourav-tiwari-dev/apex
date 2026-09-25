@@ -790,6 +790,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     answers = Answers(governor, engineer, strategist, performance, clean)
     answers.model = model          # the fixed answers read the same gaps as every seat
     reminders = []            # {"remind_lap", "what"}: set by the agent, said at the line
+    heard_confidence = {}     # question -> Whisper's confidence, until the coach answers it
     talk = None
     agent = None
     if not REPLAY:
@@ -973,11 +974,14 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                                             team_habits, contacts_by_car(conn, session_id),
                                             db_path=database_file(conn), session_id=session_id, model=model)
                         agent.ask(heard.text, snapshot, frame.elapsed_time)
+                        # logged with the answer: the "say again" threshold is tuned from these
+                        heard_confidence[heard.text] = getattr(heard, "confidence", None)
                         voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
                         print(f"[asked the agent: {heard.text!r}]")
                         continue
                     answer = answers.answer(heard.text, source.race, lap_count, frame.elapsed_time)
                     answer.facts["transcribe_ms"] = heard.transcribe_ms
+                    answer.facts["confidence"] = getattr(heard, "confidence", None)
                     print(f"[asked: {heard.text!r} -> {answer.kind}: {answer.template}]")
                     if governor.offer(answer):
                         desk.prepare(answer)
@@ -986,6 +990,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     for spent in result["costs"]:
                         save_llm_call(conn, session_id, "agent", spent)
                     heard_text = result["call"].facts.get("heard", "")
+                    result["call"].facts["confidence"] = heard_confidence.pop(heard_text, None)
                     gave_up = result["call"].template.startswith(("No clean answer", "Radio's lagging, mate. Ask me again"))
                     if gave_up and intent_of(heard_text) is not None and source.race is not None:
                         # live 24 Sep: "what times do I need to catch the car ahead?" got "no clean
