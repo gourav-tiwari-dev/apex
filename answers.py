@@ -82,6 +82,9 @@ INTENTS = {
     # Code answers honestly: what the radio already does, and the switches he has.
     "RADIO_REQUEST": ["only talk to me", "talk to me on", "stop telling me", "talk less", "less talking",
                       "every lap", "dont tell me", "stop calling"],
+    # live test marker (25 Sep): he says "mark" when something is wrong or great; the time is in
+    # the radio log, so the moment can be found on the tape afterwards
+    "MARK": ["mark", "mark that", "mark it", "note that", "bookmark", "flag that"],
     # v3 5b: a line lost under the engine or a spotter call
     "REPEAT": ["repeat", "repeat that", "say again", "say that again", "come again", "what did you say",
                "didnt catch", "didnt hear", "one more time"],
@@ -198,7 +201,7 @@ JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "ho
 
 def needs_agent(text):
     intent, phrase = matched(text)
-    if intent in ("QUIET", "RADIO_REQUEST"):
+    if intent in ("QUIET", "RADIO_REQUEST", "MARK"):
         return False              # "quiet, I need to focus on this fight": obeyed at once, whatever else he says
     if intent is None or words_beyond(text, intent):
         return True
@@ -281,6 +284,8 @@ class Answers:
         elif intent == "RADIO_REQUEST":
             words = ("Can't switch that, mate. Already the rule: nothing but the spotter mid-corner, two lines a "
                      "minute. You've got quiet for some laps, radio back on, say again, and reminders.")
+        elif intent == "MARK":
+            words = "Marked."
         elif intent == "REPEAT":
             words = self.last_line or "Nothing to repeat yet, mate."
         else:
