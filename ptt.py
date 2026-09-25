@@ -33,9 +33,12 @@ LONGEST_PRESS_S = 12.0
 # defending" on 24 Sep. small is 128 ms on the GPU instead of 53, measured.
 MODEL = "small.en"
 # words he will say, so Whisper leans towards them
-RADIO_WORDS = ("Gap ahead, gap behind, the car behind me, the guy behind me is diving, defend, "
-               "let him go, overtake, fuel, laps left, lap time, catch him, quiet, radio back on, "
-               "where am I losing time, Arnage, Indianapolis, Mulsanne, Tertre Rouge, Porsche Curves.")
+# live 25 Sep: "how's the fuel" came out "how's the feeling", "car ahead" as "thought ahead".
+# His real questions go first, so Whisper expects those words.
+RADIO_WORDS = ("How's the fuel? How are the tyres? What's the gap? Am I catching the car ahead? "
+               "Gap ahead, gap behind, the car ahead, the car behind me is diving, defend, "
+               "let him go, overtake, tyre temps, brakes, damage, what's the plan, laps left, lap time, "
+               "catch him, quiet, radio back on, say again, where am I losing time.")
 
 
 def load_button():

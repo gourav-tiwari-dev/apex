@@ -94,6 +94,26 @@ def clean(text):
     return re.sub(r"[^a-z0-9 ]+", " ", text).strip()
 
 
+# What the recognizer really wrote for his questions, live 25 Sep (engine noise, a
+# controller in his hands). Whole phrases only: "how's the car feeling" stays a handling
+# question. Fixed before routing, so "how's the feeling" gets the fuel answer in 50 ms
+# instead of going to the coach and coming back as a fight call.
+MISHEARD = [
+    (r"\bhow('s| is| s) the feeling\b", "how's the fuel"),
+    (r"\bthe feeling now\b", "the fuel now"),
+    (r"\bthought ahead\b", "car ahead"),
+    (r"\bcar hat\b", "car ahead"),
+    (r"\bcut ahead\b", "car ahead"),
+]
+
+
+def fix_mishearing(text):
+    fixed = text
+    for pattern, meant in MISHEARD:
+        fixed = re.sub(pattern, meant, fixed, flags=re.IGNORECASE)
+    return fixed
+
+
 def matched(text):
     """(intent, the phrase that matched): the longest phrase found in what he said."""
     heard = " " + clean(text) + " "
@@ -235,7 +255,7 @@ class Answers:
             words = "Didn't get that, mate. Say again."
         elif intent == "FUEL":
             seat = "strategist"
-            words = self.fuel()
+            words = self.fuel(race)
         elif intent == "WHERE_LOSING":
             seat = "performance"
             words = self.where_losing()
@@ -297,10 +317,17 @@ class Answers:
         target = theirs - gap / to_go
         return f"You need {lap_text(target)} to catch the car ahead by the flag. It's doing {lap_text(theirs)}."
 
-    def fuel(self):
+    def fuel(self, race=None):
         picture = self.strategist.fuel_now
         if picture is None:
-            return "Need two laps to measure the fuel."
+            # live 25 Sep: "Need two laps to measure the fuel" was all he got. The tank is known
+            # from the first second; only the laps it lasts needs two laps at the line.
+            if race is None or race.me is None:
+                return "Need two laps to measure the fuel."
+            words = f"{round(race.me.fuel, 1)} litres in."
+            if race.me.virtual_energy > 0:
+                words += f" Energy {round(race.me.virtual_energy * 100)} percent."
+            return words + " Laps it lasts after two laps at the line."
         spare = picture["spare_laps"]
         what = "Fuel" if picture["limit"] == "fuel" else "Energy"
         if spare >= 0.5:

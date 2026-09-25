@@ -23,7 +23,7 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
-from answers import Answers, needs_agent, intent_of
+from answers import Answers, needs_agent, intent_of, fix_mishearing
 from agent import RaceAgent, Snapshot
 import ptt as push_to_talk
 from team_memory import facts as memory_facts
@@ -948,6 +948,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     talk = None
             if talk is not None or heard_now:
                 for heard in heard_now:
+                    heard.text = fix_mishearing(heard.text)
                     if needs_agent(heard.text) and source.race is not None and source.race.me is not None:
                         # a real question: the agent looks at a still picture of the race
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,

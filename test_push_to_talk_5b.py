@@ -49,3 +49,15 @@ def test_what_needs_judgment_still_goes_to_the_agent():
                      "Is my car ok after that hit?", "What's the penalty for track limits?",
                      "Can I overtake under yellow?", "Did I damage the aero?", "What's the fastest lap in the race?"):
         assert needs_agent(question), question
+
+
+def test_what_the_recognizer_wrote_live_still_gets_the_right_answer():
+    from answers import fix_mishearing, intent_of
+    assert intent_of(fix_mishearing("How is the feeling?")) == "FUEL"          # live 25 Sep, twice
+    assert "car ahead" in fix_mishearing("Am I catching the thought ahead?")
+    assert fix_mishearing("How's the car feeling in the Esses?") == "How's the car feeling in the Esses?"
+
+
+def test_fuel_gets_the_tank_from_the_first_lap():
+    words = say("How's the fuel?", fuel=54.2, virtual_energy=0.81)
+    assert words.startswith("54.2 litres in. Energy 81 percent.")

@@ -52,7 +52,7 @@ def test_answers_come_from_the_live_race_in_code_words():
     assert ahead.asked and not ahead.phrase and ahead.kind == "ANSWER_GAP_AHEAD"
     assert answers.answer("who's behind", now, 3, 100.0).template == "Car behind, 1.0. Lapping 1:51.0. Keep them in the fucking mirrors."
     assert answers.answer("what position", now, 3, 100.0).template == "P5. Let's fucking do better than that."
-    assert answers.answer("how's the fuel", now, 3, 100.0).template == "Need two laps to measure the fuel."
+    assert answers.answer("how's the fuel", now, 3, 100.0).template.endswith("Laps it lasts after two laps at the line.")
     answers.strategist.fuel_now = {"spare_laps": 1.4, "laps_left": 3, "limit": "energy"}
     fuel = answers.answer("how's the fuel", now, 3, 100.0)
     assert fuel.seat == "strategist" and fuel.template == "Energy's fine. 1.4 laps spare. Push. Stop worrying about the fucking fuel."
