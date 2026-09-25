@@ -14,6 +14,7 @@ from memory import connect_db,start_session,save_event,finish_session,save_lap,s
 from radio import Governor, Budget, Call, RACE_CONTROL
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
+from seats.qualifying import QualifyingEngineer
 from persona import Persona
 from voice import Voice, RadioDesk
 from seats.performance import call_from_event, PerformanceEngineer
@@ -785,7 +786,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     recall = MemoryRecall()
     engineer = RaceEngineer()
     strategist = Strategist()
-    seats = [Spotter(), engineer, strategist, performance, racecraft, recall, TrackAwareness()]
+    seats = [Spotter(), engineer, strategist, performance, racecraft, recall, TrackAwareness(), QualifyingEngineer()]
     settle = RaceSettle()
 
     governor = Governor()

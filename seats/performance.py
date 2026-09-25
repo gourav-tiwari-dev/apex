@@ -475,7 +475,7 @@ class PerformanceEngineer:
         calls = []
         best = me.best_lap if me.best_lap > 0 else None
         if best is not None and self.best_lap_seen is not None and best < self.best_lap_seen \
-                and self.praise_given < MAX_PRAISE_PER_SESSION:
+                and self.praise_given < MAX_PRAISE_PER_SESSION and moment.session_type not in QUALIFYING:
             gain = round(self.best_lap_seen - best, 2)
             self.praise_given += 1
             calls.append(Call(
@@ -487,15 +487,6 @@ class PerformanceEngineer:
         if best is not None:
             self.best_lap_seen = best
 
-        # qualifying (E15): every lap, how far from the best
-        if moment.session_type in QUALIFYING and me.last_lap > 0 and best is not None:
-            minutes = int(me.last_lap // 60)
-            seconds = round(me.last_lap - minutes * 60, 1)
-            delta = round(me.last_lap - best, 1)
-            calls.append(Call(
-                seat="performance", kind="QUALI_LAP", sim_time=now, priority=PERFORMANCE,
-                ttl=CORNER_CALL_TTL_S,
-                conclusion=f"Lap {minutes}:{seconds:04.1f}, {delta} off your best.",
-                facts={"minutes": minutes, "seconds": seconds, "delta_s": delta},
-                template=f"{minutes}:{seconds:04.1f}. {delta} off your best."))
+        # qualifying laps (E15) moved to seats/qualifying.py, 25 Sep: this one said "0.0 off your
+        # best" on the best lap itself and never said where the lap put him
         return calls

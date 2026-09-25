@@ -18,6 +18,7 @@ SPARE_COMFORTABLE = 0.5        # laps of fuel spare above which it is simply "fi
 TYRE_HOT_C = 105.0
 TYRE_NAMES = ["front left", "front right", "rear left", "rear right"]
 CALL_TTL_S = 25.0
+RACE_SESSIONS = range(10, 14)
 
 # Live 25 Sep: Apex was restarted mid-race, had no laps at the line, and so no fuel picture.
 # He had 0.6 laps of energy for 1.7 laps of race; the radio read out litres, the coach said
@@ -134,8 +135,11 @@ class Strategist:
         me = race.me
         now = moment.now
         calls = []
+        # fuel-to-the-flag and last-lap calls are race calls: in qualifying (live 25 Sep) they said
+        # "Box this lap for fuel" and "Last lap. Bring it home." Old tapes carry no session type.
+        racing = moment.session_type is None or moment.session_type in RACE_SESSIONS
 
-        if moment.new_race:
+        if moment.new_race and racing:
             calls.extend(self.live_fuel(race, moment, now))
             calls.extend(self.leader_over_the_line(race, now))
 
@@ -158,14 +162,14 @@ class Strategist:
             self.line_time = now
             # the live picture (burn per metre) wins; the line picture fills in before it exists
             self.fuel_now = self.live_picture(race, 0.0) or self.fuel_picture(race)
-            fuel_call = self.fuel_check(race, moment.lap_count, now)
+            fuel_call = self.fuel_check(race, moment.lap_count, now) if racing else None
             if fuel_call is not None:
                 calls.append(fuel_call)
             calls.extend(self.tyre_check(me, now))
             # laps to go is exact only at the line: mid-lap it would say "last lap" a lap early.
             # A last lap that starts mid-lap (the leader's flag) is the race engineer's call.
             laps_left = self.laps_left(race)
-            if laps_left is not None and laps_left <= 1 and not self.last_lap_called:
+            if racing and laps_left is not None and laps_left <= 1 and not self.last_lap_called:
                 self.last_lap_called = True
                 margin = leader_margin(race)
                 words = "Last lap. Bring it home."

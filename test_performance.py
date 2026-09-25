@@ -114,13 +114,12 @@ def test_praise_for_a_new_best_lap_at_most_twice():
     assert praise[0].facts == {"gain_s": 0.5}
 
 
-def test_qualifying_lap_report_carries_its_own_numbers():
+def test_qualifying_lap_report_left_the_performance_seat():
+    # 25 Sep: the qualifying lap call lives in seats/qualifying.py (see test_qualifying.py)
     seat = PerformanceEngineer()
     calls = cross_line(seat, 111.0, 2, race(0.0, me_changes={"best_lap": 110.1, "last_lap": 110.3}),
                        session_type=6)
-    quali = [c for c in calls if c.kind == "QUALI_LAP"][0]
-    assert quali.template == "1:50.3. 0.2 off your best."
-    assert quali.facts == {"minutes": 1, "seconds": 50.3, "delta_s": 0.2}
+    assert not [c for c in calls if c.kind == "QUALI_LAP"]
 
 
 def test_rear_snap_needs_braking_lock_and_rotation_the_corner_does_not_explain():
