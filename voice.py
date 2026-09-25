@@ -199,10 +199,29 @@ BANK_LINES = {
 }
 
 
-async def render(text, voice):
+# 25 Sep: expressive standard voice (his pick while Azure waits for a card). Microsoft blocks
+# edge-tts's emotion styles, so the mood is carried by speed, loudness and pitch instead.
+# (role, mood) -> (rate, volume, pitch). Moods come from mood_of(kind). GUESSED: tune by ear.
+PROSODY = {
+    ("spotter", "urgent"): ("+15%", "+25%", "+0Hz"),      # every spotter call: quick and loud
+    ("engineer", "urgent"): ("+12%", "+20%", "-2Hz"),     # fights, flags: quick and firm
+    ("engineer", "fired"): ("+14%", "+25%", "+10Hz"),     # praise, attack: quicker, brighter
+    ("engineer", "dry"): ("+5%", "+10%", "+0Hz"),         # plans and numbers: calm
+}
+
+
+def prosody(role, mood):
+    """(rate, volume, pitch) for edge-tts; the spotter sounds the same whatever the call."""
+    if role == "spotter":
+        return PROSODY[("spotter", "urgent")]
+    return PROSODY.get((role, mood), PROSODY[("engineer", "dry")])
+
+
+async def render(text, voice, role=None, mood=None):
     import edge_tts
+    rate, volume, pitch = prosody(role, mood) if role else ("+0%", "+0%", "+0Hz")
     audio = bytearray()
-    async for chunk in edge_tts.Communicate(text, voice).stream():
+    async for chunk in edge_tts.Communicate(text, voice, rate=rate, volume=volume, pitch=pitch).stream():
         if chunk["type"] == "audio":
             audio.extend(chunk["data"])
     return bytes(audio)
@@ -334,7 +353,8 @@ class Voice:
             audio = self.azure.render(speakable(text), "engineer", mood)
             if audio is not None:
                 return audio, "azure"
-        return asyncio.run(render(speakable(text), voice)), "standard"
+        role = "spotter" if voice == SPOTTER_VOICE else "engineer"
+        return asyncio.run(render(speakable(text), voice, role, mood)), "standard"
 
     def render_spotter(self, text, mood="urgent"):
         """The spotter's voice: Azure's with emotion when it is up, else edge-tts."""
@@ -344,7 +364,7 @@ class Voice:
             audio = self.azure.render(speakable(text), "spotter", mood)
             if audio is not None:
                 return audio, "azure"
-        return asyncio.run(render(speakable(text), SPOTTER_VOICE)), "standard"
+        return asyncio.run(render(speakable(text), SPOTTER_VOICE, "spotter", mood)), "standard"
 
     def play(self, audio, text):
         """Blocks until the line is done. Waits for an urgent clip to finish first, never talks

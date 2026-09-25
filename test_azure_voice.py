@@ -72,7 +72,7 @@ def test_the_engineer_and_spotter_speak_through_azure_and_fall_back_to_edge():
     import voice as voice_module
     original = voice_module.render
 
-    async def edge(text, speaker):
+    async def edge(text, speaker, *rest):
         return b"MP3"
     voice_module.render = edge
     try:
@@ -96,3 +96,11 @@ def test_the_bank_uses_the_azure_books_when_azure_is_on():
     assert v.from_bank("Stick it.") == (b"azure_engineer", "azure")
     v.azure = None
     assert v.from_bank("Stick it.") == (b"engineer", "standard")
+
+
+def test_the_standard_voice_carries_the_mood_in_speed_loudness_and_pitch():
+    from voice import prosody
+    praise, plan = prosody("engineer", "fired"), prosody("engineer", "dry")
+    faster = int(praise[0].strip("+%")) > int(plan[0].strip("+%"))
+    assert praise != plan and faster                           # praise quicker than a plan
+    assert prosody("spotter", "dry") == prosody("spotter", "urgent")   # the spotter is always sharp

@@ -48,7 +48,7 @@ def error_rate(meant, heard):
 def standard():
     os.makedirs(BANK_FOLDER, exist_ok=True)
     for key, (speaker, text) in BANK_LINES.items():
-        audio = asyncio.run(render(text, speaker))
+        audio = asyncio.run(render(text, speaker, "spotter" if key in SPOTTER_KINDS else "engineer", mood_of(key)))
         with open(os.path.join(BANK_FOLDER, key + ".mp3"), "wb") as f:
             f.write(audio)
         print(f"  {key:14s} {speaker:20s} {text}")
@@ -169,6 +169,7 @@ def phrases_standard():
     wanted = phrasebook.units()
     jobs = [("spotter", SPOTTER_VOICE_NAME, text) for text in phrasebook.missing("spotter", wanted["spotter"])]
     jobs += [("engineer", voice.ENGINEER_VOICE, text) for text in phrasebook.missing("engineer", wanted["engineer"])]
+    moods = wanted["engineer"]
     print(f"{len(jobs)} sentences to render in the standard voices")
 
     async def all_of_them():
@@ -178,7 +179,8 @@ def phrases_standard():
             async with gate:
                 for attempt in range(3):
                     try:
-                        return book, text, await render(speakable(text), speaker)
+                        mood = "urgent" if book == "spotter" else moods[text]
+                        return book, text, await render(speakable(text), speaker, book, mood)
                     except Exception as error:
                         failure = error
                 return book, text, failure
