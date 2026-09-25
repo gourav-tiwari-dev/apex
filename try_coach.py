@@ -152,7 +152,8 @@ def frozen_race(tape, lap):
             if "snapshot" not in frozen and ready and settled:
                 frozen["snapshot"] = Snapshot(moment.race, moment.lap_count, moment.frame.lap_dist, moment.corners,
                                               self, made["Strategist"], made["PerformanceEngineer"],
-                                              made["Racecraft"], made["Governor"], habits, {})
+                                              made["Racecraft"], made["Governor"], habits, {}, model=moment.model)
+                frozen["model"] = moment.model
                 frozen["race"] = moment.race
                 frozen["lap"] = moment.lap_count
                 frozen["lap_dist"] = moment.frame.lap_dist

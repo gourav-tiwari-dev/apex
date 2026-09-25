@@ -343,15 +343,24 @@ def recent_lap(car):
     return None, None
 
 
-def pace_pair(car, theirs, source, mine, engineer, racecraft):
+def pace_pair(car, theirs, source, mine, engineer, racecraft, model=None):
     """(their lap, my lap, measured?, how it was measured) for the pace comparison.
-    First choice: the road (racecraft's same-point gaps, one lap apart): the pace they are doing
-    NOW, whatever the lap times say. Then two posted laps, both real last laps. Else unknown."""
+    First choice: the race model's road trend (same-point gaps, median of 8 stretches a lap, over
+    two laps when it has them). The field study of his tapes: between fighting cars the gap moves
+    ~1.2 s a lap for reasons that are not pace; with 2 laps of trend the direction was right ~80%.
+    One lap = "not sure": it can inform, never decide a let-by. Then two posted laps. Else unknown."""
+    base = mine or engineer.my_lap or 240.0          # only the difference matters to the maths
+    if model is not None:
+        found = model.quicker(car.id, "me")
+        if found is not None:
+            quicker, sure = found
+            how = ("measured on the road over the last 2 laps" if sure
+                   else "on the road over 1 lap only: NOT SURE yet, say so")
+            return round(base - quicker, 2), base, sure, how
     quicker = None
     if racecraft is not None:
         quicker = racecraft.clock.pace_vs_me(car.id)
     if quicker is not None:
-        base = mine or engineer.my_lap or 240.0      # only the difference matters to the maths
         return round(base - quicker, 2), base, True, "measured on the road over the last lap"
     if theirs is not None and mine is not None:
         clean = source == "last lap"
@@ -471,7 +480,9 @@ class Snapshot:
     reads a still picture while the race moves on."""
 
     def __init__(self, race, lap, lap_dist, corners, engineer, strategist, performance,
-                 racecraft, governor, habits, contacts_this_race, db_path=None, session_id=None):
+                 racecraft, governor, habits, contacts_this_race, db_path=None, session_id=None, model=None):
+        self.model = model                 # the race model: the one picture (25 Sep)
+        self.corners_map = corners or []
         self.picture = self.race_picture(race, lap, engineer, governor, racecraft)
         self.lap = lap
         self.race = race
@@ -545,7 +556,7 @@ class Snapshot:
     def race_picture(self, race, lap, engineer, governor, racecraft=None):
         me = race.me
         session = race.session
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, self.model)
         picture = {"session": {10: "race", 11: "race", 12: "race", 13: "race"}.get(session.session, "practice or qualifying"),
                    "lap": lap, "place": me.place,
                    "laps_to_go": engineer.to_go_at_line if engineer.to_go_at_line is not None
@@ -559,13 +570,18 @@ class Snapshot:
                 continue
             entry = {"driver": car.driver, "gap_s": round(gap, 1)}
             before = engineer.gaps_at_line.get(side)
-            if before is not None and before[1] is not None:
+            if self.model is not None:
+                # one number for one thing (25 Sep): the race model's road trend, not the
+                # line-to-line game gap, which said "steady" while the road said "growing 0.6"
+                front, back = (car.id, "me") if side == "ahead" else ("me", car.id)
+                entry["gap_trend"] = self.trend_words(front, back)
+            elif before is not None and before[1] is not None:
                 entry["gap_trend"] = trend_words(side, before[1] - gap)
             theirs, source = recent_lap(car)
             mine = my_pace(me, engineer)
             if theirs is not None:
                 entry["their_lap"] = f"{lap_text(theirs)} ({source})"
-            theirs, mine, measured, how = pace_pair(car, theirs, source, mine, engineer, racecraft)
+            theirs, mine, measured, how = pace_pair(car, theirs, source, mine, engineer, racecraft, self.model)
             if theirs is not None and mine is not None:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
                 entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
@@ -584,11 +600,70 @@ class Snapshot:
             else:
                 entry["fight"] = f"IN A FIGHT NOW: {round(gap, 1)} s, within {NOT_A_FIGHT_S:g} s"
             picture[side] = entry
+        if self.model is not None:
+            self.picture_laps_to_go = picture.get("laps_to_go")
+            picture["field_around_you"] = self.field(race)
+            picture["battles_near_you"] = self.battles_near(race)
+            pitted = [f"P{self.model.car(key).place}" for _, key in self.model.pitting_near()
+                      if self.model.car(key) is not None]
+            if pitted:
+                picture["just_pitted_near_you"] = pitted
         return picture
+
+    def trend_words(self, front, back):
+        t = self.model.trend(front, back)
+        if t is None:
+            return "not measured yet"
+        amount = abs(t["closing_per_lap"])
+        sure = "sure, 2 laps" if t["sure"] else "1 lap only, NOT sure"
+        if amount < 0.1:
+            return f"gap steady ({sure})"
+        who = "the car behind is catching" if t["closing_per_lap"] > 0 else "the gap is growing"
+        return f"{who} {amount:.1f} s a lap ({sure})"
+
+    def field(self, race):
+        """The same-class cars 3 places either side, as the race model sees them on the road."""
+        me = race.me
+        rows = []
+        for o in sorted(race.opponents, key=lambda o: o.place):
+            if o.car_class != me.car_class or abs(o.place - me.place) > 3 or o.in_pits:
+                continue
+            ahead = o.place < me.place
+            gap = self.model.gap(o.id, "me") if ahead else self.model.gap("me", o.id)
+            row = {"place": o.place, "side": "ahead" if ahead else "behind",
+                   "gap_s": gap, "car": o.car_model or o.car_name}
+            to_go = self.picture_laps_to_go
+            if ahead:
+                row["trend"] = self.trend_words(o.id, "me").replace("the car behind is", "you are")
+                catch = self.model.catch("me", o.id)
+                if catch is not None:
+                    row["you_catch_it_in_laps"] = catch[1]
+                    if to_go is not None:
+                        row["before_the_flag"] = catch[1] <= to_go
+            else:
+                row["trend"] = self.trend_words("me", o.id)
+                catch = self.model.catch(o.id, "me")
+                if catch is not None:
+                    row["it_catches_you_in_laps"] = catch[1]
+                    if to_go is not None:
+                        row["before_the_flag"] = catch[1] <= to_go
+            rows.append(row)
+        return rows
+
+    def battles_near(self, race):
+        places = {o.id: o.place for o in race.opponents}
+        places["me"] = race.me.place
+        out = []
+        for front, back, gap in self.model.battles():
+            if front in places and back in places and min(abs(places[front] - race.me.place),
+                                                          abs(places[back] - race.me.place)) <= 4:
+                who = [("you" if k == "me" else f"P{places[k]}") for k in (front, back)]
+                out.append(f"{who[0]} and {who[1]}, {gap} s apart")
+        return out[:5]
 
     def every_driver(self, race, performance, racecraft, contacts_this_race, engineer):
         me = race.me
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, self.model)
         drivers = {}
         for opponent in race.opponents:
             if opponent.car_class != me.car_class:
@@ -600,7 +675,7 @@ class Snapshot:
                      "where": road_words(me, opponent)}
             theirs, source = recent_lap(opponent)
             mine = my_pace(me, engineer)
-            theirs, mine, _, how = pace_pair(opponent, theirs, source, mine, engineer, racecraft)
+            theirs, mine, _, how = pace_pair(opponent, theirs, source, mine, engineer, racecraft, self.model)
             if theirs is not None and mine is not None:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
             else:
@@ -614,6 +689,11 @@ class Snapshot:
             entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
             entry["pass_attempts_this_race"] = [a[4] for a in racecraft.attempts if a[0] == key]
             entry["history"] = racecraft.rivals.get(key)
+            if self.model is not None and self.corners_map:
+                # seconds THEY gain on you through each corner, from the road (race model)
+                gains = self.model.corner_gains(opponent.id, "me", self.corners_map)
+                entry["corners_where_they_gain_time_s"] = {c: g for c, g in gains.items() if g >= 0.1}
+                entry["corners_where_you_gain_time_s"] = {c: -g for c, g in gains.items() if g <= -0.1}
             drivers[opponent.driver.lower()] = entry
             if opponent is ahead:
                 drivers["ahead"] = entry
@@ -656,7 +736,7 @@ class Snapshot:
         return state
 
     def track_ahead(self, lap_dist, corners, race, racecraft):
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, self.model)
         if not corners:
             return []
         ordered = sorted(corners, key=lambda c: c["start"])

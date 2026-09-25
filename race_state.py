@@ -55,6 +55,7 @@ class Session:
     fixed_setup: bool
     limit_steps_per_penalty: int
     in_realtime: bool
+    lap_length: float | None = None   # the track's length (mLapDist); tapes before 25 Sep have none
 
 
 @dataclass
@@ -140,6 +141,20 @@ class Opponent:
     last_impact_time: float | None = None
     last_impact_magnitude: float | None = None
     car_model: str | None = None     # "BMW M4 LMGT3"; tapes before 24 Sep 2026 have none
+    # race model (25 Sep 2026): what else LMU gives per car. Tapes before it have none (None).
+    sector: int | None = None        # 1, 2, or 0 for sector 3 (the game's numbering)
+    last_sector1: float | None = None
+    last_sector2: float | None = None  # sector 1 + 2, as the game gives it
+    best_sector1: float | None = None
+    best_sector2: float | None = None
+    path_lateral: float | None = None  # metres from the centre of the racing path, + = left
+    track_edge: float | None = None
+    estimated_lap: float | None = None
+    time_into_lap: float | None = None
+    pit_lap_dist: float | None = None
+    count_lap_flag: int | None = None
+    under_yellow: bool | None = None
+    in_garage: bool | None = None
 
 
 @dataclass
@@ -207,6 +222,7 @@ def read_session(info):
         fixed_setup=bool(info.mIsFixedSetup),
         limit_steps_per_penalty=info.mTrackLimitsStepsPerPenalty,
         in_realtime=bool(info.mInRealtime),
+        lap_length=round(info.mLapDist, 1),
     )
 
 
@@ -292,6 +308,19 @@ def read_opponent(scoring, car):
         finish_status=scoring.mFinishStatus,
         control=scoring.mControl,
         flag=scoring.mFlag,
+        sector=scoring.mSector,
+        last_sector1=round(scoring.mLastSector1, 3),
+        last_sector2=round(scoring.mLastSector2, 3),
+        best_sector1=round(scoring.mBestSector1, 3),
+        best_sector2=round(scoring.mBestSector2, 3),
+        path_lateral=round(scoring.mPathLateral, 2),
+        track_edge=round(scoring.mTrackEdge, 2),
+        estimated_lap=round(scoring.mEstimatedLapTime, 3),
+        time_into_lap=round(scoring.mTimeIntoLap, 3),
+        pit_lap_dist=round(scoring.mPitLapDist, 1),
+        count_lap_flag=scoring.mCountLapFlag,
+        under_yellow=bool(scoring.mUnderYellow),
+        in_garage=bool(scoring.mInGarageStall),
     )
     # A car can be in scoring without a telemetry row (seen in the monitor view).
     # Its standing is still worth keeping, so the telemetry part just stays empty.
@@ -311,9 +340,10 @@ def read_opponent(scoring, car):
     return opponent
 
 
-def same_class_neighbours(race):
+def same_class_neighbours(race, model=None):
     """The same-class cars just ahead of and behind me in the race, and the time gaps to them.
-    Only cars on my lap: a lapped car is not a fight."""
+    Only cars on my lap: a lapped car is not a fight. With the race model the gaps are its
+    same-point road gaps (one number everywhere, 25 Sep); the game's own gap is the fallback."""
     me = race.me
     ahead = None
     behind = None
@@ -327,9 +357,13 @@ def same_class_neighbours(race):
     gap_ahead = None
     gap_behind = None
     if ahead is not None:
-        gap_ahead = round(me.time_behind_leader - ahead.time_behind_leader, 2)
+        gap_ahead = model.gap(ahead.id, "me") if model is not None else None
+        if gap_ahead is None:
+            gap_ahead = round(me.time_behind_leader - ahead.time_behind_leader, 2)
     if behind is not None:
-        gap_behind = round(behind.time_behind_leader - me.time_behind_leader, 2)
+        gap_behind = model.gap("me", behind.id) if model is not None else None
+        if gap_behind is None:
+            gap_behind = round(behind.time_behind_leader - me.time_behind_leader, 2)
     return ahead, gap_ahead, behind, gap_behind
 
 

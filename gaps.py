@@ -92,8 +92,11 @@ class Trail:
 
 
 class TrackClock:
-    def __init__(self):
-        self.lap_length = None         # the longest lap distance seen, from any car
+    def __init__(self, lap_length=None):
+        # the track's length when the session gives it (25 Sep); else the longest lap distance
+        # seen, which grows early on (and a growing length shifts every trail: 12,792 -> 13,622 m)
+        self.lap_length = lap_length
+        self.fixed_length = lap_length is not None
         self.mine = Trail()
         self.theirs = {}               # car id -> Trail
         self.history = {}              # car id -> [(sim time, gap)] for the closing rate
@@ -106,9 +109,13 @@ class TrackClock:
         """Every scoring snapshot: the other cars' positions."""
         if race is None or race.me is None:
             return
-        for opponent in race.opponents:
-            if self.lap_length is None or opponent.lap_dist > self.lap_length:
-                self.lap_length = opponent.lap_dist
+        given = getattr(race.session, "lap_length", None)
+        if given and given > 1000 and not self.fixed_length:
+            self.lap_length, self.fixed_length = given, True
+        if not self.fixed_length:
+            for opponent in race.opponents:
+                if self.lap_length is None or opponent.lap_dist > self.lap_length:
+                    self.lap_length = opponent.lap_dist
         if self.my_laps is None:
             self.my_laps = race.me.laps
         if self.lap_length is None:
@@ -117,7 +124,17 @@ class TrackClock:
             if opponent.in_pits:
                 continue
             trail = self.theirs.setdefault(opponent.id, Trail())
-            trail.add(opponent.laps * self.lap_length + opponent.lap_dist, now)
+            trail.add(self.repaired(trail, opponent.laps * self.lap_length + opponent.lap_dist), now)
+
+    def repaired(self, trail, distance):
+        """The lap count and the lap distance tick at slightly different moments at the line; for
+        one snapshot the distance jumps a lap forward or back. That jump used to RESET the trail."""
+        if trail.distance:
+            if distance < trail.distance[-1] - self.lap_length / 2:
+                distance += self.lap_length
+            elif distance > trail.distance[-1] + self.lap_length / 2:
+                distance -= self.lap_length
+        return distance
 
     def see_me(self, lap_dist, now):
         """Every frame: my own position."""
@@ -127,7 +144,7 @@ class TrackClock:
         if self.last_my_lap_dist is not None and lap_dist < self.last_my_lap_dist - self.lap_length / 2:
             self.my_laps += 1               # I crossed the line
         self.last_my_lap_dist = lap_dist
-        if lap_dist > self.lap_length:
+        if lap_dist > self.lap_length and not self.fixed_length:
             self.lap_length = lap_dist
         distance = self.my_laps * self.lap_length + lap_dist
         self.mine.add(distance, now)

@@ -25,6 +25,7 @@ from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
 from answers import Answers, needs_agent, intent_of, fix_mishearing
 from agent import RaceAgent, Snapshot
+from race_model import RaceModel
 import ptt as push_to_talk
 from team_memory import facts as memory_facts
 from race_state import read_race_snapshot, read_near_cars, race_snapshot_from_dict, near_cars_from_dict, identity
@@ -775,6 +776,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     # the seats that watch the whole race (the performance seat rides on the detectors)
     performance = PerformanceEngineer()
     racecraft = Racecraft(performance)
+    # the one picture of the race (25 Sep): fed here, before any seat, and only read by them
+    model = RaceModel()
+    racecraft.share(model)
     recall = MemoryRecall()
     engineer = RaceEngineer()
     strategist = Strategist()
@@ -784,6 +788,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     governor = Governor()
     # push-to-talk (M9): only live, and Apex races on without it if it is not set up
     answers = Answers(governor, engineer, strategist, performance, clean)
+    answers.model = model          # the fixed answers read the same gaps as every seat
     reminders = []            # {"remind_lap", "what"}: set by the agent, said at the line
     talk = None
     agent = None
@@ -917,10 +922,13 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         desk.prepare(call)
 
             corner_now = corner_at(current_corners, real_lap_distance)
+            if source.new_race and source.race is not None:
+                model.see_race(source.race, frame.elapsed_time)
+            model.see_me(frame.lap_dist, frame.elapsed_time)
             moment = Moment(frame=frame, race=source.race, new_race=source.new_race, near=source.near,
                             lap_count=lap_count, lap_wrapped=lap_counter.wrapped, corner=corner_now,
                             track=track, corner_stat=stat, session_type=session_type,
-                            corners=current_corners, events=frame_events)
+                            corners=current_corners, events=frame_events, model=model)
             # first: is the start still chaos? Then nothing but the spotter, flags and answers
             for call in settle.update(moment):
                 governor.settled = settle.settled
@@ -954,7 +962,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,
                                             engineer, strategist, performance, racecraft, governor,
                                             team_habits, contacts_by_car(conn, session_id),
-                                            db_path=database_file(conn), session_id=session_id)
+                                            db_path=database_file(conn), session_id=session_id, model=model)
                         agent.ask(heard.text, snapshot, frame.elapsed_time)
                         voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
                         print(f"[asked the agent: {heard.text!r}]")

@@ -17,6 +17,7 @@ class Moment:
     session_type: int | None = None     # mSession: 5-8 qualifying, 10-13 race
     corners: list | None = None         # this track's corner map, to place other cars too
     events: list = field(default_factory=list)   # events detected this frame (contacts, offs...)
+    model: object | None = None         # the race model (race_model.py): the one picture, read-only
 
     @property
     def now(self):

@@ -129,12 +129,17 @@ class TrackAwareness:
 
     def update(self, moment):
         race = moment.race
+        shared = moment.model is not None
+        if shared:
+            self.clock = moment.model.clock          # the one clock the whole team reads
         if race is not None and race.me is not None and moment.new_race:
-            self.clock.see_race(race, moment.now)
+            if not shared:
+                self.clock.see_race(race, moment.now)
             for car in race.opponents:
                 if not car.in_pits and car.speed_kmh is not None:
                     self.normal.see(car.id, car.lap_dist, car.speed_kmh)
-        self.clock.see_me(moment.frame.lap_dist, moment.now)
+        if not shared:
+            self.clock.see_me(moment.frame.lap_dist, moment.now)
         if race is None or race.me is None or not moment.new_race:
             return []
         for opponent in race.opponents:

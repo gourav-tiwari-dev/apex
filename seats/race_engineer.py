@@ -73,6 +73,17 @@ def car_behind(race):
     return None
 
 
+def sure_closing(model, front, back):
+    """The race model's road trend: seconds a lap the back car takes out of the gap, but only
+    when it is SURE (2 laps of trend). Between fighting cars the gap moves ~1.2 s a lap for
+    reasons that are not pace (field study, 25 Sep), so one lap - the old line-to-line game gap -
+    is not a trend. None = say nothing about it."""
+    t = model.trend(front, back)
+    if t is None or not t["sure"]:
+        return None
+    return t["closing_per_lap"]
+
+
 class RaceEngineer:
     def __init__(self):
         self.phase = None
@@ -171,7 +182,7 @@ class RaceEngineer:
             self.my_lap = measured_lap(me.last_lap, self.line_time, now) or self.my_lap
             self.line_time = now
         if moment.lap_wrapped and racing and moment.lap_count >= 1:
-            calls.extend(self.race_picture(race, moment.lap_count, now))
+            calls.extend(self.race_picture(race, moment.lap_count, now, moment.model))
 
         # where you are in the race, every few laps, said on a straight
         if moment.lap_wrapped and moment.lap_count >= self.last_report_lap + REPORT_EVERY_LAPS and moment.lap_count > 1:
@@ -179,8 +190,8 @@ class RaceEngineer:
             calls.append(self.gap_report(race, now))
         return calls
 
-    def race_picture(self, race, lap, now):
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
+    def race_picture(self, race, lap, now, model=None):
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
         to_go = laps_to_go(race, self.my_lap)
         self.to_go_at_line = to_go
         final_lap = None
@@ -191,11 +202,15 @@ class RaceEngineer:
         calls = []
         if ahead is not None and gap_ahead is not None:
             gained = self.gain_since_last_line("ahead", ahead, gap_ahead)
+            if model is not None:
+                gained = sure_closing(model, ahead.id, "me")
             chase = self.chase_call(ahead, gap_ahead, gained, to_go, lap, final_lap, now)
             if chase is not None:
                 calls.append(chase)
         if behind is not None and gap_behind is not None:
             his_gain = self.gain_since_last_line("behind", behind, gap_behind)
+            if model is not None:
+                his_gain = sure_closing(model, "me", behind.id)
             defence = self.defence_call(behind, gap_behind, his_gain, lap, final_lap, now)
             if defence is not None:
                 calls.append(defence)

@@ -34,6 +34,7 @@ FIGHT_GAP_S = 1.0             # a same-class car within a second ahead is a figh
 DEFEND_GAP_S = 0.8            # and this close behind
 FIGHT_CONFIRM_S = 8.0         # ...for this long: a car brushing past is not a fight
 EDGE_WORTH_USING_KMH = 3.0    # min-speed advantage that makes a corner yours
+GAIN_WORTH_USING_S = 0.15     # ...or, on the road, seconds I gain through it (race model, 25 Sep)
 CLOSE_GAP_S = 0.4             # this close into a corner where he is faster = about to lunge
 WARN_BEFORE_M = 300.0         # "not here" must come before the braking zone, not in it
 ATTEMPT_WINDOW_S = 6.0        # how long a pass attempt has to resolve
@@ -143,6 +144,8 @@ class Racecraft:
         self.rivals = rivals or {}         # steam_id -> team-memory dossier line
         self.clean = clean
         self.clock = TrackClock()
+        self.model = None             # the race model, when the live loop shares it
+        self.corners = []
         self.gap_points = {}               # "ahead" / "behind" -> where the latest gap was measured
         self.reputation = Reputation()
         self.plans_said = set()            # (steam_id, "attack" / "defend", has data)
@@ -190,6 +193,14 @@ class Racecraft:
         return edges
 
     def strong_corner_against(self, car):
+        # the race model's road times first: seconds I gain through each corner (25 Sep)
+        if self.model is not None and self.corners:
+            gains = self.model.corner_gains("me", car.id, self.corners)
+            best = max(gains, key=gains.get) if gains else None
+            if best is not None and gains[best] >= GAIN_WORTH_USING_S:
+                return best
+            if gains:
+                return None
         edges = self.edges_against(identity(car))
         best = None
         for corner, edge in edges.items():
@@ -316,13 +327,20 @@ class Racecraft:
         return now - since >= FIGHT_CONFIRM_S
 
     # ---- every frame -----------------------------------------------------------------------
+    def share(self, model):
+        """Read the race model's clock (the one the whole team uses) instead of keeping my own."""
+        self.model = model
+        self.clock = model.clock
+
     def update(self, moment):
         race = moment.race
         now = moment.now
         if moment.new_race and race is not None and race.me is not None:
-            self.clock.see_race(race, now)
+            if self.model is None:
+                self.clock.see_race(race, now)
             self.reputation.see_race(race)
-        self.clock.see_me(moment.frame.lap_dist, now)
+        if self.model is None:
+            self.clock.see_me(moment.frame.lap_dist, now)
         if race is None or race.me is None:
             return []
         # qualifying places change all the time as others set laps: "you lost a place"
@@ -333,6 +351,7 @@ class Racecraft:
             return []
         me = race.me
         corners = moment.corners or []
+        self.corners = corners
         calls = []
 
         for event in moment.events:
@@ -364,7 +383,7 @@ class Racecraft:
 
         if moment.new_race:
             self.cars = {opponent.id: opponent for opponent in race.opponents}
-            self.ahead, game_gap_ahead, self.behind, game_gap_behind = same_class_neighbours(race)
+            self.ahead, game_gap_ahead, self.behind, game_gap_behind = same_class_neighbours(race, self.model)
             self.gap_ahead = self.real_gap(self.ahead, "ahead", now, game_gap_ahead)
             self.gap_behind = self.real_gap(self.behind, "behind", now, game_gap_behind)
             calls += self.plans(corners, now)

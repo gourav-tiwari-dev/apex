@@ -236,6 +236,7 @@ class Answers:
         self.clean = clean
         self.said = {}            # intent -> how many times answered: the closers take turns
         self.last_line = None     # the last engineer line on air, for "say again" (set by the race loop)
+        self.model = None         # the race model (set by the race loop): the same gaps everywhere
 
     def closer(self, intent):
         lines = CLOSERS.get(intent)
@@ -284,7 +285,7 @@ class Answers:
                     facts={"heard": text}, asked=True, phrase=False)
 
     def gap_ahead(self, race):
-        ahead, gap, behind, gap_behind = same_class_neighbours(race)
+        ahead, gap, behind, gap_behind = same_class_neighbours(race, self.model)
         if ahead is None or gap is None:
             return "Nobody ahead in your class. You're leading it."
         words = f"Car ahead, {round(gap, 1)}."
@@ -293,7 +294,7 @@ class Answers:
         return words
 
     def gap_behind(self, race):
-        ahead, gap_ahead, behind, gap = same_class_neighbours(race)
+        ahead, gap_ahead, behind, gap = same_class_neighbours(race, self.model)
         if behind is None or gap is None:
             return "Nobody behind in your class."
         words = f"Car behind, {round(gap, 1)}."
@@ -302,7 +303,7 @@ class Answers:
         return words
 
     def pace_to_catch(self, race):
-        ahead, gap, behind, gap_behind = same_class_neighbours(race)
+        ahead, gap, behind, gap_behind = same_class_neighbours(race, self.model)
         if ahead is None or gap is None:
             return "Nobody ahead to catch. Just bring it home."
         to_go = self.engineer.to_go_at_line

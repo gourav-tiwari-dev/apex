@@ -114,7 +114,7 @@ class RaceSettle:
         if not calm_long_enough and not brawl_too_long:
             return []
         self.settled = True
-        return [self.summary(race, now)]
+        return [self.summary(race, now, moment.model)]
 
     def calm(self, moment):
         race = moment.race
@@ -131,9 +131,9 @@ class RaceSettle:
                 return False
         return True
 
-    def summary(self, race, now):
+    def summary(self, race, now, model=None):
         me = race.me
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race)
+        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
         words = [f"Settled. P{me.place}, {places_moved(self.place_at_start or me.place, me.place)}."]
         if ahead is not None and gap_ahead is not None:
             words.append(f"Car ahead {gap_ahead:.1f}.")
