@@ -125,7 +125,42 @@ def session_info(race, laps_to_go):
             "his_flag": "blue" if race.me.flag == 6 else "none"}
     if session.max_laps and session.max_laps < 10000:
         info["race_laps"] = session.max_laps
+    if 5 <= session.session <= 8:
+        info["qualifying"] = qualifying_picture(race)
+    if 10 <= session.session <= 13 and race.me.grid > 0:
+        info["his_grid_slot"] = race.me.grid
     return info
+
+
+def qualifying_picture(race):
+    """Where qualifying stands for him: his time or none, the class order, the grid slot it
+    gives, and whether the clock allows another run. Live 25 Sep he crashed on his push lap,
+    said "qualifying is fucked up", and the coach had nothing to answer with."""
+    me, session = race.me, race.session
+    rivals = sorted(o.best_lap for o in race.opponents if o.car_class == me.car_class and o.best_lap > 0)
+    mine = me.best_lap if me.best_lap > 0 else None
+    picture = {"his_best": lap_text(mine) if mine else "no time set",
+               "class_cars_with_a_time": len(rivals),
+               "class_cars": 1 + sum(1 for o in race.opponents if o.car_class == me.car_class),
+               "pole": lap_text(rivals[0]) if rivals else None}
+    if mine:
+        position = 1 + sum(1 for t in rivals if t < mine)
+        picture["his_class_position"] = position
+        if rivals and position > 1:
+            picture["off_pole_s"] = round(mine - rivals[0], 2)
+    else:
+        picture["his_class_position"] = f"none: without a time he starts behind every car that set one (class P{len(rivals) + 1} or lower)"
+    lap = mine or (rivals[len(rivals) // 2] if rivals else None)
+    if lap and session.time_remaining > 0:
+        # a lap started before the clock runs out still counts; a run from the pits is an out lap + a flying lap
+        picture["time_for_another_run"] = ("yes, an out lap and a flying lap fit" if session.time_remaining > 2 * lap
+                                           else "only if he is already on track: a lap started before the clock ends still counts"
+                                           if session.time_remaining > 0 else "no")
+    elif session.time_remaining <= 0:
+        picture["time_for_another_run"] = "no: the clock has run out"
+    if len(rivals) >= 3:
+        picture["class_times_spread"] = f"{lap_text(rivals[0])} to {lap_text(rivals[-1])}"
+    return picture
 
 
 def lap_history(records):

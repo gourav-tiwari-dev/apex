@@ -138,6 +138,16 @@ HOW TO ANSWER
    Brake words mean different things: "brake later" / "brake earlier" is the braking POINT;
    "off the brake earlier, let it roll" means he releases too late and over-slows mid-corner,
    his braking point is fine. Never answer "am I braking too early" with the release advice.
+
+10. Qualifying (session tool: "qualifying"). In qualifying he is ALONE on track: the other cars
+   are only on the timing sheet, never traffic, never a fight. If qualifying went wrong (a crash,
+   no time, a bad lap), answer the two things a real engineer answers:
+   - is there time for another run ("time_for_another_run")? If yes: reset, out lap, one more go.
+   - if not: the RACE PLAN from where he will start (his_class_position, or the back without a
+     time): lap 1 is survival, not places (my_habits has his lap-1 record); the race is long
+     enough to gain places on pace, so where his pace beats the cars around him (standings,
+     class_times_spread) he picks them off one at a time, after lap 1, cleanly; say which of his
+     corners are strong if the corner tool knows. Never pretend the session can be restarted.
    THE RACE MODEL (race_picture): "field_around_you" = the cars 3 places either side, measured on
    the road: same-point gap, the trend ("sure, 2 laps" or "1 lap only, NOT sure") and whether
    one catches the other ("yes, within N laps", before the flag or not). "battles_near_you",
@@ -546,8 +556,12 @@ class Snapshot:
         self.car_state.update(race_tools.full_car(race, strategist))
         self.ahead_of_me = self.track_ahead(lap_dist, corners, race, racecraft)
         self.picture["other_class_cars_near"] = self.other_class_near(race, lap_dist, corners)
+        # fights exist in races only: in qualifying the other cars are ghosts on the timing sheet, and
+        # a "car within a second" made every answer need a DEFEND/ATTACK line (live 25 Sep: "qualifying
+        # is fucked up" twice got "No clean answer on that one")
+        racing = self.picture.get("session") == "race"
         self.team_calls = {side: self.picture[side]["team_call"] for side in ("ahead", "behind")
-                           if self.picture.get(side) and self.picture[side].get("team_call")}
+                           if racing and self.picture.get(side) and self.picture[side].get("team_call")}
         self.contacts_in_fight = 0
         self.history_in_fight = ""
         for side in self.team_calls:
@@ -582,11 +596,14 @@ class Snapshot:
             supported.add("tyres")
         return supported
 
-    def check_call(self, call, override):
-        """(ok, reason): in a fight the call must be the team's, or an override the data backs."""
+    def check_call(self, call, override, question=None):
+        """(ok, reason): in a fight the call must be the team's, or an override the data backs.
+        A question that is not about the cars around him needs no CALL line, fight or not."""
         if not self.team_calls:
             return True, "ok"
         team_words = {text.split(":")[0] for text in self.team_calls.values()}
+        if call is None and question is not None and not about_the_fight(question):
+            return True, "ok"
         if call is None:
             return False, "start with the CALL line (CALL: DEFEND / LET BY / ATTACK / FOLLOW), then the answer"
         if call in team_words and override is None:
@@ -976,6 +993,14 @@ ABOUT_NEIGHBOURS = ("behind", "ahead", "in front", "gap", "catch", "defend", "at
                     "what the fuck", "straights", "every lap", "last lap", "risk")
 
 
+def about_the_fight(question):
+    """Is the question about the cars around him? Words matched from their start ("he" is not
+    inside "the", "div" still finds "diving")."""
+    words = "".join(c if c.isalnum() else " " for c in question.lower()).split()
+    text = " " + " ".join(words)
+    return any(" " + word.strip() in text for word in tuple(ABOUT_NEIGHBOURS) + tuple(FIGHT_WORDS))
+
+
 def tacked_on(question, text, in_fight):
     """True when the answer talks about the car ahead or behind although the question is not
     about them and nobody is within a second (25 Sep bank run: 45 of 78 answers did)."""
@@ -1240,7 +1265,7 @@ class RaceAgent:
             raw = message.content or ""
             call, override, text = split_call(raw)                 # the CALL line is never spoken
             text = neutral_pronouns(text)     # a free fix instead of a paid rewrite round (25 Sep)
-            ok, reason = snapshot.check_call(call, override)
+            ok, reason = snapshot.check_call(call, override, question)
             if ok:
                 ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean,
                                           snapshot.driver_names(), max_words, speeds_ok)

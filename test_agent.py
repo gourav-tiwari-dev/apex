@@ -417,3 +417,31 @@ def test_he_and_she_become_it_for_free():
     # 25 Sep: two answers refused for "he" cost two extra model rounds
     from agent import neutral_pronouns
     assert neutral_pronouns("He's diving, let him go, his exit is better.") == "It's diving, let it go, its exit is better."
+
+
+def test_no_fight_calls_in_qualifying():
+    # live 25 Sep: "qualifying is fucked up" twice got "No clean answer" - a ghost car within a
+    # second made the answer need a DEFEND/ATTACK line
+    zino = replace(behind_car(0.0), driver="Chabbi Zino", steam_id=77, time_behind_leader=8.8, last_lap=238.9)
+    quali = race(300.0, {"session": 5, "time_remaining": 60.0}, {"place": 5, "time_behind_leader": 8.0},
+                 opponents=[zino])
+    performance = PerformanceEngineer()
+    snapshot = Snapshot(quali, 2, 9000.0, [], RaceEngineer(), Strategist(), performance,
+                        Racecraft(performance), Governor(), [], {})
+    assert snapshot.team_calls == {}
+    assert snapshot.check_call(None, None, "qualifying is fucked up")[0]
+
+
+def test_a_question_away_from_the_fight_needs_no_call_line():
+    snapshot = snapshot_at_lap_4()                 # a car within a second behind
+    assert snapshot.check_call(None, None, "how are the tyres?")[0]
+    assert not snapshot.check_call(None, None, "the car behind is diving, what do I do?")[0]
+
+
+def test_qualifying_picture_without_a_time():
+    from race_tools import qualifying_picture
+    rivals = [replace(behind_car(0.0), id=i, best_lap=239.0 + i) for i in range(1, 5)]
+    quali = race(300.0, {"session": 5, "time_remaining": 100.0}, {"best_lap": -1.0}, opponents=rivals)
+    picture = qualifying_picture(quali)
+    assert picture["his_best"] == "no time set" and "class P5" in picture["his_class_position"]
+    assert picture["time_for_another_run"].startswith("only if he is already on track")
