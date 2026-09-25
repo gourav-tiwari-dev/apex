@@ -68,3 +68,36 @@ def test_a_guessed_transcription_gets_say_again_not_a_made_up_answer():
     assert garbled("3-1-1, Faucet's down.", -1.4)                  # live 25 Sep
     assert not garbled("How's the fuel?", -0.3)
     assert garbled("   ", None)
+
+
+def test_a_new_push_to_talk_opens_the_controller_already_plugged_in():
+    # live 25 Sep: SDL announces a controller once per run, so from the second session on the pad
+    # was never opened and push-to-talk was deaf for the whole race
+    import ptt
+
+    class Pad:
+        def __init__(self, index):
+            self.index = index
+
+        def get_instance_id(self):
+            return 7
+
+        def get_name(self):
+            return "Xbox 360 Controller"
+
+    class Joysticks:
+        Joystick = Pad
+
+        def get_count(self):
+            return 1
+
+    class FakeSDL:
+        joystick = Joysticks()
+
+    real_start = ptt.start_sdl
+    ptt.start_sdl = lambda: FakeSDL()
+    try:
+        controller = ptt.Controller({"controller": "Xbox 360 Controller", "button": 5})
+    finally:
+        ptt.start_sdl = real_start
+    assert list(controller.pads) == [7]

@@ -70,6 +70,16 @@ class Controller:
         self.button = button["button"]
         self.pads = {}
         self.held = False
+        self.open_connected()
+
+    def open_connected(self):
+        """Open every controller already plugged in. SDL sends "controller added" only once per
+        run, so from the second session on nothing opened the pad and no button ever arrived
+        (live 25 Sep: push-to-talk heard him in qualifying, the first session, and was deaf in the
+        race, the third)."""
+        for index in range(self.pygame.joystick.get_count()):
+            pad = self.pygame.joystick.Joystick(index)
+            self.pads[pad.get_instance_id()] = pad
 
     def poll(self):
         """Returns "pressed", "released" or None. Handles the controller being plugged in late."""
@@ -83,6 +93,7 @@ class Controller:
             pygame.joystick.quit()
             pygame.joystick.init()
             self.pads = {}
+            self.open_connected()
             if self.held:
                 self.held = False
                 return "released"
