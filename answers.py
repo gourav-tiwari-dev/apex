@@ -181,6 +181,8 @@ def laps_asked(text):
     match = re.search(r"(\d+)\s*lap", clean(text))
     if match:
         return max(1, int(match.group(1)))
+    if re.search(r"\ba lap\b|\bthis lap\b", clean(text)):
+        return 1
     return DEFAULT_QUIET_LAPS
 
 
@@ -243,8 +245,10 @@ class Answers:
             words = self.last_line or "Nothing to repeat yet, mate."
         else:
             words = getattr(self, intent.lower())(race)
-        # the attitude line; "stop worrying about the fuel" only when the fuel IS fine
-        if intent in CLOSERS and race is not None and race.me is not None:
+        # the attitude line; "stop worrying about the fuel" only when the fuel IS fine, and
+        # never after a non-answer ("No lap time for it yet. Simple as that. Fucking go.")
+        no_answer = words.startswith(("No ", "Nobody", "Need ")) or "yet." in words
+        if intent in CLOSERS and race is not None and race.me is not None and not no_answer:
             if intent != "FUEL" or "fine" in words:
                 words += self.closer(intent)
         return Call(seat=seat, kind="ANSWER_" + (intent or "UNHEARD"), sim_time=now,
@@ -274,8 +278,12 @@ class Answers:
         if ahead is None or gap is None:
             return "Nobody ahead to catch. Just bring it home."
         to_go = self.engineer.to_go_at_line
+        if to_go is None:
+            # the same fallback "laps left" uses (25 Sep bank run: one said "2 laps to go" while
+            # the other said "need a timed lap first")
+            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None)
         if to_go is None or to_go < 1 or ahead.last_lap <= 0:
-            return f"Car ahead is {round(gap, 1)} up. Need a timed lap first."
+            return f"Car ahead is {round(gap, 1)} up. No lap time for it yet."
         target = ahead.last_lap - gap / to_go
         return f"You need {lap_text(target)} to catch the car ahead by the flag. It's doing {lap_text(ahead.last_lap)}."
 
@@ -358,7 +366,7 @@ class Answers:
     def damage(self, race):
         me = race.me
         hit = sum(1 for d in me.dents if d)
-        words = "No damage." if hit == 0 else f"Damage in {hit} places around the car."
+        words = "No damage." if hit == 0 else "Damage in one place on the car." if hit == 1 else f"Damage in {hit} places around the car."
         if me.detached:
             words += " Something's come off."
         if me.overheating:
