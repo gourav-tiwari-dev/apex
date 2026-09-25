@@ -161,6 +161,17 @@ class TrackClock:
             return None
         return self.mine.time[-1] - when_it_was_here
 
+    def gap_between(self, front_id, back_id):
+        """Seconds between two other cars, at the point where the back one is now."""
+        front = self.theirs.get(front_id)
+        back = self.theirs.get(back_id)
+        if front is None or back is None or not back.distance:
+            return None
+        when_front_was_there = front.time_at(back.distance[-1])
+        if when_front_was_there is None:
+            return None
+        return back.time[-1] - when_front_was_there
+
     def remember_gap(self, car_id, gap, now, point=None):
         """point: the distance raced where this gap was measured (the chaser's position)."""
         if point is not None:

@@ -161,3 +161,15 @@ def test_the_llm_cost_is_logged_even_when_the_call_never_goes_on_air():
     desk.stop()
     costs = [r for r in desk.drain() if r.get("llm_only")]
     assert len(costs) == 1
+
+
+def test_no_coaching_after_the_chequered_flag():
+    # 24 Sep replay: a braking tip went out in the same second as "Chequered flag. P13."
+    governor = Governor()
+    governor.offer(call(seat="performance", kind="CORNER_LOSS", at=10.0, template="Brake later."))
+    governor.offer(call(seat="race_engineer", kind="FINISH", at=10.0, template="Chequered flag. P13."))
+    assert governor.step(10.0, in_corner=False).kind == "FINISH"
+    assert governor.step(20.0, in_corner=False) is None
+    assert ("CORNER_LOSS", "chequered") in [(c.kind, r) for c, r in governor.dropped]
+    governor.offer(call(seat="spotter", kind="CAR_LEFT", at=21.0, priority=SPOTTER, urgent=True, template="Car left."))
+    assert governor.step(21.0, in_corner=False).kind == "CAR_LEFT"

@@ -97,6 +97,7 @@ class Governor:
         self.settled = True       # False from lights out until seats/settle.py says the race settled
         self.engineer_air_times = []   # sim times of the counted lines, for the talk budget
         self.said_at = {}              # the words of every coaching line -> when it went on air
+        self.chequered = False         # his flag is out: no more coaching this session
 
     def exempt(self, call):
         """The spotter, flags and his own answers: never held, never counted."""
@@ -107,6 +108,10 @@ class Governor:
         # line (praise, "stick it") is still coaching
         if call.urgent or call.asked or call.seat in NEVER_COUNTED_SEATS:
             return None
+        # 24 Sep replay: "Chequered flag. P13." then, in the same second, a braking tip for a
+        # lap he will never drive. After the flag only the spotter and his answers talk.
+        if self.chequered and call.kind != "FINISH":
+            return "chequered"
         if self.quiet():
             return "quiet"
         if not self.settled:
@@ -116,6 +121,8 @@ class Governor:
     def offer(self, call):
         """False when the call is dropped on arrival (quiet, or the start is still chaos), so the
         caller does not spend a model call or a voice render on a line nobody will hear."""
+        if call.kind == "FINISH":
+            self.chequered = True
         reason = self.hold_reason(call)
         if reason is None and not (call.urgent or call.asked) and call.template:
             said = self.said_at.get(call.template)

@@ -16,6 +16,10 @@ Two kinds of call, two voices:
 
 Names are never said: positions ("P7 and P8") and classes ("Hypercar") only.
 """
+import collections
+import statistics
+
+from gaps import TrackClock
 from radio import Call, SPOTTER, RACECRAFT
 from seats.performance import tenths_words
 
@@ -25,17 +29,23 @@ RACE_SESSIONS = range(10, 14)
 LOOK_AHEAD_M = 600.0          # hazards this far up the road are worth a call (~8 s at 270 km/h)
 THREE_WIDE_LOOK_M = 400.0
 ALONGSIDE_M = 6.0             # two cars this close in lap distance are side by side
-SLOW_SHARE = 0.5              # a car at half my speed ahead is a hazard
+SLOW_SHARE = 0.5              # a car at half the NORMAL speed for where it is is a hazard
 STOPPED_KMH = 20.0
+NORMAL_BIN_M = 50.0           # normal speed is learned for every 50 m of track
+NORMAL_SAMPLES = 40           # the latest passes kept per 50 m
+NORMAL_MIN_SAMPLES = 8        # fewer passes than this: only a stopped car is called
 HAZARD_TTL_S = 3.0
 HAZARD_REARM_S = 20.0         # the same hazard is not called again for this long
 
 BATTLE_GAP_S = 0.5            # two cars this close for FIGHT_FOR_S are fighting
-FIGHT_FOR_S = 10.0
+FIGHT_FOR_S = 10.0            # a battle or train must hold together this long before it is called
 TRAIN_GAP_S = 1.0             # three or more cars each within this = a train
+TRAIN_MAX_CARS = 5            # past this it is "5-plus cars": nobody counts a whole field
+ALREADY_IN_IT_S = 1.0         # closer than this he is part of the fight: racecraft coaches it
 OPPORTUNITY_REACH_S = 3.0     # he is this close to the back of it
 OPPORTUNITY_TTL_S = 15.0
 OPPORTUNITY_REARM_S = 120.0
+GROUP_REARM_S = 300.0         # the same group (by its last car) is not called again for this long
 
 FASTER_CLASS_WARN_S = 2.5     # a faster class this close behind gets one call
 # LMU's classes, fastest first (WEC 2024-25: Hypercar, LMP2, LMGT3)
@@ -59,11 +69,39 @@ def spoken_class(car_class):
     return "Faster car"
 
 
+class NormalSpeed:
+    """The speed cars normally do at each 50 m of this track: the median of the latest passes
+    of every car. A car is 'slow' only against THIS. The first version compared it with MY
+    speed, and on the 24 Sep replay every car braking for Mulsanne Corner, Arnage or
+    Indianapolis was "Slow car ahead" (23 calls in 15 minutes)."""
+
+    def __init__(self):
+        self.passes = {}               # 50 m bin -> latest speeds seen there
+        self.last_bin = {}             # car id -> the bin its last sample went into
+
+    def see(self, car_id, lap_dist, speed_kmh):
+        # one sample per car per pass, so a car parked in a bin cannot become its "normal"
+        where = int(lap_dist // NORMAL_BIN_M)
+        if self.last_bin.get(car_id) == where:
+            return
+        self.last_bin[car_id] = where
+        self.passes.setdefault(where, collections.deque(maxlen=NORMAL_SAMPLES)).append(speed_kmh)
+
+    def at(self, lap_dist):
+        speeds = self.passes.get(int(lap_dist // NORMAL_BIN_M))
+        if speeds is None or len(speeds) < NORMAL_MIN_SAMPLES:
+            return None
+        return statistics.median(speeds)
+
+
 class TrackAwareness:
     def __init__(self):
         self.lap_length = None
         self.said_at = {}              # hazard / opportunity key -> when it was last called
-        self.close_since = {}          # (car id, car id) -> since when these two have been this close
+        self.normal = NormalSpeed()
+        self.clock = TrackClock()      # same-point gaps between the cars ahead
+        self.group_since = None        # (id of the car ahead, since when its group has held together)
+        self.last_group_call = None
 
     def fresh(self, key, now, rearm):
         last = self.said_at.get(key)
@@ -84,11 +122,19 @@ class TrackAwareness:
                     conclusion=text, template=text, facts=facts, immediate=True, voice="spotter")
 
     def opportunity(self, kind, text, now, facts):
+        # not immediate: a group up the road is coaching, so it waits its turn in the talk
+        # budget. As immediate it skipped the budget and TRAIN_AHEAD went out 57 times.
         return Call(seat="racecraft", kind=kind, sim_time=now, priority=RACECRAFT, ttl=OPPORTUNITY_TTL_S,
-                    conclusion=text, template=text, facts=facts, immediate=True)
+                    conclusion=text, template=text, facts=facts)
 
     def update(self, moment):
         race = moment.race
+        if race is not None and race.me is not None and moment.new_race:
+            self.clock.see_race(race, moment.now)
+            for car in race.opponents:
+                if not car.in_pits and car.speed_kmh is not None:
+                    self.normal.see(car.id, car.lap_dist, car.speed_kmh)
+        self.clock.see_me(moment.frame.lap_dist, moment.now)
         if race is None or race.me is None or not moment.new_race:
             return []
         for opponent in race.opponents:
@@ -122,8 +168,10 @@ class TrackAwareness:
             ahead = self.ahead_of_me(car, moment.frame.lap_dist)
             if not 30 < ahead <= LOOK_AHEAD_M:
                 continue
-            if car.speed_kmh > my_speed * SLOW_SHARE:
-                continue
+            if car.speed_kmh >= STOPPED_KMH:
+                normal = self.normal.at(car.lap_dist)
+                if normal is None or car.speed_kmh > normal * SLOW_SHARE:
+                    continue
             if worst is None or car.speed_kmh < worst[0].speed_kmh:
                 worst = (car, ahead)
         if worst is None:
@@ -131,7 +179,8 @@ class TrackAwareness:
         car, ahead = worst
         where = self.place_on_track(car.lap_dist, corners, corner_at)
         stopped = car.speed_kmh < STOPPED_KMH
-        key = ("stopped" if stopped else "slow", car.id)
+        # one call per car: "slow car" then "car stopped" 0.6 s later was the same car (23 Sep)
+        key = ("hazard", car.id)
         if not self.fresh(key, now, HAZARD_REARM_S):
             return []
         what = "Car stopped" if stopped else "Slow car"
@@ -213,49 +262,57 @@ class TrackAwareness:
 
     # ---- opportunities ---------------------------------------------------------------------
     def fights_ahead(self, race, now):
-        """Same-class cars ahead, close to each other, and him close to them: a battle (2) or a
-        train (3+). They are slowing each other down: close up and take them."""
+        """Same-class cars ahead, close to each other, and him 1-3 s behind them: a battle (2)
+        or a train (3+). They are slowing each other down: close up and take them.
+
+        Gaps are same-point gaps (gaps.py), not the game's gap, which swung 3.5 -> 4.0 s in
+        10 s on 24 Sep. The group must hold together for FIGHT_FOR_S, and it is named by the
+        car directly ahead of him, so cars joining or leaving the front of a train do not make
+        it "new" (the first version keyed on every car in it and called it 57 times)."""
         me = race.me
-        ahead = []
-        for car in race.opponents:
-            if car.car_class != me.car_class or car.laps_behind_leader != me.laps_behind_leader or car.in_pits:
-                continue
-            if car.place < me.place:
-                ahead.append(car)
-        ahead.sort(key=lambda car: car.place, reverse=True)       # nearest first
-        if not ahead:
+        rivals = [car for car in race.opponents
+                  if car.car_class == me.car_class and car.laps_behind_leader == me.laps_behind_leader
+                  and not car.in_pits and car.place < me.place]
+        rivals.sort(key=lambda car: car.place, reverse=True)          # nearest first
+        if not rivals or rivals[0].place != me.place - 1:
+            self.group_since = None
             return []
-        nearest_gap = me.time_behind_leader - ahead[0].time_behind_leader
-        if ahead[0].place != me.place - 1 or not 0 < nearest_gap <= OPPORTUNITY_REACH_S:
+        nearest = rivals[0]
+        reach = self.clock.gap_ahead(nearest.id, now)
+        if reach is None or not ALREADY_IN_IT_S < reach <= OPPORTUNITY_REACH_S:
+            self.group_since = None
             return []
-        chain = [ahead[0]]
-        for car in ahead[1:]:
-            if car.place != chain[-1].place - 1:
+        chain = [nearest]
+        gaps = []
+        for car in rivals[1:]:
+            if car.place != chain[-1].place - 1 or len(chain) == TRAIN_MAX_CARS:
                 break
-            if chain[-1].time_behind_leader - car.time_behind_leader > TRAIN_GAP_S:
+            gap = self.clock.gap_between(car.id, chain[-1].id)
+            if gap is None or gap > TRAIN_GAP_S:
                 break
             chain.append(car)
-        if len(chain) < 2:
+            gaps.append(gap)
+        is_battle = len(chain) == 2 and gaps[0] <= BATTLE_GAP_S
+        if len(chain) < 3 and not is_battle:
+            self.group_since = None
             return []
-        pair = (chain[0].id, chain[1].id)
-        pair_gap = chain[0].time_behind_leader - chain[1].time_behind_leader
-        if pair_gap <= BATTLE_GAP_S:
-            self.close_since.setdefault(pair, now)
+        if self.group_since is None or self.group_since[0] != nearest.id:
+            self.group_since = (nearest.id, now)
+        if now - self.group_since[1] < FIGHT_FOR_S:
+            return []
+        if self.last_group_call is not None and now - self.last_group_call < OPPORTUNITY_REARM_S:
+            return []
+        if not self.fresh(("group", nearest.id), now, GROUP_REARM_S):
+            return []
+        self.last_group_call = now
+        if is_battle:
+            text = (f"P{chain[1].place} and P{chain[0].place} are fighting, {tenths_words(reach)} up the road. "
+                    f"They're slowing each other down. Close up and let them fight.")
+            return [self.opportunity("BATTLE_AHEAD", text, now, {"gap_s": round(reach, 1)})]
+        if len(chain) == TRAIN_MAX_CARS:           # it may go on further up: no end position
+            who = f"at least {len(chain)} cars from P{chain[0].place} up"
         else:
-            self.close_since.pop(pair, None)
-        fighting = pair in self.close_since and now - self.close_since[pair] >= FIGHT_FOR_S
-        places = f"P{chain[-1].place} to P{chain[0].place}"
-        if len(chain) >= 3:
-            key = ("train", tuple(car.id for car in chain))
-            if self.fresh(key, now, OPPORTUNITY_REARM_S):
-                text = (f"Train ahead, {len(chain)} cars, {places}, {tenths_words(nearest_gap)} up the road. "
-                        f"They're holding each other up. Close in and pick them off.")
-                return [self.opportunity("TRAIN_AHEAD", text, now, {"cars": len(chain), "gap_s": round(nearest_gap, 1)})]
-            return []
-        if fighting:
-            key = ("battle", pair)
-            if self.fresh(key, now, OPPORTUNITY_REARM_S):
-                text = (f"P{chain[1].place} and P{chain[0].place} are fighting, {tenths_words(nearest_gap)} up the road. "
-                        f"They're slowing each other down. Close up and let them fight.")
-                return [self.opportunity("BATTLE_AHEAD", text, now, {"gap_s": round(nearest_gap, 1)})]
-        return []
+            who = f"{len(chain)} cars, P{chain[-1].place} to P{chain[0].place}"
+        text = (f"Train ahead, {who}, {tenths_words(reach)} up the road. "
+                f"They're holding each other up. Close in and pick them off.")
+        return [self.opportunity("TRAIN_AHEAD", text, now, {"cars": len(chain), "gap_s": round(reach, 1)})]

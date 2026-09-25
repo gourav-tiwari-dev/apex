@@ -17,6 +17,9 @@ CALL_TTL_S = 1.0              # a spotter call even a second late is wrong
 # real overlap and repeat "still there" every few seconds while it lasts.
 CLEAR_NEEDS_ALONGSIDE_S = 1.0 # a car alongside for less than this passed by: no "clear"
 STILL_THERE_EVERY_S = 4.0
+# 25 Sep replay of the 24 Sep start: one car alongside for ~40 s down to the first chicane got
+# "still there" 10 times. The wait doubles after each one (4, 8, 16 s), so a long drag gets 4.
+STILL_THERE_MAX_S = 16.0
 
 # GUESSED until the first v2 tape: in LMU's car frame +x points to the driver's left
 # (the rFactor 2 convention). The AI-race tape settles it: if the spotter says "left"
@@ -77,6 +80,7 @@ class Spotter:
         self.empty_since = None      # when both sides last became empty
         self.alongside_since = None  # when this overlap began
         self.last_said_at = None     # the last spotter line, for "still there"
+        self.still_every = STILL_THERE_EVERY_S
 
     def call(self, kind, text, now):
         self.last_said_at = now
@@ -102,13 +106,16 @@ class Spotter:
             calls.append(self.call("CAR_LEFT", "Car left.", now))
         elif right and not self.right and not left:
             calls.append(self.call("CAR_RIGHT", "Car right.", now))
+        if calls:
+            self.still_every = STILL_THERE_EVERY_S
 
         if left or right:
             # someone is beside me: remember which side, and cancel any pending "clear"
             if self.alongside_since is None:
                 self.alongside_since = now
-            elif not calls and now - (self.last_said_at or self.alongside_since) >= STILL_THERE_EVERY_S:
+            elif not calls and now - (self.last_said_at or self.alongside_since) >= self.still_every:
                 calls.append(self.call("STILL_THERE", "Still there.", now))
+                self.still_every = min(self.still_every * 2, STILL_THERE_MAX_S)
             self.left = left
             self.right = right
             self.empty_since = None

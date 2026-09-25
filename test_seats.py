@@ -86,13 +86,13 @@ def test_a_car_that_only_brushed_past_gets_no_clear():
     assert spotter.update(moment(1.0)) == []                                  # no "clear"
 
 
-def test_still_there_every_four_seconds_while_alongside():
+def test_still_there_backs_off_while_alongside():
     spotter = Spotter()
     said = []
-    for step in range(0, 100):
+    for step in range(0, 450):
         t = step * 0.1
-        said += kinds(spotter.update(moment(t, nearby=near(t, (3.0, 0.0)))))
-    assert said == ["CAR_LEFT", "STILL_THERE", "STILL_THERE"]                 # at 0, 4 and 8 s
+        said += [(c.kind, round(c.sim_time)) for c in spotter.update(moment(t, nearby=near(t, (3.0, 0.0))))]
+    assert said == [("CAR_LEFT", 0), ("STILL_THERE", 4), ("STILL_THERE", 12), ("STILL_THERE", 28), ("STILL_THERE", 44)]
 
 
 def test_a_car_flickering_at_the_edge_does_not_repeat_car_left():
