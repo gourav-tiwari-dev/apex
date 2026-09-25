@@ -62,3 +62,15 @@ def test_the_leader_beating_the_clock_after_last_lap_gives_one_more_lap():
     extra = s.leader_over_the_line(after, 3.0)
     assert [c.template for c in extra] == ["One more lap after this one. The leader beat the clock."]
     assert not s.last_lap_called                       # the real last lap is called at the next line
+
+
+def test_after_a_save_call_fine_means_the_saving_is_working_not_push():
+    # live 25 Sep: "short, lift and coast" -> he saved -> "fine, push" right after "box this lap"
+    s = Strategist()
+    drive(s, energy_start=0.072, energy_per_lap=0.10, metres=3000)
+    assert s.told_to_save
+    s.last_live_check = None
+    s.burn = []
+    drive(s, energy_start=0.16, energy_per_lap=0.10, metres=3000)      # now it makes the flag, just
+    assert s.fuel_now["verdict"] == "saving"
+    assert fuel_words(s.fuel_now).startswith("Saving's working")

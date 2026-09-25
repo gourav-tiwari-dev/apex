@@ -34,7 +34,11 @@ VERDICT_WORDS = {
     "tight": "{what}'s tight, {spare} laps spare. Lift and coast into the big stops.",
     "save": "{what}'s short by {short} laps. Lift and coast every braking zone and short-shift, or you won't make it.",
     "box": "Box this lap for fuel. {what} won't make the flag, short by {short} laps.",
+    # after a save call, the saving itself makes the numbers "fine": say so, don't say push
+    # (live 25 Sep: "short, lift and coast" -> he saved -> "fine, push" 47 s after "box this lap")
+    "saving": "Saving's working, {spare} laps spare. Keep lifting into the big stops.",
 }
+PUSH_AGAIN_SPARE = 1.0         # after saving, "push" again only with a full lap spare
 
 
 def verdict_of(spare, laps_left):
@@ -97,6 +101,7 @@ class Strategist:
         self.last_live_check = None
         self.last_live_verdict = None
         self.box_said_lap = None
+        self.told_to_save = False      # once told to save, "fine" means the saving is working
         # v3 step 5b: every lap for "how were my last laps / my sectors" on the radio. The laps
         # table in apex.db has no times for live sessions (all None, checked 25 Sep), so the
         # sectors are timed here on Apex's own clock, like measured_lap
@@ -266,6 +271,10 @@ class Strategist:
         picture = self.live_picture(race, moment.frame.lap_dist)
         if picture is None:
             return []
+        if picture["verdict"] in ("save", "box"):
+            self.told_to_save = True
+        elif self.told_to_save and picture["spare_laps"] < PUSH_AGAIN_SPARE:
+            picture["verdict"] = "saving"
         self.fuel_now = picture
         verdict = picture["verdict"]
         changed = verdict != self.last_live_verdict
