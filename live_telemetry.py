@@ -13,6 +13,7 @@ from datetime import datetime
 from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners,save_pass_attempts
 from radio import Governor, Budget
 from seats.settle import RaceSettle
+from seats.track_awareness import TrackAwareness
 from persona import Persona
 from voice import Voice, RadioDesk
 from seats.performance import call_from_event, PerformanceEngineer
@@ -762,7 +763,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     recall = MemoryRecall()
     engineer = RaceEngineer()
     strategist = Strategist()
-    seats = [Spotter(), engineer, strategist, performance, racecraft, recall]
+    seats = [Spotter(), engineer, strategist, performance, racecraft, recall, TrackAwareness()]
     settle = RaceSettle()
 
     governor = Governor()

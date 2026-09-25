@@ -40,6 +40,9 @@ DEFAULT_COOLDOWN_S = 8.0
 ENGINEER_LINES_PER_WINDOW = 2
 ENGINEER_WINDOW_S = 60.0
 NEVER_COUNTED_SEATS = ("spotter", "race_control")
+# the same words again inside this window are dropped (replay of 24 Sep: "cover the inside
+# into Arnage" four times, "stick it, cover Mulsanne Corner" twice in 8 s)
+SAME_WORDS_S = 240.0
 SEAT_COOLDOWN_S = {
     "spotter": 0.0,         # the spotter must never be held back
     "race_control": 0.0,
@@ -64,6 +67,10 @@ class Call:
     # from lines.py; the model rewording them added ~1.8 s a line and nothing else. True only
     # for a line that genuinely needs the model's judgment.
     phrase: bool = False
+    # v3: goes out the moment the radio is free, even mid-corner, and is never counted in the
+    # talk budget (closing alarms, "stick it", praise at the moment it is earned)
+    immediate: bool = False
+    voice: str = "engineer"   # "spotter": the standard spotter voice, never the cloned one
 
 
 def words_in(text):
@@ -89,13 +96,16 @@ class Governor:
         self.quiet_until_lap = None
         self.settled = True       # False from lights out until seats/settle.py says the race settled
         self.engineer_air_times = []   # sim times of the counted lines, for the talk budget
+        self.said_at = {}              # the words of every coaching line -> when it went on air
 
     def exempt(self, call):
         """The spotter, flags and his own answers: never held, never counted."""
-        return call.urgent or call.asked or call.seat in NEVER_COUNTED_SEATS
+        return call.urgent or call.asked or call.immediate or call.seat in NEVER_COUNTED_SEATS
 
     def hold_reason(self, call):
-        if self.exempt(call):
+        # only the spotter, flags and his answers speak in the chaos or on quiet; an immediate
+        # line (praise, "stick it") is still coaching
+        if call.urgent or call.asked or call.seat in NEVER_COUNTED_SEATS:
             return None
         if self.quiet():
             return "quiet"
@@ -107,6 +117,10 @@ class Governor:
         """False when the call is dropped on arrival (quiet, or the start is still chaos), so the
         caller does not spend a model call or a voice render on a line nobody will hear."""
         reason = self.hold_reason(call)
+        if reason is None and not (call.urgent or call.asked) and call.template:
+            said = self.said_at.get(call.template)
+            if said is not None and call.sim_time - said < SAME_WORDS_S:
+                reason = "said_recently"
         if reason is not None:
             self.dropped.append((call, reason))
             return False
@@ -156,6 +170,8 @@ class Governor:
         if not self.exempt(call):
             self.engineer_air_times.append(now)
         self.admitted.append((call.seat, call.kind, round(call.sim_time, 4)))
+        if call.template and not (call.urgent or call.asked):
+            self.said_at[call.template] = now
         return call
 
     def quiet(self):
@@ -184,7 +200,7 @@ class Governor:
 
         if now < self.busy_until:
             return None
-        asked = [c for c in self.pending if c.asked]
+        asked = [c for c in self.pending if c.asked or c.immediate]
         if asked:
             return self.put_on_air(self.best(asked), now)
         # flow-state rule: no talking to the driver in the middle of a corner

@@ -43,9 +43,16 @@ def step(seat, t, me_changes=None, opponents=None, new_race=True, events=(), lap
     return seat.update(m)
 
 
+def test_a_car_brushing_past_is_not_a_fight_yet():
+    # v3: a fight is a fight after 8 s within a second
+    seat = Racecraft(PerformanceEngineer())
+    assert step(seat, 1.0, opponents=[rival(4, 7.4)]) == []
+
+
 def test_a_fight_with_no_data_yet_says_stay_close_no_lunges():
     seat = Racecraft(PerformanceEngineer())
-    calls = step(seat, 1.0, opponents=[rival(4, 7.4)])
+    step(seat, 1.0, opponents=[rival(4, 7.4)])
+    calls = step(seat, 10.0, opponents=[rival(4, 7.4)])
     assert kinds(calls) == ["ATTACK_PLAN"]
     assert "No lunges" in calls[0].conclusion
     assert calls[0].facts["driver"] == "Ann"
@@ -53,7 +60,8 @@ def test_a_fight_with_no_data_yet_says_stay_close_no_lunges():
 
 def test_attack_plan_uses_the_exit_of_your_strong_corner():
     seat = seat_with_data({"T8 Ascari": 130.0, "T1 Rettifilo": 60.0}, {"T8 Ascari": 125.0, "T1 Rettifilo": 61.0})
-    call = step(seat, 1.0, opponents=[rival(4, 7.4)])[0]
+    step(seat, 1.0, opponents=[rival(4, 7.4)])
+    call = step(seat, 10.0, opponents=[rival(4, 7.4)])[0]
     assert call.facts["strong_corner"] == "T8 Ascari"
     assert call.facts["pass_corner"] == "T11 Parabolica"
     assert call.template == "You're faster out of T8 Ascari. Pass into T11 Parabolica. Not before."
@@ -61,6 +69,7 @@ def test_attack_plan_uses_the_exit_of_your_strong_corner():
 
 def test_the_plan_upgrades_once_when_real_data_arrives_then_stays_quiet():
     seat = Racecraft(PerformanceEngineer())
+    step(seat, -9.0, opponents=[rival(4, 7.4)])
     assert kinds(step(seat, 1.0, opponents=[rival(4, 7.4)])) == ["ATTACK_PLAN"]
     assert step(seat, 2.0, opponents=[rival(4, 7.4)]) == []
     seat.performance.my_speeds["T8 Ascari"] = [130.0, 130.0]
@@ -78,7 +87,8 @@ def test_other_classes_are_not_a_fight():
 
 def test_defend_plan_names_his_strong_corner():
     seat = seat_with_data({"T8 Ascari": 125.0}, {"T8 Ascari": 130.0}, steam_id="222")
-    calls = step(seat, 1.0, opponents=[rival(6, 8.5, steam_id=222, driver="Bob", car_id=9)])
+    step(seat, 1.0, opponents=[rival(6, 8.5, steam_id=222, driver="Bob", car_id=9)])
+    calls = step(seat, 10.0, opponents=[rival(6, 8.5, steam_id=222, driver="Bob", car_id=9)])
     assert kinds(calls) == ["DEFEND_PLAN"]
     assert calls[0].facts["cover_corner"] == "T11 Parabolica"
 
@@ -108,9 +118,10 @@ def test_contact_gets_a_calm_reset_not_blame():
 
 def test_losing_a_place_gets_composure():
     seat = Racecraft(PerformanceEngineer())
-    step(seat, 1.0, me_changes={"place": 5, "time_behind_leader": 8.0})
-    calls = step(seat, 2.0, me_changes={"place": 6, "time_behind_leader": 8.6})
-    assert "PASSED" in kinds(calls)
+    step(seat, 1.0, me_changes={"place": 5, "time_behind_leader": 8.0}, opponents=[rival(6, 9.0, car_id=9)])
+    step(seat, 2.0, me_changes={"place": 6, "time_behind_leader": 8.6}, opponents=[rival(5, 8.5, car_id=9)])
+    calls = step(seat, 3.1, me_changes={"place": 6, "time_behind_leader": 8.6}, opponents=[rival(5, 8.5, car_id=9)])
+    assert "PASSED" in kinds(calls)                  # once it has held a second
 
 
 def seat_race():

@@ -48,7 +48,8 @@ SPOTTER_KINDS = {"CAR_LEFT", "CAR_RIGHT", "THREE_WIDE", "STILL_THERE", "CLEAR"}
 # how each kind of call should sound (the clone copies a reference clip per mood)
 URGENT_KINDS = {"CAR_LEFT", "CAR_RIGHT", "THREE_WIDE", "STILL_THERE", "YELLOW", "SAFETY_CAR", "BLUE_FLAG",
                 "NOT_HERE", "THREAT_BEHIND", "DEFEND_PLAN", "LIGHTS_OUT", "GREEN", "PENALTY"}
-FIRED_KINDS = {"PASSED", "PRAISE", "FINISH", "CATCHING", "ATTACK_PLAN", "LAST_LAP", "FLAG_LAST_LAP"}
+FIRED_KINDS = {"PASSED", "PRAISE", "FINISH", "CATCHING", "ATTACK_PLAN", "LAST_LAP", "FLAG_LAST_LAP",
+               "PASS_PRAISE", "DEFEND_HELD", "STICK_IT", "CLOSING_ON", "SETTLED"}
 
 
 def mood_of(kind):
@@ -341,8 +342,8 @@ class RadioDesk:
     def cook(self, call):
         line = None
         reason = None
-        if call.asked:
-            # his answers are already in Max's voice (answers.py, the coach)
+        if call.asked or call.voice == "spotter":
+            # his answers are already in Max's voice; spotter lines get no Max closer
             line = call.template
         elif not call.phrase:
             # code's own words plus a Max closer: no model, so no 1.8 s wait and no cost
@@ -367,7 +368,11 @@ class RadioDesk:
         audio = None
         if line is not None:
             try:
-                if hasattr(self.voice, "render_with_engine"):
+                if call.voice == "spotter":
+                    # the spotter is always the standard voice (his call, 24 Sep)
+                    audio = self.voice.render(line, voice=SPOTTER_VOICE) if getattr(self.voice, "out_loud", False) else None
+                    engine = "standard"
+                elif hasattr(self.voice, "render_with_engine"):
                     audio, engine = self.voice.render_with_engine(line, mood=mood_of(call.kind), wait_s=call.ttl)
                 else:
                     audio, engine = self.voice.render(line, mood=mood_of(call.kind)), None

@@ -29,12 +29,15 @@ def test_fuel_is_known_after_three_lines_even_when_every_lap_is_invalid():
 
 
 def test_losing_places_in_the_lap_1_shuffle_is_not_called_and_later_only_once_a_minute():
+    from test_seats import behind_car
     seat = Racecraft(PerformanceEngineer())
     places = [(1.0, 10, 1), (2.0, 11, 1), (3.0, 12, 1),          # lap 1: the start shuffle
               (300.0, 12, 2), (301.0, 13, 2), (330.0, 14, 2), (365.0, 15, 2)]
     said = []
     for now, place, lap in places:
-        snapshot = race(now, me_changes={"place": place, "time_behind_leader": 8.0})
+        # cars 1..20 keep their order; I sit after the first place-1 of them
+        cars = [replace(behind_car(0.5), id=car, place=car if car < place else car + 1) for car in range(1, 21)]
+        snapshot = race(now, me_changes={"place": place, "time_behind_leader": 8.0}, opponents=cars)
         said += [c.kind for c in seat.update(replace(moment(now, snapshot, lap=lap), session_type=10))]
     assert said.count("PASSED") == 2          # 301 s, then not at 330 s, then 365 s
 
