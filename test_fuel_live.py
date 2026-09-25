@@ -48,3 +48,17 @@ def test_the_coach_cannot_say_no_stop_against_the_fuel_maths_or_without_it():
     assert fuel_honest("Do I need to pit?", "Box this lap, mate, energy won't make it.", box)[0]
     assert not fuel_honest("Will I make it on fuel?", "Yeah, you'll make it, mate.", "not known yet")[0]
     assert fuel_honest("What's the gap?", "1.2, mate.", box)[0]                  # not a fuel question
+
+
+def test_the_leader_beating_the_clock_after_last_lap_gives_one_more_lap():
+    # live 25 Sep: "last lap" on lap 5, the leader crossed with time left, the race ran 6
+    s = Strategist()
+    s.last_lap_called = True
+    leader = replace(rival(1, 0.0), laps=4, lap_dist=13000.0)
+    before = race(0.0, {"time_remaining": 5.0, "max_laps": 2147483647}, {"place": 5}, opponents=[leader])
+    assert s.leader_over_the_line(before, 0.0) == []
+    after = race(3.0, {"time_remaining": 2.0, "max_laps": 2147483647}, {"place": 5},
+                 opponents=[replace(leader, laps=5, lap_dist=40.0)])
+    extra = s.leader_over_the_line(after, 3.0)
+    assert [c.template for c in extra] == ["One more lap after this one. The leader beat the clock."]
+    assert not s.last_lap_called                       # the real last lap is called at the next line

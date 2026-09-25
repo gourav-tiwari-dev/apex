@@ -160,3 +160,15 @@ def test_the_leaders_flag_means_last_lap_then_the_result_when_i_finish():
     assert kinds(flag) == ["FLAG_LAST_LAP"]
     done = engineer.update(replace(moment(3.0, race(3.0, {"game_phase": 8}, dict(running, finish_status=1))), session_type=10))
     assert kinds(done) == ["FINISH"] and done[0].template == "Chequered flag. P5."
+
+
+def test_a_timed_race_is_counted_with_the_leaders_pace():
+    # live 25 Sep: a "5-lap" race became 6 laps; the leader lapped faster and Apex said "last lap" on lap 5
+    from dataclasses import replace as swap
+    from test_racecraft import rival
+    leader = swap(rival(1, 0.0), laps=4, lap_dist=500.0, last_lap=236.0, best_lap=236.0)
+    backmarker = swap(rival(9, 30.0, car_id=7), lap_dist=13000.0)          # gives the lap length
+    snapshot = race(0.0, {"time_remaining": 240.0}, {"laps": 4, "place": 5, "time_behind_leader": 20.0,
+                                                    "last_lap": 242.0}, opponents=[leader, backmarker])
+    # the leader crosses in ~227 s, has 13 s left, so starts one more lap: he does laps 5 and 6
+    assert laps_to_go(snapshot, 242.0) == 2

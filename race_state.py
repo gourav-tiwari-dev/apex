@@ -334,19 +334,51 @@ def same_class_neighbours(race):
 
 
 def laps_to_go(race, lap_time):
-    """Laps still to drive, counted at the line. A lap race: max laps minus laps done.
-    A timed race: the flag drops when the LEADER first crosses the line after the clock runs
-    out, and I finish when I next cross after that, so the count is
-    ceil((time left + my gap to the leader) / lap time).
-    (23 Sep: the old count added one more lap on top, told him fuel was tight with 1.4 laps
-    of energy spare, and he was told to lift and coast for nothing.)"""
+    """Laps still to drive, this one included, counted at the line. A lap race: max laps minus
+    laps done. A timed race: the flag drops when the overall LEADER first crosses the line after
+    the clock runs out, and I finish that same lap (minus any laps I am down).
+    Live 25 Sep: a "5-lap" race became 6 because the leader was lapping faster than him; Apex
+    counted with HIS lap time and said "last lap" on lap 5. Now it counts with the leader's
+    own lap time and where the leader is on the lap. lap_time (mine) is only the fallback."""
     me = race.me
     session = race.session
     if 0 < session.max_laps < 1000:
         return max(0, session.max_laps - me.laps)
-    if lap_time is None or lap_time <= 0:
+    leader = me if me.place == 1 else next((o for o in race.opponents if o.place == 1), None)
+    if leader is None:
+        # the leader is not in the data: my own lap time and my gap to the leader
+        if lap_time is None or lap_time <= 0:
+            return None
+        return math.ceil((session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time)
+    candidates = (lap_time, me.last_lap, me.best_lap) if leader is me else (leader.last_lap, leader.best_lap, lap_time)
+    leader_lap = next((t for t in candidates if t is not None and t > 0), None)
+    if leader_lap is None:
         return None
-    return math.ceil((session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time)
+    lap_length = max([o.lap_dist for o in race.opponents] + [0.0])
+    done = (leader.lap_dist / lap_length) if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None else 0.0
+    to_line = (1.0 - min(max(done, 0.0), 1.0)) * leader_lap
+    more = 0 if session.time_remaining <= to_line else math.ceil((session.time_remaining - to_line) / leader_lap)
+    leader_finishes_on = leader.laps + 1 + more
+    return max(0, leader_finishes_on - me.laps_behind_leader - me.laps)
+
+
+def leader_margin(race):
+    """Seconds between the clock running out and the leader's next time over the line
+    (> 0: the clock runs out first, so the leader's current lap is the last). None when it
+    cannot be known. Live 25 Sep it was ~2 s: the leader pushed, crossed with time left, and a
+    "5-lap" race ran 6."""
+    session = race.session
+    if 0 < session.max_laps < 1000 or session.time_remaining <= 0:
+        return None
+    leader = next((o for o in race.opponents if o.place == 1), None)
+    if leader is None:
+        return None
+    leader_lap = next((t for t in (leader.last_lap, leader.best_lap) if t and t > 0), None)
+    lap_length = max([o.lap_dist for o in race.opponents] + [0.0])
+    if leader_lap is None or lap_length < 1000:
+        return None
+    to_line = (1.0 - min(max(leader.lap_dist / lap_length, 0.0), 1.0)) * leader_lap
+    return round(to_line - session.time_remaining, 1)
 
 
 def read_race_snapshot(data):

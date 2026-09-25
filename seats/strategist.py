@@ -8,7 +8,7 @@ import math
 import statistics
 
 from radio import Call, STRATEGY, ENGINEER
-from race_state import laps_to_go
+from race_state import laps_to_go, leader_margin
 
 FIRST_CALL_AFTER_LAPS = 2      # need two measured laps before saying anything about fuel
 RECHECK_EVERY_LAPS = 3
@@ -28,6 +28,7 @@ LIVE_KEEP_LAPS = 1.2           # usage over the last lap or so: the current pace
 # GUESSED: lift and coast plus short-shifting saves about 8% of usage (tune from his laps)
 LIFT_AND_COAST_SAVES = 0.08
 FUEL_RECHECK_S = 15.0
+CLOSE_CALL_S = 6.0             # the leader this close to beating the clock: "last lap" is not sure
 VERDICT_WORDS = {
     "fine": "{what}'s fine to the flag, {spare} laps spare. Push.",
     "tight": "{what}'s tight, {spare} laps spare. Lift and coast into the big stops.",
@@ -86,6 +87,7 @@ class Strategist:
         self.tyre_called = set()
         self.rain_called = False
         self.last_lap_called = False
+        self.leader_laps = None        # the leader's laps done, to see it cross the line
         self.fuel_now = None           # the latest fuel picture, for "how's the fuel?" on the radio
         self.line_time = None          # sim time when he last crossed the line
         self.track_m = None            # lap length, the longest lap distance any car showed
@@ -106,6 +108,9 @@ class Strategist:
         lap_time = None
         if self.lap_times:
             lap_time = statistics.median(self.lap_times[-3:])
+        elif race.me.last_lap > 0 or race.me.best_lap > 0:
+            # Apex started mid-race (25 Sep): no line crossings timed yet, the game's own lap
+            lap_time = race.me.last_lap if race.me.last_lap > 0 else race.me.best_lap
         return laps_to_go(race, lap_time)
 
     def usage_per_lap(self, readings):
@@ -127,6 +132,7 @@ class Strategist:
 
         if moment.new_race:
             calls.extend(self.live_fuel(race, moment, now))
+            calls.extend(self.leader_over_the_line(race, now))
 
         # the game's sector numbers: 1, 2, then 0 for sector 3
         if moment.new_race and me.sector != self.last_sector:
@@ -156,7 +162,11 @@ class Strategist:
             laps_left = self.laps_left(race)
             if laps_left is not None and laps_left <= 1 and not self.last_lap_called:
                 self.last_lap_called = True
-                calls.append(call("LAST_LAP", "Last lap. Bring it home.", now, {}, "Last lap. Bring it home.",
+                margin = leader_margin(race)
+                words = "Last lap. Bring it home."
+                if margin is not None and 0 <= margin < CLOSE_CALL_S:
+                    words = "Last lap, unless the leader beats the clock. I'll tell you."
+                calls.append(call("LAST_LAP", words, now, {"leader_margin_s": margin}, words,
                                   priority=ENGINEER))
 
         if moment.new_race:
@@ -165,6 +175,23 @@ class Strategist:
                 calls.append(call("RAIN", f"Rain is starting, severity {race.session.raining}. Grip will drop.",
                                   now, {"rain": race.session.raining}, "Rain's coming. Grip's going away."))
         return calls
+
+    def leader_over_the_line(self, race, now):
+        """After "last lap": the leader crossing with time still on the clock means one more lap
+        for everyone. Seen, not predicted (the margin was ~2 s on 25 Sep)."""
+        leader = next((o for o in race.opponents if o.place == 1), None)
+        if leader is None or race.session.max_laps < 1000:
+            return []
+        crossed = self.leader_laps is not None and leader.laps > self.leader_laps
+        self.leader_laps = leader.laps
+        if not (crossed and self.last_lap_called and race.session.time_remaining > 0):
+            return []
+        self.last_lap_called = False                  # the real last lap is called at the line
+        words = "One more lap after this one. The leader beat the clock."
+        extra = call("EXTRA_LAP", words, now, {"time_left_s": round(race.session.time_remaining)}, words,
+                     priority=ENGINEER)
+        extra.immediate = True
+        return [extra]
 
     # ---- fuel, measured all the time ------------------------------------------------------------
     def see_burn(self, race, lap_dist):
@@ -205,15 +232,12 @@ class Strategist:
         done_this_lap = min(max(lap_dist / self.track_m, 0.0), 1.0)
         if session.max_laps and session.max_laps < 10000:
             return max(session.max_laps - me.laps - done_this_lap, 0.0)
-        lap_time = statistics.median(self.lap_times[-3:]) if self.lap_times else None
-        if lap_time is None:
-            lap_time = me.last_lap if me.last_lap > 0 else (me.best_lap if me.best_lap > 0 else None)
-        if lap_time is None or session.time_remaining <= 0:
+        # the same count as "laps to go" (the LEADER's pace decides a timed race), minus the part
+        # of this lap already driven, so fuel and "last lap" never disagree
+        to_go = self.laps_left(race)
+        if to_go is None:
             return None
-        to_line = (1 - done_this_lap) * lap_time
-        # a timed race: laps are started until the clock runs out, and the last one is finished
-        after = math.ceil(max(session.time_remaining - to_line, 0.0) / lap_time)
-        return (1 - done_this_lap) + after
+        return max(to_go - done_this_lap, 0.0)
 
     def live_picture(self, race, lap_dist):
         usage = self.live_usage()
