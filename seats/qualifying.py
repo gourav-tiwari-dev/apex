@@ -1,17 +1,17 @@
 """The qualifying engineer (25 Sep 2026, his mark: "Apex isn't aware about qualifying").
 
 Every other seat is built for racing, so qualifying was silent. What a real engineer gives in
-qualifying: the lap against his best and where it puts him (class position, gap to pole), a
-warning when traffic up the road will spoil the flying lap, and the clock (one more lap or not).
-Lap times are the game's (so a deleted lap does not count as a best); gaps are the race model's.
+qualifying: the lap against his best and where it puts him (class position, gap to pole), and
+the clock (one more lap or not). Lap times are the game's (so a deleted lap does not count).
+
+No traffic or clean-air calls: in LMU qualifying he is alone on track (his fact, 25 Sep). The
+other drivers are only on the timing sheet, so a "car ahead" there is a ghost.
 """
 from radio import Call, ENGINEER
 
 QUALI_SESSIONS = range(5, 9)
 GREEN = 5
 FLAG_OUT = 8                   # clock ran out: the lap he is on still counts, and is often the one
-TRAFFIC_S = 3.0                # a car this close ahead on the road will cost the lap
-TRAFFIC_EVERY_S = 30.0
 TTL_S = 12.0
 
 
@@ -31,9 +31,7 @@ def call(kind, words, now, facts):
 class QualifyingEngineer:
     def __init__(self):
         self.my_best = None
-        self.traffic_said_at = None
         self.last_lap_said = False
-        self.out_lap = False        # left the pits since the line: the lap to make space on
 
     def update(self, moment):
         race = moment.race
@@ -43,17 +41,10 @@ class QualifyingEngineer:
             return []
         me, now = race.me, moment.now
         calls = []
-        if me.in_pits:
-            self.out_lap = True
         if moment.lap_wrapped:
             if me.last_lap > 0 and not me.in_pits:
                 calls += self.lap_done(race, me.last_lap, now)
             calls += self.clock(race, now)
-            self.out_lap = me.in_pits
-        # traffic only on the out lap, where he can still make space; on the flying lap the
-        # engineer keeps quiet (replay 25 Sep: "make a gap" 11 s before the line was useless)
-        if self.out_lap and moment.new_race and moment.model is not None and not me.in_pits:
-            calls += self.traffic(moment.model, now)
         return calls
 
     def lap_done(self, race, lap, now):
@@ -102,17 +93,3 @@ class QualifyingEngineer:
             self.last_lap_said = True
             return [call("QUALI_CLOCK", "Time for one more flying lap after this one.", now, {"time_left_s": round(left)})]
         return []
-
-    def traffic(self, model, now):
-        if self.traffic_said_at is not None and now - self.traffic_said_at < TRAFFIC_EVERY_S:
-            return []
-        order = model.order()
-        if "me" not in order or order.index("me") == 0:
-            return []
-        ahead = order[order.index("me") - 1]
-        gap = model.gap(ahead, "me")
-        if gap is None or not 0 < gap <= TRAFFIC_S:
-            return []
-        self.traffic_said_at = now
-        words = f"Traffic {gap:.1f} ahead. Make a gap for the lap."
-        return [call("QUALI_TRAFFIC", words, now, {"gap_s": round(gap, 1)})]
