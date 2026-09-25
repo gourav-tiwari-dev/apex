@@ -1184,8 +1184,8 @@ class RaceAgent:
         return response.choices[0].message, spent
 
     def think(self, question, snapshot, earlier=""):
-        if not self.budget.allows_llm():
-            return "Over the radio budget for this race. Stick to the basics, mate.", {"costs": []}
+        # no budget check: push-to-talk never stops (his call, 25 Sep - the Rs 5 cap silenced the
+        # coach after 7 answers in a live race). Every call is still charged and logged.
         system = AGENT_PROMPT + ("\n" + CLEAN_RULE if self.clean else "")
         picture = json.dumps(without_empty(snapshot.picture))
         # the voice goes right next to the question: in the system prompt alone it got lost

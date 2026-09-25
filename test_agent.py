@@ -148,11 +148,13 @@ def test_the_answer_gate():
     assert not check_answer("Maybe let Chabbi Zino go.", known)[0]                     # hedging
 
 
-def test_over_budget_the_agent_says_so_without_calling_the_model():
-    model = ScriptedModel()
-    result = ask(RaceAgent(Budget(cap_rs=0.0), client=model), "should I pit?", snapshot_at_lap_4())
-    assert "budget" in result["call"].template
-    assert model.sent == []
+def test_push_to_talk_never_stops_for_the_budget():
+    # his call, 25 Sep: "I don't want it to stop" (the Rs 5 cap silenced it after 7 answers)
+    model = ScriptedModel(Message(content="CALL: DEFEND\nDefend it, mate. One line."))
+    budget = Budget(cap_rs=0.0)
+    result = ask(RaceAgent(budget, client=model), "should I defend?", snapshot_at_lap_4())
+    assert result["call"].template == "Defend it, mate. One line." and model.sent
+    assert budget.spent_rs > 0                                   # still charged and logged
 
 
 def test_judgment_questions_go_to_the_agent_however_short():

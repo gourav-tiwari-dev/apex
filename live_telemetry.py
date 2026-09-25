@@ -195,7 +195,10 @@ class LiveSource:
 
 
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"
-BUDGET_PER_SESSION_RS = 5.0   # Gourav's cap, 23 Sep 2026: past it, template lines only
+# Gourav's cap: Rs 5 (23 Sep 2026), raised to Rs 10 (25 Sep, "increase the budget a bit").
+# Past it, template lines only. Push-to-talk is NOT capped (his call, 25 Sep: "I don't want it
+# to stop"): its spend is still charged here and logged, it just never refuses a question.
+BUDGET_PER_SESSION_RS = 10.0
 class ReplaySource:
     def __init__(self, speed, tape_path=TAPE_PATH):
         self.speed = speed
