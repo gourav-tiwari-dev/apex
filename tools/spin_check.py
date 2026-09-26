@@ -15,6 +15,7 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import live_telemetry
 from live_telemetry import CarState, SpinDetector, SlideCaughtDetector
+from track_map import MONZA_CORNERS, corners_for_track
 
 tapes = sys.argv[1:] or sorted(glob.glob("tape_2026092[3-5]_*.jsonl.gz"))
 for tape in tapes:
@@ -22,10 +23,19 @@ for tape in tapes:
     old_spins = 0
     old_armed = False
     found = []
+    track_known = False
+    live_telemetry.current_corners = MONZA_CORNERS
     try:
         with gzip.open(tape, "rt") as f:
             for line in f:
                 d = json.loads(line)
+                if d.get("t") == "race" and not track_known:
+                    # the tape's own track, as the live loop does: without it every tape was named
+                    # with Monza's corners ("T3 Curva Grande" at Le Mans, 26 Sep)
+                    track_known = True
+                    corners = corners_for_track(d["session"]["track"])
+                    if corners is not None:
+                        live_telemetry.current_corners = corners
                 if d.get("t") in ("race", "near"):
                     continue
                 frame = CarState(**d)
