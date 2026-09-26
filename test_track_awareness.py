@@ -97,6 +97,39 @@ def test_a_hypercar_closing_behind_gets_one_call():
     assert said[0].template.startswith("Hypercar behind, closing. On you in about ")
 
 
+def test_three_wide_is_said_once_for_a_pack_not_once_per_trio():
+    # replay of 24 Sep (27 Sep): 22 "Three wide ahead" in one race, 18 of them really three wide
+    # (4 m+ apart sideways), but in clumps: 5 between 1154 and 1166 s as one pack jostled and made
+    # new trios. Once in 20 s is the news; every reshuffle is noise
+    s = seat()
+    said = []
+    trios = [(3, 4, 5), (4, 5, 6), (3, 5, 6), (5, 6, 7)]
+    for step, trio in enumerate(trios):
+        t = 1154.0 + 3.0 * step
+        cars = [car(trio[0], 1200.0), car(trio[1], 1202.0), car(trio[2], 1204.0)]
+        said += look(s, t, cars)
+    assert kinds(said) == ["THREE_WIDE_AHEAD"]
+    later = [car(8, 1200.0), car(9, 1202.0), car(10, 1204.0)]
+    assert kinds(look(s, 1154.0 + 25.0, later)) == ["THREE_WIDE_AHEAD"]
+
+
+def test_three_wide_needs_three_cars_across_the_track():
+    # replay of 24 Sep: 4 of the 22 "three wide" had the three only 2.8-3.9 m apart across the track:
+    # two alongside and one tucked in behind. Three abreast needs the outside cars 4 m+ apart
+    def trio(t, across, lap_start=1200.0):
+        cars = []
+        for n, car_id in enumerate((3, 4, 5)):
+            c = car(car_id, lap_start + 2.0 * n)
+            cars.append(replace(c, x=across[n], z=1200.0 + 2.0 * n + 50.0 * t))   # all heading +z at 50 m/s
+        return cars
+    s = seat()
+    look(s, 10.0, trio(10.0, (0.0, 2.0, 1.0), lap_start=3000.0))    # out of range: only their positions kept
+    assert look(s, 10.2, trio(10.2, (0.0, 2.0, 1.0))) == []                     # 2 m across: not three wide
+    s2 = seat()
+    look(s2, 10.0, trio(10.0, (0.0, 2.5, 5.0), lap_start=3000.0))
+    assert kinds(look(s2, 10.2, trio(10.2, (0.0, 2.5, 5.0)))) == ["THREE_WIDE_AHEAD"]   # 5 m across
+
+
 def test_a_faster_class_car_is_called_when_it_will_arrive_not_when_it_is_first_near():
     # replay of the 58-car race (27 Sep): "LMP2 behind, 2.5 seconds" three times, and each LMP2
     # took 39-50 s to reach him (it closed ~0.05 s a second). His mark: "LMP do not detected".

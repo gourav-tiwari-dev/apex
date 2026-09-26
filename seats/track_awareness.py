@@ -17,6 +17,7 @@ Two kinds of call, two voices:
 Names are never said: positions ("P7 and P8") and classes ("Hypercar") only.
 """
 import collections
+import math
 import statistics
 
 from gaps import TrackClock
@@ -29,6 +30,9 @@ RACE_SESSIONS = range(10, 14)
 LOOK_AHEAD_M = 600.0          # hazards this far up the road are worth a call (~8 s at 270 km/h)
 THREE_WIDE_LOOK_M = 400.0
 ALONGSIDE_M = 6.0             # two cars this close in lap distance are side by side
+# and three abreast needs the outside cars this far apart across the track (two car widths). Replay
+# of 24 Sep: 4 of 22 "three wide" were 2.8-3.9 m across, two alongside and one tucked in behind (27 Sep)
+THREE_WIDE_ACROSS_M = 4.0
 SLOW_SHARE = 0.5              # a car at half the NORMAL speed for where it is is a hazard
 STOPPED_KMH = 20.0
 NORMAL_BIN_M = 50.0           # normal speed is learned for every 50 m of track
@@ -110,6 +114,7 @@ class TrackAwareness:
         self.lap_length = None
         self.said_at = {}              # hazard / opportunity key -> when it was last called
         self.class_gaps = {}           # faster-class car id -> [(time, gap behind me)], the last 8 s
+        self.positions = {}            # car id -> (x, z) at the last snapshot, for their direction
         self.normal = NormalSpeed()
         self.model = None
         self.clock = TrackClock()      # same-point gaps between the cars ahead
@@ -224,6 +229,11 @@ class TrackAwareness:
         return f"before {following[0]}"
 
     def three_wide_ahead(self, race, moment, now):
+        before = self.positions
+        self.positions = {}
+        for car in race.opponents:
+            if car.x is not None and car.z is not None:
+                self.positions[car.id] = (car.x, car.z)
         cars = []
         for car in race.opponents:
             if car.in_pits:
@@ -235,12 +245,35 @@ class TrackAwareness:
         for i in range(len(cars) - 2):
             first, third = cars[i], cars[i + 2]
             if third[0] - first[0] <= ALONGSIDE_M:
-                ids = tuple(sorted(c.id for _, c in cars[i:i + 3]))
-                if self.fresh(("three_wide", ids), now, HAZARD_REARM_S):
+                across = self.across_the_track([c for _, c in cars[i:i + 3]], before)
+                if across is not None and across < THREE_WIDE_ACROSS_M:
+                    continue                   # two alongside and one behind
+                # once in 20 s, not once per trio: replay of 24 Sep, 22 calls in one race (18 really
+                # three wide), 5 of them in 12 s as one pack jostled into new trios (27 Sep)
+                if self.fresh(("three_wide",), now, HAZARD_REARM_S):
                     return [self.hazard("THREE_WIDE_AHEAD", "Three wide ahead. Stay out of it, let them fight.",
                                         now, {"metres": round(first[0])})]
                 return []
         return []
+
+    def across_the_track(self, trio, before):
+        """Metres between the outside cars of three, across the lead car's direction of travel (from
+        its last position). None when there are no positions: the lap-distance rule stands alone."""
+        lead = trio[0]
+        was = before.get(lead.id)
+        if was is None or lead.x is None:
+            return None
+        dx = lead.x - was[0]
+        dz = lead.z - was[1]
+        moved = math.hypot(dx, dz)
+        if moved < 0.5:
+            return None
+        offsets = []
+        for car in trio:
+            if car.x is None or car.z is None:
+                return None
+            offsets.append(((car.x - lead.x) * dz - (car.z - lead.z) * dx) / moved)
+        return max(offsets) - min(offsets)
 
     def faster_class_behind(self, race, my_lap_dist, my_speed_kmh, now):
         me = race.me
