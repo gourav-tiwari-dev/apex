@@ -9,7 +9,7 @@ from seats.performance import PerformanceEngineer, SPOKEN_KINDS
 from seats.race_engineer import RaceEngineer
 from seats.spotter import Spotter
 from seats.racecraft import Racecraft
-from test_seats import moment, race, near, kinds, behind_car
+from test_seats import moment, race, near, kinds, behind_car, frame
 from test_team_memory import add_session
 
 
@@ -53,6 +53,29 @@ def test_B3_no_yellow_call_for_the_incident_he_is_in():
     crawling = moment(1.0, race(1.0, {"sector_flags": [1, 11, 11]}, {"sector": 1}))
     crawling.frame.speed_kmh = 28.0
     assert engineer.update(crawling) == []
+
+
+def test_I_in_a_race_the_lap_he_is_on_is_the_games():
+    # replay of 25 Sep night (27 Sep): his own line crossings made the formation lap "lap 1", so
+    # race lap 1 was "lap 2" for the coach, his reminders and the debrief ("2 contacts: lap 2")
+    from live_telemetry import LapCounter
+    counter = LapCounter()
+
+    def at(t, lap_dist, game_laps, green):
+        f = frame(float(t))
+        f.lap_dist = float(lap_dist)
+        counter.update(f)
+        return counter.race_lap(game_laps, float(t), green)
+
+    assert at(0, 13400, 0, False) == 1               # on the grid for the formation lap
+    assert at(5, 50, 0, False) == 1                  # crosses the line on the formation lap
+    assert at(60, 13400, 0, False) == 1              # back on the grid
+    assert at(61, 13450, 0, True) == 1               # lights out
+    assert at(64, 20, 0, True) == 1                  # the start line is not a lap finished
+    assert at(200, 9000, 0, True) == 1
+    assert at(300, 10, 0, True) == 2                 # lap 1 done: counts before the game's count does
+    assert at(300.2, 60, 0, True) == 2
+    assert at(300.4, 110, 1, True) == 2              # the game caught up
 
 
 def test_H_no_spotter_in_the_garage_or_pits():

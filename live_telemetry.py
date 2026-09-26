@@ -22,7 +22,7 @@ from seats.performance import call_from_event, PerformanceEngineer
 from seats import Moment
 from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer
-from seats.strategist import Strategist
+from seats.strategist import Strategist, RACE_SESSIONS, GREEN_PHASE
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
 from answers import Answers, needs_agent, intent_of, fix_mishearing, garbled, is_mark
@@ -441,11 +441,19 @@ class HardBrakingDetector(Detector):
         def is_triggered(self, frame):
             return frame.brake>0.8 and frame.speed_kmh>30
 
+SCORING_LAG_S = 0.5           # the game's lap count trails the line by up to a scoring update (5 a second)
+REAL_LAP_S = 30.0             # green running before a crossing that makes it a lap finished, not the start
+
+
 class LapCounter:
     def __init__(self):
         self.previous_lap_dist=0
         self.lap_count=0
         self.wrapped=False
+        self.green_time = 0.0          # green running since his last line crossing
+        self.last_time = None
+        self.finished_at = None        # when he last crossed the line finishing a green lap
+        self.laps_at_finish = None     # the game's laps done at that moment
     def update(self,frame):
         self.wrapped=False
         if self.previous_lap_dist-frame.lap_dist>1000:
@@ -453,6 +461,25 @@ class LapCounter:
             self.wrapped=True
         self.previous_lap_dist=frame.lap_dist
         return self.lap_count
+
+    def race_lap(self, game_laps, now, green):
+        """The lap he is on as the game counts it: its laps done + 1. His own crossings (lap_count)
+        made the formation lap "lap 1", so race lap 1 was "lap 2" for the coach, his reminders and
+        the debrief (replay of 25 Sep night, 27 Sep). A lap he has just finished counts before the
+        game's count catches up; the start line at lights out is not a lap finished."""
+        if self.last_time is not None and green:
+            self.green_time += max(0.0, now - self.last_time)
+        self.last_time = now
+        if self.wrapped:
+            if self.green_time >= REAL_LAP_S:
+                self.finished_at = now
+                self.laps_at_finish = game_laps
+            self.green_time = 0.0
+        on_lap = game_laps + 1
+        just_finished = self.finished_at is not None and now - self.finished_at < SCORING_LAG_S
+        if just_finished and game_laps == self.laps_at_finish:
+            on_lap += 1
+        return on_lap
 
 class LapDistance:
     def __init__(self):
@@ -987,7 +1014,11 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         # GUESSED — mLapInvalidated never observed True (n=33485)
         validity = 1                      # 1 = valid, 0 = invalidated
         for frame in source:
-            lap_count = lap_counter.update(frame)
+            own_laps = lap_counter.update(frame)      # his own line crossings: where laps begin and end
+            lap_count = own_laps
+            if session_type in RACE_SESSIONS and source.race is not None and source.race.me is not None:
+                green = source.race.session.game_phase == GREEN_PHASE
+                lap_count = lap_counter.race_lap(source.race.me.laps, frame.elapsed_time, green)
             real_lap_distance = lap_distance.update(frame)
 
             # the track decides where the corners are, so it must be settled before
@@ -1018,9 +1049,9 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 last_limit_steps = me.track_limit_steps
                 final_place = me.place
                 last_opponents = source.race.opponents
-            track_learner.add(lap_count, real_lap_distance, frame.brake, frame.throttle, frame.accel_lat)
+            track_learner.add(own_laps, real_lap_distance, frame.brake, frame.throttle, frame.accel_lat)
             if learning_track and lap_counter.wrapped:
-                learned = track_learner.corners(lap_count)
+                learned = track_learner.corners(own_laps)
                 if learned is not None:
                     current_corners = learned
 
@@ -1030,7 +1061,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 save_corner_stat(conn, session_id, stat)
 
             if lap_counter.wrapped:
-                save_lap(conn, session_id, lap_count - 1, validity)
+                save_lap(conn, session_id, own_laps - 1, validity)
                 validity = 1
                 for reminder in due_reminders(reminders, lap_count, frame.elapsed_time):
                     if governor.offer(reminder):
