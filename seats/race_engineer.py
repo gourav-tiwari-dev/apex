@@ -18,9 +18,17 @@ BLUE_FLAG = 6                 # mFlag value
 # race tapes 26 Sep). The 23 Sep note "1 (and sometimes 3)" was wrong about 3: it shows before
 # the race and when the clock runs out, and said "Yellow flag" at the end of the 25 Sep night
 # race. Yellows last 10-20 s. Only the yellow in my sector or the next matters.
-# Not for an incident he is in: below this he is the slow car or crawling past it (25 Sep night:
-# punted at the Porsche Curves, the game's yellow came 3.4 s before the spin detector saw it)
-HIS_OWN_INCIDENT_KMH = 60.0
+# Below this he is the slow car or crawling past it: no yellow for the incident he is in (25 Sep
+# night: punted at the Porsche Curves, the game's yellow came 3.4 s before the spin detector saw
+# it) and no blue flags (25 Sep, 58-car race: "Blue flag. Let him by" 3 times in 6 s at 5-9 km/h)
+CRAWLING_KMH = 60.0
+# After a crash (his mark, 25 Sep: "it doesn't know that I crashed and spun, my race is over"):
+# 214 -> 6 km/h at Indianapolis, stopped a minute, and nobody asked. A pit wall's first question
+# after a crash is "Are you OK?" (27 Sep, RACE_MODEL.md)
+INCIDENT_KINDS = ("SPIN", "CONTACT", "IMPACT")
+STOPPED_KMH = 20.0
+STOPPED_FOR_S = 3.0
+AFTER_INCIDENT_S = 30.0       # a stop this soon after a spin or a hit is that incident
 # GUESSED: the flag list uses the game's own sector numbering (index 0 = sector 3), like mSector.
 NEXT_SECTOR = {1: 2, 2: 0, 0: 1}
 # The game numbers MY sector 1, 2, 0 (0 = sector 3); the sector flags are a list in track order
@@ -119,6 +127,9 @@ class RaceEngineer:
         self.gaps_at_line = {}        # "ahead" / "behind" -> (identity, gap) at the last line
         self.pits_said = set()        # (time, car) pit entries already called
         self.own_spin_at = None
+        self.incident_at = None       # sim time of his last spin or hit
+        self.stopped_since = None
+        self.asked_if_ok = False
         self.yellow_said_at = None
         self.clean_laps = []          # my road laps with nobody within a second ahead all lap
         self.held_up_said = set()
@@ -129,7 +140,36 @@ class RaceEngineer:
         self.finish_called = False
         self.last_said_lap = {}       # kind -> lap it was last said
 
+    def after_a_crash(self, moment, me, phase, now):
+        """"You OK? Car's stopped." once, when he is stopped on track just after a spin or a hit."""
+        if moment.frame is None:
+            return []
+        speed = moment.frame.speed_kmh
+        if speed > CRAWLING_KMH:
+            self.asked_if_ok = False           # racing again: the next incident may ask again
+        stopped = speed < STOPPED_KMH and not me.in_pits and phase == GREEN
+        after_incident = self.incident_at is not None and now - self.incident_at < AFTER_INCIDENT_S
+        if not (stopped and after_incident):
+            self.stopped_since = None
+            return []
+        if self.stopped_since is None:
+            self.stopped_since = now
+        if now - self.stopped_since < STOPPED_FOR_S or self.asked_if_ok:
+            return []
+        self.asked_if_ok = True
+        words = "You OK? Car's stopped."
+        ask = spoken("ARE_YOU_OK", words, now, {"speed_kmh": round(speed)}, template=words, priority=RACE_CONTROL)
+        ask.immediate = True
+        return [ask]
+
     def update(self, moment):
+        # incidents on every frame: they come with the car frames, and the race snapshots (5 a
+        # second) missed most of them (27 Sep: the own-spin yellow rule rarely saw its spin)
+        for event in moment.events:
+            if event.kind == "SPIN":
+                self.own_spin_at = event.sim_time
+            if event.kind in INCIDENT_KINDS:
+                self.incident_at = event.sim_time
         race = moment.race
         if race is None or race.me is None or not moment.new_race:
             return []
@@ -167,18 +207,18 @@ class RaceEngineer:
         self.phase = phase
 
         # flags (E2)
-        if me.flag == BLUE_FLAG and not self.blue_flag:
+        crawling = moment.frame is not None and moment.frame.speed_kmh < CRAWLING_KMH
+        if me.flag == BLUE_FLAG and not self.blue_flag and not crawling:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
+        calls.extend(self.after_a_crash(moment, me, phase, now))
         yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag == YELLOW_FLAG]
         here, next_one = FLAG_SLOT.get(me.sector), FLAG_SLOT.get(NEXT_SECTOR.get(me.sector))
         yellow_now = here in yellow_sectors or next_one in yellow_sectors
         # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow" twice
         # right after he spun at Indianapolis)
-        if any(event.kind == "SPIN" for event in moment.events):
-            self.own_spin_at = now
         own_yellow = self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
-        if moment.frame is not None and moment.frame.speed_kmh < HIS_OWN_INCIDENT_KMH:
+        if crawling:
             own_yellow = True
         recent = self.yellow_said_at is not None and now - self.yellow_said_at < YELLOW_AGAIN_S
         if yellow_now and not self.yellow and phase == GREEN and not own_yellow and not recent:

@@ -78,6 +78,50 @@ def test_I_in_a_race_the_lap_he_is_on_is_the_games():
     assert at(300.4, 110, 1, True) == 2              # the game caught up
 
 
+def test_J_after_a_crash_he_is_asked_if_he_is_ok_once():
+    # his mark, 25 Sep (58-car race): "it doesn't know that I crashed and spun, my race is over".
+    # Replay: 214 -> 6 km/h at Indianapolis, stopped a minute, and nobody asked. A pit wall's first
+    # question after a crash is "Are you OK?"
+    from live_telemetry import Event
+    engineer = RaceEngineer()
+    engineer.update(moment(0.0, race(0.0, {}, {"sector": 1})))
+    spin = moment(1.0, race(1.0, {}, {"sector": 1}), new_race=False)      # incidents come on car frames
+    spin.events = [Event(kind="SPIN", sim_time=1.0, speed_kmh=150.0, corner="Indianapolis")]
+    engineer.update(spin)
+    said = []
+    for t in (2.0, 3.0, 4.0, 5.0, 6.0, 10.0):
+        stopped = moment(t, race(t, {}, {"sector": 1}))
+        stopped.frame.speed_kmh = 3.0
+        said += engineer.update(stopped)
+    assert kinds(said) == ["ARE_YOU_OK"]
+
+
+def test_J2_no_blue_flag_calls_while_he_crawls():
+    # the same replay: "Blue flag. Let him by on the exit." three times in 6 s at 5-9 km/h
+    engineer = RaceEngineer()
+    engineer.update(moment(0.0, race(0.0, {}, {"sector": 1, "flag": 0})))
+    crawling = moment(1.0, race(1.0, {}, {"sector": 1, "flag": 6}))
+    crawling.frame.speed_kmh = 8.0
+    assert engineer.update(crawling) == []
+    engineer.update(moment(2.0, race(2.0, {}, {"sector": 1, "flag": 0})))
+    racing = moment(3.0, race(3.0, {}, {"sector": 1, "flag": 6}))
+    assert kinds(engineer.update(racing)) == ["BLUE_FLAG"]
+
+
+def test_J3_no_wide_call_right_after_a_spin_or_a_hit():
+    # the same replay: the spin call, then "Wide at Indianapolis" twice for the same crash
+    from live_telemetry import Event
+    from seats.performance import PerformanceEngineer
+    seat = PerformanceEngineer()
+    assert seat.call_for_event(Event(kind="SPIN", sim_time=1045.2, speed_kmh=200.0, corner="Indianapolis"), 1) is not None
+    assert seat.call_for_event(Event(kind="OFF_TRACK", sim_time=1046.7, speed_kmh=40.0, corner="Indianapolis"), 2) is None
+    assert seat.call_for_event(Event(kind="OFF_TRACK", sim_time=1080.0, speed_kmh=150.0, corner="Arnage"), 3) is not None
+    # parked 25 s after the crash, the car crept onto the grass at 1 km/h: not "wide"
+    assert seat.call_for_event(Event(kind="OFF_TRACK", sim_time=1070.6, speed_kmh=1.0, corner="Indianapolis"), 5) is None
+    seat.saw_hit(1200.0)                         # 25 Sep night: hit at the Porsche Curves, then "Wide"
+    assert seat.call_for_event(Event(kind="OFF_TRACK", sim_time=1204.0, speed_kmh=90.0, corner="Porsche Curves"), 4) is None
+
+
 def test_H_no_spotter_in_the_garage_or_pits():
     spotter = Spotter()
     parked = replace(moment(0.0, race(0.0, me_changes={"in_pits": True}), nearby=near(0.0, (3.0, 0.0), (-3.0, 0.0))))

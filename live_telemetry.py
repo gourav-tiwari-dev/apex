@@ -1083,6 +1083,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 frame_events.append(contact)
                 if contact.kind == "CONTACT":
                     spin_detector.last_car_contact = contact.sim_time
+                if contact.kind in ("CONTACT", "IMPACT"):
+                    performance.saw_hit(contact.sim_time)
             for detector in detectors:
                 event = detector.update(frame)
                 if event:

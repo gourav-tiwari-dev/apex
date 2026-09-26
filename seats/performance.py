@@ -25,6 +25,12 @@ from balance import BalanceMeter, FIX
 # driving through the Porsche Curves, and on 23 Sep the model turned its "no braking" into
 # "No fucking braking at Arnage" - an instruction not to brake into a hairpin.
 SPOKEN_KINDS = {"SPIN", "OFF_TRACK", "LOCKUP", "SLIDE_CAUGHT"}
+# 25 Sep, 58-car race: the spin call, then "Wide at Indianapolis" twice for the same crash; 25 Sep
+# night: hit at the Porsche Curves, then "Wide at Porsche Curves. Reset." as if it were his error
+WIDE_AFTER_INCIDENT_S = 10.0
+# and 25 s after that crash, parked at 1 km/h, the car crept onto the grass: "Wide at Indianapolis".
+# Running wide happens at corner speed (Le Mans' slowest corners are ~65 km/h), not at a crawl
+WIDE_BELOW_KMH_IS_NOT_WIDE = 30.0
 SPIN_TTL_S = 10.0
 SLIDE_TTL_S = 4.0              # said while he still feels it, or not at all
 INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
@@ -315,8 +321,20 @@ class PerformanceEngineer:
         self.my_model = None
         self.balance = BalanceMeter()        # understeer / oversteer, from his own laps
         self.balance_said = set()            # corners already told about their balance
+        self.incident_at = None              # sim time of his last spin or hit
+
+    def saw_hit(self, sim_time):
+        """A contact with a car or a wall, told by the race loop (as the spin detector is)."""
+        self.incident_at = sim_time
 
     def call_for_event(self, event, event_id):
+        if event.kind == "SPIN":
+            self.incident_at = event.sim_time
+        elif event.kind == "OFF_TRACK" and event.speed_kmh < WIDE_BELOW_KMH_IS_NOT_WIDE:
+            return None                      # parked or crawling after a crash
+        elif event.kind == "OFF_TRACK" and self.incident_at is not None:
+            if 0 <= event.sim_time - self.incident_at < WIDE_AFTER_INCIDENT_S:
+                return None                  # the spin or the hit is the news, not "wide"
         return call_from_event(event, event_id)
 
     def update(self, moment):

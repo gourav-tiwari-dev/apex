@@ -164,3 +164,17 @@ pace gained/lost by sector.
   sweepers where two-pedal balance is a technique. No habit in the data: a cue would be noise.
 - Already in Apex: side-by-side (turned OFF by him), pace by corner (race model), threat behind
   (CLOSING_ALARM), attack moments (ATTACK_PLAN / STICK_IT). Debris sharing needs a server: out of scope.
+
+## 27 Sep (auto loop): after a crash - his mark "it doesn't know that I crashed and spun, my race is over"
+Found by reading all 12 of his marks against what Apex said before each (apex.db radio_log). This one was
+still open, from session 43 = tape_20260925_200154 (58-car multiclass: 18 Hyper, 19 LMP2, 25 GT3), which
+tools/tapes.py RACE_TAPES had left out (so every check skipped it; D6 "multiclass not testable" was wrong).
+Tape: 214 km/h at 1045 s, 6 km/h at 1050 s (Indianapolis), 0-9 km/h for a minute, P45 -> P62.
+Live he heard "Stay in the tow", "Wide at Indianapolis", then while stopped "Car behind's quicker out of
+Esses. Cover the inside into Tertre Rouge", "Over the radio budget", 3 blue flags in 6 s.
+Research: after a crash the engineer's first question is "Are you OK?" (Mercedes to Antonelli after his
+crash, sportskeeda.com "Kimi all good, all good Kimi"; standard pit-wall protocol).
+Built (replay of that tape, today's code): 1045.2 "You got hit and spun..." then 1051.8 "You OK? Car's
+stopped." and quiet. No "Wide" within 10 s of a spin or a hit, none below 30 km/h (parked on the grass),
+no blue flags below 60 km/h. Found on the way: RaceEngineer only read events on race-snapshot frames
+(5 a second), so the own-spin yellow rule rarely saw the spin; incidents are now read every frame.
