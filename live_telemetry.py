@@ -201,6 +201,42 @@ TAPE_PATH = "tape_60hz_clean.jsonl.gz"
 # Past it, template lines only. Push-to-talk is NOT capped (his call, 25 Sep: "I don't want it
 # to stop"): its spend is still charged here and logged, it just never refuses a question.
 BUDGET_PER_SESSION_RS = 10.0
+class ScriptedTalk:
+    """His voice for a replay: what he says and when, so orders can be tested on a real tape without
+    a race (26 Sep). script = [(laps_done, seconds_into_that_lap, words)], said once each, in order,
+    at the first race snapshot past that point. The game's lap count, the same one his follows.
+    laps_done = None: seconds is the sim time itself (tools/replay_orders.py aims at a known call)."""
+    def __init__(self, source, script):
+        self.source = source
+        self.script = list(script)   # said in the order written
+        self.lap_started = {}        # laps done -> sim time the game first showed it
+
+    def poll(self):
+        race = self.source.race
+        if race is None or race.me is None or not self.source.new_race:
+            return []
+        self.lap_started.setdefault(race.me.laps, race.sim_time)
+        heard = []
+        while self.script:
+            laps, into, words = self.script[0]
+            if laps is None:
+                if race.sim_time < into:
+                    break
+            else:
+                start = self.lap_started.get(laps)
+                if race.me.laps < laps or start is None or race.sim_time < start + into:
+                    break
+            self.script.pop(0)
+            heard.append(push_to_talk.Heard(words, 1.5, 0, confidence=-0.2))
+        return heard
+
+    def set_track_words(self, corner_names):
+        pass                         # no Whisper to prime: the words are already written
+
+    def close(self):
+        pass
+
+
 class ReplaySource:
     def __init__(self, speed, tape_path=TAPE_PATH):
         self.speed = speed
@@ -807,9 +843,10 @@ def contacts_by_car(conn, session_id):
 
 
 def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=False, persona=None, launch_id=None,
-                voice=None):
+                voice=None, script=None):
     """One LMU session, start to finish. Returns the database id of the session.
 
+    script:   replays only: what he says and when (see ScriptedTalk), no microphone, no coach.
     out_loud: speak through the speakers (default) or print lines (fast replays, tests).
     clean:    no swearing, for recordings other people will hear.
     persona:  who phrases the lines; tests pass a fake so no LLM call is ever made."""
@@ -890,8 +927,10 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     agent = None
     if not REPLAY:
         talk = push_to_talk.start_if_set_up()
+    elif script:
+        talk = ScriptedTalk(source, script)
     budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
-    if talk is not None:
+    if talk is not None and not REPLAY:
         agent = RaceAgent(budget, clean)      # after the budget: it spends from it (24 Sep crash)
         agent.orders = orders
     # one voice for the whole launch when apex.py passes it in: the cloned voice takes about
@@ -1079,7 +1118,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                         if governor.offer(ack):
                             desk.prepare(ack)
                         continue
-                    if needs_agent(heard.text) and source.race is not None and source.race.me is not None:
+                    if (agent is not None and needs_agent(heard.text) and source.race is not None
+                            and source.race.me is not None):
                         # a real question: the agent looks at a still picture of the race
                         snapshot = Snapshot(source.race, lap_count, real_lap_distance, current_corners,
                                             engineer, strategist, performance, racecraft, governor,
