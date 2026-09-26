@@ -380,14 +380,21 @@ def same_class_neighbours(race, model=None):
     return ahead, gap_ahead, behind, gap_behind
 
 
-def track_length(race):
+def track_length(race, model=None):
     """The lap in metres: the session's own figure. Live 25 Sep: the farthest car's distance
     stood in for it, and on lap 1 that is ~1.9 km of a 13.6 km lap, so a 20-minute race at Le Mans
-    looked 9.9 laps long and the fuel call said "short by 3.8 laps"."""
+    looked 9.9 laps long and the fuel call said "short by 3.8 laps".
+    Without the session's figure (tapes before 25 Sep), the longest lap distance seen all race
+    (the race model's clock) beats the farthest car now: on 24 Sep the farthest car was the
+    leader himself, 1.1 km from the line, so he looked to be on the line (26 Sep)."""
     length = getattr(race.session, "lap_length", None)
     if length and length > 1000:
         return length
-    return max([o.lap_dist for o in race.opponents] + [0.0])
+    farthest_now = max([o.lap_dist for o in race.opponents] + [0.0])
+    seen = model.lap_length if model is not None else None
+    if seen and seen > farthest_now:
+        return seen
+    return farthest_now
 
 
 def rolling_lap(model, key):
@@ -427,7 +434,7 @@ def laps_to_go(race, lap_time, model=None):
     # only once the leader's last lap of road is all racing: 5% into lap 2, so the window starts
     # after the launch (live 25 Sep, lap 1: the window still held formation-lap road and fuel said
     # "fine, push" at 0.3 laps spare; at 15% the lap-1 line fell back to his 4:23 standing start)
-    length = track_length(race)
+    length = track_length(race, model)
     clean = leader.laps >= 2 or (leader.laps == 1 and length > 1000 and leader.lap_dist > 0.05 * length)
     rolling = rolling_lap(model, "me" if leader is me else leader.id) if clean else None
     posted = [t for t in ((leader.last_lap, leader.best_lap) if leader is not me else (me.last_lap, me.best_lap)) if t and t > 0]
@@ -438,7 +445,7 @@ def laps_to_go(race, lap_time, model=None):
     leader_lap = next((t for t in candidates if t is not None and t > 0), None)
     if leader_lap is None:
         return None
-    lap_length = track_length(race)
+    lap_length = track_length(race, model)
     done = (leader.lap_dist / lap_length) if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None else 0.0
     to_line = (1.0 - min(max(done, 0.0), 1.0)) * leader_lap
     more = 0 if session.time_remaining <= to_line else math.ceil((session.time_remaining - to_line) / leader_lap)
@@ -450,7 +457,7 @@ def laps_to_go(race, lap_time, model=None):
     return max(0, leader_finishes_on - me.laps_behind_leader - me.laps)
 
 
-def leader_margin(race):
+def leader_margin(race, model=None):
     """Seconds between the clock running out and the leader's next time over the line
     (> 0: the clock runs out first, so the leader's current lap is the last). None when it
     cannot be known. Live 25 Sep it was ~2 s: the leader pushed, crossed with time left, and a
@@ -462,7 +469,7 @@ def leader_margin(race):
     if leader is None:
         return None
     leader_lap = next((t for t in (leader.last_lap, leader.best_lap) if t and t > 0), None)
-    lap_length = track_length(race)
+    lap_length = track_length(race, model)
     if leader_lap is None or lap_length < 1000:
         return None
     to_line = (1.0 - min(max(leader.lap_dist / lap_length, 0.0), 1.0)) * leader_lap

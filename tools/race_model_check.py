@@ -72,9 +72,13 @@ def d5_laps_to_go():
     from race_state import laps_to_go
     from race_model import RaceModel
     checked, right = 0, 0
+    # mid-lap too (26 Sep): the 24 Sep tape counted a lap too many between the lines, where the
+    # leader himself was the farthest car and stood in for the lap length. Sampled every 20 s
+    mid_checked, mid_right = 0, 0
     for tape in RACE_TAPES:
-        rows, last_laps, finish = [], None, None
+        rows, mid_rows, last_laps, finish = [], [], None, None
         model = None
+        next_sample = None
         for s in snapshots(tape):
             if model is None:
                 model = RaceModel(lap_length=s.session.lap_length if (getattr(s.session, "lap_length", None) or 0) > 1000 else None)
@@ -82,14 +86,27 @@ def d5_laps_to_go():
             me = s.me
             if me.finish_status == 1 and finish is None:
                 finish = me.laps
+            my_lap = me.last_lap if me.last_lap > 0 else None
             if last_laps is not None and me.laps > last_laps and me.finish_status == 0:
-                rows.append((me.laps, laps_to_go(s, me.last_lap if me.last_lap > 0 else None, model)))
+                rows.append((me.laps, laps_to_go(s, my_lap, model)))
+            racing = s.session.game_phase == 5 and me.finish_status == 0 and me.laps >= 1
+            if racing and (next_sample is None or s.sim_time >= next_sample):
+                next_sample = s.sim_time + 20.0
+                mid_rows.append((me.laps, laps_to_go(s, my_lap, model)))
             last_laps = me.laps
         if finish is not None:
             for done, predicted in rows:
                 checked += 1
                 right += predicted == finish - done
-    return checked > 0 and right == checked, f"laps to go at his line crossings: {right}/{checked} exact (tapes that reach his flag)"
+            for done, predicted in mid_rows:
+                mid_checked += 1
+                mid_right += predicted == finish - done
+    # 90%, not 100%: mid-lap is a forecast. The 9 misses left on 26 Sep: 7 are the 24 Sep tape before
+    # it had seen a whole lap (joined mid-race, an old tape with no lap length), 2 a close call (1.98
+    # laps of clock for the leader; he took the flag 7 s after the clock ran out)
+    ok = checked > 0 and right == checked and mid_right >= 0.90 * mid_checked
+    return ok, (f"laps to go at his line crossings: {right}/{checked} exact, mid-lap every 20 s: "
+                f"{mid_right}/{mid_checked} exact (bar 90%; tapes that reach his flag)")
 
 
 def d8_cost():

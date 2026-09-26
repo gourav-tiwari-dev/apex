@@ -208,7 +208,7 @@ class Strategist:
             laps_left = self.laps_left(race)
             if racing and laps_left is not None and laps_left <= 1 and not self.last_lap_called:
                 self.last_lap_called = True
-                margin = leader_margin(race)
+                margin = leader_margin(race, self.model)
                 words = "Last lap. Bring it home."
                 if margin is not None and 0 <= margin < CLOSE_CALL_S:
                     words = "Last lap, unless the leader beats the clock. I'll tell you."
