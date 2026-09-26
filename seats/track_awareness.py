@@ -207,6 +207,10 @@ class TrackAwareness:
         key = ("hazard", car.id)
         if not self.fresh(key, now, HAZARD_REARM_S):
             return []
+        # and one per place: two cars of one crash were two calls 0.2 s apart (replay of 23 Sep,
+        # 1248.0 / 1248.2 before Mulsanne Chicane 2, 27 Sep)
+        if where and not self.fresh(("hazard_at", where), now, HAZARD_REARM_S):
+            return []
         what = "Car stopped" if stopped else "Slow car"
         text = f"{what} ahead, {where}." if where else f"{what} ahead."
         return [self.hazard("CAR_STOPPED_AHEAD" if stopped else "SLOW_CAR_AHEAD", text, now,

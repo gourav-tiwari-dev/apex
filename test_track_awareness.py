@@ -97,6 +97,19 @@ def test_a_hypercar_closing_behind_gets_one_call():
     assert said[0].template.startswith("Hypercar behind, closing. On you in about ")
 
 
+def test_two_cars_stopped_at_one_place_is_one_call():
+    # replay of 23 Sep (27 Sep): "Car stopped ahead, before Mulsanne Chicane 2." at 1248.0 and again
+    # at 1248.2 for the second car of the same crash; the same at Mulsanne Chicane 1 (1226 / 1227)
+    s = seat()
+    learn_normal(s)
+    first = look(s, 1248.0, [car(3, 1300.0, speed=5.0)])
+    both = look(s, 1248.2, [car(3, 1300.0, speed=5.0), car(4, 1310.0, speed=3.0)])
+    assert kinds(first) == ["CAR_STOPPED_AHEAD"]
+    assert both == []
+    later = look(s, 1248.0 + 25.0, [car(5, 1305.0, speed=4.0)])        # a new stop there later
+    assert kinds(later) == ["CAR_STOPPED_AHEAD"]
+
+
 def test_three_wide_is_said_once_for_a_pack_not_once_per_trio():
     # replay of 24 Sep (27 Sep): 22 "Three wide ahead" in one race, 18 of them really three wide
     # (4 m+ apart sideways), but in clumps: 5 between 1154 and 1166 s as one pack jostled and made
