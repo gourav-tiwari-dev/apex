@@ -119,13 +119,40 @@ def fix_mishearing(text):
 
 # Whisper's own rule: a transcription whose mean log-probability is below -1.0 is a guess
 # (its logprob_threshold). Live 25 Sep: "3-1-1, Faucet's down" went to the coach and came back
-# as a made-up fight call. A guess gets "say again" instead. GUESSED for his voice: the value
-# is logged with every question to tune it.
-GARBLED_BELOW = -1.0
+# as a made-up fight call. A guess gets "say again" instead.
+# Tuned on his 26 logged questions and marks (26 Sep, test_push_to_talk_5b.HIS_LOGGED_WORDS):
+# none scored below -1.0, yet 4 were garbled ("3, 6, 1..." -0.94, "March, Good Ball on the
+# Warning." -0.52) and the coach answered them all. No clean one scored below -0.9. Between -0.9
+# and -0.5 the score alone cannot tell ("qualifying is fucked up." -0.85 was clean), but every
+# clean one there carried a racing word and no garbled one did. A mark is a note, never a guess.
+GARBLED_BELOW = -0.9
+UNSURE_BELOW = -0.5
+RACING_WORDS = ("gap", "gaps", "ahead", "behind", "leader", "fuel", "energy", "tyre", "tyres", "tire",
+                "tires", "plan", "position", "place", "damage", "fight", "fighting", "catch", "losing",
+                "time", "lap", "laps", "pace", "box", "pit", "push", "save", "sector", "brake", "brakes",
+                "corner", "qualifying", "rain", "flag", "penalty", "overtake", "pass", "defend", "attack",
+                "car", "cars", "faster", "slower", "quick", "race", "finish", "points", "performance")
+
+
+def has_racing_word(text):
+    for word in clean(text).split():
+        if word in RACING_WORDS:
+            return True
+        if len(word) >= 2 and word[0] == "p" and word[1:].isdigit():
+            return True               # "p5"
+    return False
 
 
 def garbled(text, confidence):
-    return not text.strip() or (confidence is not None and confidence < GARBLED_BELOW)
+    if not text.strip():
+        return True
+    if confidence is None or is_mark(text):
+        return False
+    if confidence < GARBLED_BELOW:
+        return True
+    if confidence < UNSURE_BELOW:
+        return not has_racing_word(text)
+    return False
 
 
 def matched(text):

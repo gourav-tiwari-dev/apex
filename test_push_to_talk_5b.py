@@ -70,6 +70,46 @@ def test_a_guessed_transcription_gets_say_again_not_a_made_up_answer():
     assert garbled("   ", None)
 
 
+# every question and mark he said with a confidence logged (apex.db, sessions 44-50, 25 Sep):
+# (Whisper's mean log-probability, what it wrote, garbled?). Garbled = no sense to be made of it
+HIS_LOGGED_WORDS = [
+    (-0.98, "We will tell place in wrong.", True),
+    (-0.94, "3, 6, 1...", True),
+    (-0.85, "qualifying is fucked up.", False),
+    (-0.78, "Part, we will tell the relation wrong again.", True),
+    (-0.76, "Mark no answers and collisions.", False),
+    (-0.75, "Mark, wrong lap time, slant below, say again.", False),
+    (-0.74, "No answers on questions, smart.", True),       # half heard: asking again is right
+    (-0.52, "March, Good Ball on the Warning.", True),
+    (-0.50, "Isn't that fuel?", False),
+    (-0.48, "Mark, Apex isn't aware about qualifying.", False),
+    (-0.44, "How are the tyres?", False),
+    (-0.41, "What's the car behind doing?", False),
+    (-0.40, "Mark, it misread that gap ahead which was 9 seconds to know, far ahead, you are", False),
+    (-0.39, "Mark, unable to detect spin.", False),
+    (-0.36, "What's the plan?", False),
+    (-0.34, "Any damage on the car?", False),
+    (-0.34, "Is it affecting our performance?", False),
+    (-0.34, "Where am I losing time?", False),
+    (-0.31, "Anyone fighting ahead?", False),
+    (-0.31, "What's the gap ahead?", False),
+    (-0.31, "When will we catch the next car?", False),
+    (-0.30, "What's the plan?", False),
+    (-0.26, "Is someone fighting ahead?", False),
+    (-0.24, "Where am I losing the most amount of time.", False),
+    (-0.23, "What position can we get by the end?", False),
+    (-0.20, "What's the leader doing?", False),
+]
+
+
+def test_say_again_on_his_own_logged_words():
+    # 26 Sep: under the old -1.0 rule none of these got "say again", and the coach answered all
+    # four garbled ones. Now every garbled one is asked again and none of his real questions is
+    from answers import garbled
+    for confidence, words, is_garbled in HIS_LOGGED_WORDS:
+        assert garbled(words, confidence) == is_garbled, (confidence, words)
+
+
 def test_a_new_push_to_talk_opens_the_controller_already_plugged_in():
     # live 25 Sep: SDL announces a controller once per run, so from the second session on the pad
     # was never opened and push-to-talk was deaf for the whole race
