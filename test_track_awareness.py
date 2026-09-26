@@ -88,11 +88,40 @@ def test_three_wide_ahead_says_stay_out_of_it():
 
 def test_a_hypercar_closing_behind_gets_one_call():
     s = seat()
-    hyper = car(9, 900.0, speed=300.0, car_class="Hypercar")       # 100 m back at 83 m/s: 1.2 s
+    hyper = car(9, 900.0, speed=300.0, car_class="Hypercar")       # 100 m back, 13.9 m/s quicker
     calls = look(s, 1.0, [hyper])
     assert kinds(calls) == ["FASTER_CLASS_BEHIND"]
-    assert calls[0].template.startswith("Hypercar behind, 1.2 seconds. Hold your line")
+    assert calls[0].template.startswith("Hypercar behind, closing. On you in about 7 seconds. Hold your line")
     assert look(s, 1.2, [hyper]) == []
+
+
+def test_a_faster_class_car_is_called_when_it_will_arrive_not_when_it_is_first_near():
+    # replay of the 58-car race (27 Sep): "LMP2 behind, 2.5 seconds" three times, and each LMP2
+    # took 39-50 s to reach him (it closed ~0.05 s a second). His mark: "LMP do not detected".
+    # Now the call comes about 15 s before it arrives, from how fast the gap is really shrinking
+    s = seat()
+    said = []
+    for step in range(0, 201):                                     # 40 s, 5 snapshots a second
+        t = step * 0.2
+        me_at = 2000.0 + 60.0 * t                                  # me at 60 m/s
+        lmp2 = car(9, 1850.0 + 63.0 * t, speed=63.0 * 3.6, car_class="LMP2")   # 150 m back, 3 m/s quicker
+        for call in look(s, t, [lmp2], my_lap_dist=me_at, speed=60.0 * 3.6):
+            said.append((round(t, 1), call.kind, call.template))
+    assert [kind for _, kind, _ in said] == ["FASTER_CLASS_BEHIND"]
+    when, _, words = said[0]
+    assert 33.0 <= when <= 37.0                                    # it arrives at 50 s
+    assert words.startswith("LMP2 behind, closing. On you in about 15 seconds.")
+
+
+def test_a_faster_class_car_that_is_not_closing_is_not_called():
+    # the same race, 671.8 s: "LMP2 behind, 1.5 seconds" and it never came by
+    s = seat()
+    said = []
+    for step in range(0, 51):
+        t = step * 0.2
+        lmp2 = car(9, 1900.0 + 60.0 * t, speed=60.0 * 3.6, car_class="LMP2")   # 100 m back, same speed
+        said += look(s, t, [lmp2], my_lap_dist=2000.0 + 60.0 * t, speed=60.0 * 3.6)
+    assert said == []
 
 
 def test_two_hypercars_fighting_behind():

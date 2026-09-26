@@ -52,6 +52,19 @@ def test_a_seat_cannot_talk_again_inside_its_cooldown():
     assert governor.step(15.1, in_corner=False).kind == "THROTTLE_LIFT"
 
 
+def test_a_spotter_hazard_is_not_dropped_for_words_another_car_had():
+    # replay of the 58-car race (27 Sep): the second and third "LMP2 behind..." calls, for other
+    # cars, were dropped as "said_recently". The spotter's hazards are kept apart per car already
+    governor = Governor()
+    first = Call(seat="spotter", kind="FASTER_CLASS_BEHIND", sim_time=100.0, priority=SPOTTER, ttl=8.0,
+                 conclusion="LMP2 behind, closing.", template="LMP2 behind, closing.", immediate=True)
+    assert governor.offer(first) is True
+    assert governor.step(100.0, in_corner=False) is first
+    second = Call(seat="spotter", kind="FASTER_CLASS_BEHIND", sim_time=160.0, priority=SPOTTER, ttl=8.0,
+                  conclusion="LMP2 behind, closing.", template="LMP2 behind, closing.", immediate=True)
+    assert governor.offer(second) is True
+
+
 def test_same_decisions_give_the_same_hash():
     hashes = []
     for _ in range(2):

@@ -69,7 +69,7 @@ def units(kinds=None):
     the engineer's maps each unit to the mood Max says it in. The engineer units are rendered
     twice: in the standard voice and in Max's."""
     from seats.racecraft import BRILLIANT, SOLID, MOVE_WORDS, ALARM_MAX_GAP_S, FIGHT_COST_S
-    from seats.track_awareness import FASTER_CLASS_WARN_S
+    from seats.track_awareness import FASTER_CLASS_ARRIVES_S
     corners = corner_names()
     places = corners + [f"before {name}" for name in corners]
 
@@ -81,8 +81,10 @@ def units(kinds=None):
         spotter.add(f"{what} ahead.")
         spotter |= {f"{what} ahead, {where}." for where in places}
     for spoken in ("Hypercar", "LMP2", "Faster car"):
-        spotter |= {f"{spoken} behind, {gap}." for gap in gap_words(0.1, FASTER_CLASS_WARN_S + 0.5)}
+        spotter.add(f"{spoken} behind, closing.")
+        spotter.add(f"{spoken} right behind you.")
         spotter.add(f"Two {spoken}s fighting behind.")
+    spotter |= {f"On you in about {n} seconds." for n in range(1, int(FASTER_CLASS_ARRIVES_S) + 1)}
 
     # Max's sentences, by the kind of call that says them: each is rendered in THAT call's
     # mood (voice.mood_of), the mood a live render of the whole line would get, so a joined

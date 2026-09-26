@@ -13,7 +13,11 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RACE_TAPES = ["tape_20260923_201605.jsonl.gz", "tape_20260924_202800.jsonl.gz",
               "tape_20260925_123131.jsonl.gz", "tape_20260925_144141.jsonl.gz",
               # 25 Sep night: standing start + formation lap, timed race, the leader took the flag first
-              "tape_20260925_235830.jsonl.gz"]
+              "tape_20260925_235830.jsonl.gz",
+              # added 27 Sep, they had been left out: the 58-car multiclass race (18 Hyper, 19 LMP2,
+              # 25 GT3; he crashed out at Indianapolis, no flag) and the warning-lobby race (joined
+              # late, alone on track, P13 at the flag)
+              "tape_20260925_200154.jsonl.gz", "tape_20260925_223404.jsonl.gz"]
 
 
 def snapshots(tape):

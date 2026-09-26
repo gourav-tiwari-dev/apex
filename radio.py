@@ -136,7 +136,9 @@ class Governor:
                 return False
             call = adjusted
         reason = self.hold_reason(call)
-        if reason is None and not (call.urgent or call.asked) and call.template:
+        # the spotter's hazards are kept apart per car by track awareness itself: the same words for
+        # another car are news (27 Sep, 58-car race: two "LMP2 behind" calls dropped as said_recently)
+        if reason is None and not (call.urgent or call.asked) and call.template and call.seat != "spotter":
             said = self.said_at.get(call.template)
             if said is not None and call.sim_time - said < SAME_WORDS_S:
                 reason = "said_recently"
