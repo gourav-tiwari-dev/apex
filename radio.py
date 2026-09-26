@@ -200,6 +200,10 @@ class Governor:
         kept = []
         for call in self.pending:
             reason = self.hold_reason(call)
+            # an order he gave after this call was queued (26 Sep): it waited for a straight or
+            # a cooldown, and "no coaching" came in meanwhile
+            if reason is None and self.orders is not None and self.orders.forbids(call):
+                reason = "his_order"
             if reason is None:
                 kept.append(call)
             else:

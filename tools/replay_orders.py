@@ -26,20 +26,38 @@ from tapes import RACE_TAPES
 
 LEAD = 5.0      # seconds between his order and the call it should stop
 
-# (name, what he says, the calls it stops, the broken ones among them)
+def fuel_verdict(row):
+    """"box" or "short" for a fuel line that means the car won't make the flag, else None."""
+    line = row[4]
+    try:
+        verdict = json.loads(row[5] or "{}").get("verdict")
+    except ValueError:
+        verdict = None
+    if verdict == "box" or line.startswith("Box") or "Box this lap or you stop" in line:
+        return "box"
+    if verdict in ("save", "short"):
+        return "short"
+    return None
+
+
+def broken_under_push(row):
+    # only the fuel news that ends the race gets through a push order (orders.py)
+    return row[1] == "FUEL" and fuel_verdict(row) is None
+
+
+# (name, what he says, the calls it stops, the broken ones among them: row -> True)
 ORDERS = [
     ("no coaching", "No more coaching, I know the corners.", COACHING_KINDS,
-     lambda kind, line: kind in COACHING_KINDS),
-    ("we push", "Don't give me that bullshit, we push, no holding back.", {"FUEL"},
-     lambda kind, line: kind == "FUEL" and not line.startswith(("You said push", "Box"))),
+     lambda row: row[1] in COACHING_KINDS),
+    ("we push", "Don't give me that bullshit, we push, no holding back.", {"FUEL"}, broken_under_push),
     ("fight everyone", "Fight everyone, nobody gets past.", {"FIGHT_COST"},
-     lambda kind, line: kind == "FIGHT_COST" and "settle" in line.lower()),
+     lambda row: row[1] == "FIGHT_COST" and "settle" in row[4].lower()),
     ("no gaps", "Don't tell me the gaps.", {"GAP_REPORT"},
-     lambda kind, line: kind == "GAP_REPORT"),
+     lambda row: row[1] == "GAP_REPORT"),
 ]
 # bring it home is a pace order like push: its own run
 BRING_HOME = ("bring it home", "Bring it home, no risks.", {"ATTACK_PLAN"},
-              lambda kind, line: kind == "ATTACK_PLAN")
+              lambda row: row[1] == "ATTACK_PLAN")
 
 
 class NoModel:
@@ -95,8 +113,9 @@ def check_tape(tape, orders, tag):
         aimed.append((name, last, kinds, broken))
     if not script:
         return [(tag, name, "not tested", "", "") for name, *_ in aimed], []
-    # back to normal once the silenced calls have had time to show; before the race ends
-    normal = max(last + 60.0, last + (end - last) * 0.5)
+    # back to normal once the silenced calls have had time to show, and always before the race
+    # ends (25 Sep 12:31 ends 24 s after its last order: 60 s later was past the end of the tape)
+    normal = last + min(60.0, (end - last) * 0.5)
     script.append((None, normal, "Back to normal."))
     ordered = replay(tape, script, "orders")
     acks = [r for r in ordered if r[1] == "ANSWER_ORDER"]
@@ -115,11 +134,18 @@ def check_tape(tape, orders, tag):
         i += 1
         would = [r for r in said if r[1] in kinds and start <= r[0] < normal_at]
         stood = [r for r in ordered if start <= r[0] < normal_at]
-        bad = [r for r in spoken_unasked(stood) if broken(r[1], r[4])]
-        stopped = sum(1 for r in stood if r[3] == "his_order" and r[1] in kinds)
-        boxes = [r for r in spoken_unasked(stood) if r[1] == "FUEL"]
-        if name == "we push" and len(boxes) > 1:
-            failures.append(f"{tape}: box said {len(boxes)} times under 'we push'")
+        bad = [r for r in spoken_unasked(stood) if broken(r)]
+        # a dropped call is logged with its reason as the status (live_telemetry.log_dropped_calls)
+        stopped = sum(1 for r in stood if r[2] == "his_order" and r[1] in kinds)
+        if name == "we push":
+            # short and box each said once, then it's his call: never nag
+            said_verdicts = collections.Counter()
+            for r in spoken_unasked(stood):
+                if r[1] == "FUEL":
+                    said_verdicts[fuel_verdict(r)] += 1
+            for verdict, times in said_verdicts.items():
+                if verdict is not None and times > 1:
+                    failures.append(f"{tape}: fuel '{verdict}' said {times} times under 'we push'")
         for r in bad:
             failures.append(f"{tape}: {name}: {r[0]:.1f}s {r[1]} {r[4]!r}")
         report.append((tag, name, f"{len(would)} as raced", f"{stopped} stopped", f"{len(bad)} broken"))

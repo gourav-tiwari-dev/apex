@@ -73,6 +73,17 @@ def plain(text):
     return " ".join("".join(c if c.isalnum() or c == " " else " " for c in text.lower().replace("'", "")).split())
 
 
+def race_ending_fuel(call):
+    """"box" or "short" when this fuel call means the car will not make the flag at this pace,
+    None otherwise (fine, tight, saving). Those two get through a push order, once each."""
+    verdict = call.facts.get("verdict")
+    if verdict == "box" or (call.template or "").startswith("Box"):
+        return "box"
+    if verdict in ("save", "short"):
+        return "short"
+    return None
+
+
 @dataclass
 class Order:
     topic: str
@@ -141,30 +152,54 @@ class StandingOrders:
         (maybe reworded) otherwise. Safety and race control are never touched."""
         if call.asked:
             return call                      # what he asked for, he gets
-        pace = self.get("pace")
-        if call.kind == "FUEL" and pace == "push":
-            if not (call.template or "").startswith("Box"):
-                return None                  # tight / save / saving: he said push
-            key = ("pace", "box")
+        verdict = race_ending_fuel(call) if call.kind == "FUEL" else None
+        if verdict is not None and self.get("pace") == "push":
+            # what his order was said back with: "I'll only come back on fuel if it won't make
+            # the flag" (replay of 25 Sep 12:31: "short by 0.1 laps" was silenced under push)
+            key = ("pace", verdict)
             if key in self.cost_said:
                 return None                  # said once; his call now
             self.cost_said.add(key)
             short = call.facts.get("spare_laps")
-            words = (f"You said push, your call. Straight: it won't make the flag, short by {short} laps. "
-                     "Box this lap or you stop.")
+            if verdict == "box":
+                words = (f"You said push, your call. Straight: it won't make the flag, short by {short} laps. "
+                         "Box this lap or you stop.")
+            else:
+                words = (f"You said push, your call. Straight: at this pace it won't make the flag, short by "
+                         f"{short} laps. Lift and coast in the big stops, or box.")
             call.template = call.conclusion = words
             return call
-        if call.kind in COACHING_KINDS and self.get("coaching") == "off":
-            return None
-        if call.kind == "GAP_REPORT" and self.get("gaps") == "off":
-            return None
-        if call.kind == "ATTACK_PLAN" and pace == "bring_home":
-            return None
         if call.kind == "FIGHT_COST" and self.get("fight") == "fight":
             # he said fight: the call keeps its facts but loses the "settle" option
             words = (call.template or "").replace(" Commit or settle.", " Commit.").replace(" this lap or settle in.", " this lap.")
             call.template = call.conclusion = words
+        if self.forbids(call):
+            return None
         return call
+
+    def forbids(self, call):
+        """True when an order says this call must not go out. Changes nothing, so the Governor can
+        ask again about calls already waiting when an order arrives (replay of 23 Sep, 26 Sep:
+        "Lap 1: survive it" was queued in the same frame as "no more coaching" and still went out)."""
+        if call.asked:
+            return False
+        pace = self.get("pace")
+        words = call.template or ""
+        if call.kind == "FUEL" and pace == "push":
+            # fine / tight / saving: he said push. Short or box gets through: they end the race
+            if words.startswith("You said push"):
+                return False
+            return race_ending_fuel(call) is None
+        if call.kind in COACHING_KINDS and self.get("coaching") == "off":
+            return True
+        if call.kind == "GAP_REPORT" and self.get("gaps") == "off":
+            return True
+        if call.kind == "ATTACK_PLAN" and pace == "bring_home":
+            return True
+        if call.kind == "FIGHT_COST" and self.get("fight") == "fight":
+            # still offers "settle": it was worded before he said fight
+            return "settle" in words.lower()
+        return False
 
     def gaps_every_lap(self):
         return self.get("gaps") == "every_lap"

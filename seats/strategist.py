@@ -311,7 +311,8 @@ class Strategist:
             self.box_said_lap = moment.lap_count
         words = fuel_words(picture)
         fuel_call = call("FUEL", words, now, {"spare_laps": abs(picture["spare_laps"]),
-                                             "laps_left": picture["laps_left"]}, words, priority=ENGINEER)
+                                             "laps_left": picture["laps_left"], "verdict": verdict},
+                         words, priority=ENGINEER)
         fuel_call.immediate = bad            # save / box are not held for the talk budget: they end races
         return [fuel_call]
 
@@ -381,6 +382,7 @@ class Strategist:
         if state == self.last_fuel_state:
             return None                      # only speak when the picture changes
         self.last_fuel_state = state
+        facts["verdict"] = state             # his "we push" order lets "short" through (orders.py)
         return call("FUEL", conclusion, now, facts, template)
 
     def tyre_check(self, me, now):

@@ -35,6 +35,30 @@ def test_push_silences_lift_and_coast_and_says_a_real_box_once_as_his_call():
     assert orders.adjust(fuel_call("Box this lap for fuel. Fuel won't make the flag, short by 0.8 laps.", 0.8)) is None
 
 
+def test_push_still_hears_once_that_the_fuel_will_not_make_the_flag():
+    # replay of 25 Sep 12:31 (26 Sep): under "we push" the radio stayed silent on "short by 0.1
+    # laps", yet his order was said back as "I'll only come back on fuel if it won't make the flag"
+    orders = StandingOrders()
+    orders.hear("we push, no holding back", 4, 500.0)
+    short = fuel_call("Fuel's short by 0.1 laps. Lift and coast every braking zone and short-shift, "
+                      "or you won't make it.", 0.1)
+    short.facts["verdict"] = "save"
+    said = orders.adjust(short)
+    assert said is short
+    assert said.template.startswith("You said push, your call.")
+    assert "short by 0.1 laps" in said.template
+    again = fuel_call("Fuel's short by 0.2 laps. Lift and coast every braking zone and short-shift, "
+                      "or you won't make it.", 0.2)
+    again.facts["verdict"] = "save"
+    assert orders.adjust(again) is None                  # said once: his call now
+    at_the_line = fuel_call("We're short on fuel. Lift and coast every braking zone.", 0.3)
+    at_the_line.facts["verdict"] = "short"
+    assert orders.adjust(at_the_line) is None            # the same news from the other check
+    box = fuel_call("Box this lap for fuel. Fuel won't make the flag, short by 0.7 laps.", 0.7)
+    box.facts["verdict"] = "box"
+    assert orders.adjust(box) is box                     # worse news: said once more
+
+
 def test_what_he_asks_for_he_gets_whatever_the_orders():
     orders = StandingOrders()
     orders.hear("no more coaching", 4, 500.0)
@@ -52,6 +76,29 @@ def test_the_governor_drops_what_his_orders_say_not_to_say():
     governor.orders.hear("we push", 4, 500.0)
     assert governor.offer(fuel_call("Fuel's tight, 0.3 laps spare.")) is False
     assert governor.dropped[-1][1] == "his_order"
+
+
+def test_a_call_already_waiting_when_he_gives_an_order_does_not_go_out():
+    # replay of 23 Sep with his orders scripted (26 Sep): "Lap 1: survive it" was queued in the
+    # same frame as "no more coaching" and still went out right after "Copy. No more coaching"
+    governor = Governor()
+    governor.orders = StandingOrders()
+    habit = Call(seat="memory", kind="LAP_ONE_HABIT", sim_time=106.0, priority=MEMORY, ttl=30.0,
+                 conclusion="Lap 1: survive it.", template="Lap 1: survive it.")
+    assert governor.offer(habit) is True
+    governor.orders.hear("no more coaching", 1, 106.0)
+    assert governor.step(106.1, in_corner=False) is None
+    assert governor.dropped[-1] == (habit, "his_order")
+
+
+def test_a_box_call_already_waiting_still_goes_out_under_push():
+    # the one fact that beats a push order: running out of fuel ends the race
+    governor = Governor()
+    governor.orders = StandingOrders()
+    box = fuel_call("Box this lap for fuel. Fuel won't make the flag, short by 0.7 laps.", 0.7)
+    assert governor.offer(box) is True
+    governor.orders.hear("we push", 4, 100.0)
+    assert governor.step(100.5, in_corner=False) is box
 
 
 def test_back_to_normal_clears_and_the_coach_sees_the_history():
