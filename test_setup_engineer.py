@@ -24,6 +24,35 @@ def test_repeated_rear_snaps_move_the_bias_forward_with_their_evidence(tmp_path)
     assert advice[0]["evidence"] == ids
 
 
+def add_timed(conn, session, kind, corner, sim_time):
+    cur = conn.execute("INSERT INTO events (session_id, kind, sim_time, speed_kmh, corner, lap_dist, lap_count) "
+                       "VALUES (?, ?, ?, 150.0, ?, 100.0, 1)", (session, kind, sim_time, corner))
+    return cur.lastrowid
+
+
+def test_the_car_that_hit_him_is_not_a_setup_problem(tmp_path):
+    # replay of 25 Sep night (27 Sep): punted at the Porsche Curves; the snaps, lock-up and rejoin
+    # wheelspin of that one incident told him to move the brake bias and go up on TC
+    conn, session, _ = db_with(tmp_path, [])
+    add_timed(conn, session, "CONTACT", "Porsche Curves", 397.8)
+    add_timed(conn, session, "REAR_SNAP", "Porsche Curves", 398.2)
+    add_timed(conn, session, "LOCKUP", "Porsche Curves", 400.6)
+    add_timed(conn, session, "REAR_SNAP", "Porsche Curves", 402.1)
+    add_timed(conn, session, "SPIN", "Porsche Curves", 402.4)
+    add_timed(conn, session, "WHEELSPIN", "Porsche Curves", 410.4)
+    add_timed(conn, session, "REAR_SNAP", "Mulsanne Chicane 1", 521.0)
+    add_timed(conn, session, "REAR_SNAP", "Mulsanne Chicane 1", 764.8)
+    assert [a["kind"] for a in advice_for(conn, session)] == ["NO_CHANGE"]    # 2 real snaps
+
+
+def test_a_snap_that_became_his_own_spin_still_counts(tmp_path):
+    conn, session, _ = db_with(tmp_path, [])
+    for when in (100.0, 400.0, 700.0):
+        add_timed(conn, session, "REAR_SNAP", "Arnage", when)
+        add_timed(conn, session, "SPIN", "Arnage", when + 0.3)        # no car, no wall: the car did it
+    assert [a["kind"] for a in advice_for(conn, session)] == ["BIAS_FORWARD"]
+
+
 def test_two_of_anything_is_not_a_setup_problem(tmp_path):
     conn, session, _ = db_with(tmp_path, [("LOCKUP", "T1 Rettifilo")] * 2)
     assert [a["kind"] for a in advice_for(conn, session)] == ["NO_CHANGE"]

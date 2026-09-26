@@ -10,11 +10,38 @@ intervention, and brake_bias_rear is the share of braking on the rear axle.
 """
 ENOUGH_TO_ACT = 3            # a problem seen fewer times than this is not a setup problem
 MIN_LAPS_FOR_ALL_CLEAR = 5   # "the car is fine" needs this many laps to mean anything
+# What an incident causes says nothing about the car. Replay of 25 Sep night (27 Sep): punted at
+# the Porsche Curves, and that one hit made 2 of the 6 snaps, a lock-up and the rejoin wheelspin
+# behind "move the brake bias forward". Events before his own spin still count: the snap is the car.
+AFTER_HIT_S = 15.0           # a car or a wall: the car was upset and off line this long (spun 4.6 s after)
+AFTER_SPIN_S = 10.0          # rejoining from a stop spins the wheels whatever the setup
+
+
+def incident_windows(conn, session_id):
+    windows = []
+    for (sim_time,) in conn.execute("SELECT sim_time FROM events WHERE session_id = ? AND kind IN ('CONTACT', 'IMPACT')",
+                                    (session_id,)):
+        windows.append((sim_time, sim_time + AFTER_HIT_S))
+    for (sim_time,) in conn.execute("SELECT sim_time FROM events WHERE session_id = ? AND kind = 'SPIN'",
+                                    (session_id,)):
+        windows.append((sim_time, sim_time + AFTER_SPIN_S))
+    return windows
 
 
 def events_of(conn, session_id, kind):
-    return conn.execute("SELECT id, corner FROM events WHERE session_id = ? AND kind = ?",
-                        (session_id, kind)).fetchall()
+    """The events of this kind that say something about the car: none an incident caused."""
+    windows = incident_windows(conn, session_id)
+    rows = []
+    for event_id, corner, sim_time in conn.execute("SELECT id, corner, sim_time FROM events "
+                                                   "WHERE session_id = ? AND kind = ?", (session_id, kind)):
+        caused = False
+        for start, end in windows:
+            if start <= sim_time <= end:
+                caused = True
+                break
+        if not caused:
+            rows.append((event_id, corner))
+    return rows
 
 
 def corners_named(rows):
