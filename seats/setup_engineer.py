@@ -8,6 +8,8 @@ when the laps prove it.
 GUESSED directions until checked in the game: a higher TC or ABS number means more
 intervention, and brake_bias_rear is the share of braking on the rear axle.
 """
+import sqlite3
+
 ENOUGH_TO_ACT = 3            # a problem seen fewer times than this is not a setup problem
 MIN_LAPS_FOR_ALL_CLEAR = 5   # "the car is fine" needs this many laps to mean anything
 # What an incident causes says nothing about the car. Replay of 25 Sep night (27 Sep): punted at
@@ -44,12 +46,30 @@ def events_of(conn, session_id, kind):
     return rows
 
 
+def step_words(now):
+    """", 4 to 5" when the setting he ran is known, nothing otherwise."""
+    if now is None:
+        return ""
+    return f", {now} to {now + 1}"
+
+
 def corners_named(rows):
     counts = {}
     for _, corner in rows:
         counts[corner] = counts.get(corner, 0) + 1
     worst = sorted(counts.items(), key=lambda item: -item[1])
     return ", ".join(f"{corner} ({count})" for corner, count in worst[:2])
+
+
+def settings_of(conn, session_id):
+    """(TC, ABS) he ran in this session, or (None, None) before 27 Sep, when they were not kept."""
+    try:
+        row = conn.execute("SELECT traction_control, abs FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return None, None                  # an apex.db older than the columns, opened read-only
+    if row is None:
+        return None, None
+    return row[0], row[1]
 
 
 def advice_for(conn, session_id):
@@ -59,6 +79,7 @@ def advice_for(conn, session_id):
     snaps = events_of(conn, session_id, "REAR_SNAP")
     lockups = events_of(conn, session_id, "LOCKUP")
     spins = events_of(conn, session_id, "WHEELSPIN")
+    tc_now, abs_now = settings_of(conn, session_id)
     advice = []
 
     if len(snaps) >= ENOUGH_TO_ACT:
@@ -72,14 +93,15 @@ def advice_for(conn, session_id):
         advice.append({
             "kind": "ABS_UP",
             "conclusion": f"Front lock-ups {len(lockups)} times, mostly at {corners_named(lockups)}. "
-                          f"Go 1 step up on ABS, or bias 1 click rearward.",
-            "facts": {"lockups": len(lockups), "steps": 1},
+                          f"Go 1 step up on ABS{step_words(abs_now)}, or bias 1 click rearward.",
+            "facts": {"lockups": len(lockups), "steps": 1, "abs_now": abs_now},
             "evidence": [row[0] for row in lockups]})
     if len(spins) >= ENOUGH_TO_ACT:
         advice.append({
             "kind": "TC_UP",
-            "conclusion": f"Wheelspin on exit {len(spins)} times, mostly at {corners_named(spins)}. Go 1 step up on TC.",
-            "facts": {"wheelspin": len(spins), "steps": 1},
+            "conclusion": f"Wheelspin on exit {len(spins)} times, mostly at {corners_named(spins)}. "
+                          f"Go 1 step up on TC{step_words(tc_now)}.",
+            "facts": {"wheelspin": len(spins), "steps": 1, "tc_now": tc_now},
             "evidence": [row[0] for row in spins]})
 
     if not advice and laps >= MIN_LAPS_FOR_ALL_CLEAR:

@@ -53,6 +53,19 @@ def test_a_snap_that_became_his_own_spin_still_counts(tmp_path):
     assert [a["kind"] for a in advice_for(conn, session)] == ["BIAS_FORWARD"]
 
 
+def test_the_advice_names_the_setting_he_is_on(tmp_path):
+    # 27 Sep: "Go 1 step up on TC" after each of his 5 races while he stayed on TC 4, ABS 9 the
+    # whole time: the advice never said what he was on, or what to go to
+    conn, session, _ = db_with(tmp_path, [("WHEELSPIN", "Mulsanne Corner")] * 3 + [("LOCKUP", "Arnage")] * 3)
+    memory.save_car_settings(conn, session, 4, 9, 0.525, 1)
+    advice = {}
+    for item in advice_for(conn, session):
+        advice[item["kind"]] = item
+    assert "Go 1 step up on TC, 4 to 5." in advice["TC_UP"]["conclusion"]
+    assert "Go 1 step up on ABS, 9 to 10," in advice["ABS_UP"]["conclusion"]
+    assert advice["TC_UP"]["facts"]["tc_now"] == 4
+
+
 def test_two_of_anything_is_not_a_setup_problem(tmp_path):
     conn, session, _ = db_with(tmp_path, [("LOCKUP", "T1 Rettifilo")] * 2)
     assert [a["kind"] for a in advice_for(conn, session)] == ["NO_CHANGE"]

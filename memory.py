@@ -182,7 +182,10 @@ NEW_COLUMNS = {
                  ("track_limit_strikes", "INTEGER"),
                  ("first_phase", "INTEGER"),     # race phase when Apex first saw the session
                  ("launch_id", "TEXT"),          # one apex.py launch: practice, quali and race share it
-                 ("car_class", "TEXT"), ("car_model", "TEXT")],
+                 ("car_class", "TEXT"), ("car_model", "TEXT"),
+                 # what he ran from the cockpit (27 Sep): setup advice names the setting it changes
+                 ("traction_control", "INTEGER"), ("abs", "INTEGER"),
+                 ("brake_bias_rear", "REAL"), ("motor_map", "INTEGER")],
     # time through the corner and how it was driven, so a reference can say what to DO
     "opponent_corners": [("car_model", "TEXT"), ("time_s", "REAL"),
                          ("brake_onset", "REAL"), ("throttle_on", "REAL")],
@@ -260,6 +263,12 @@ def load_latest_contract(conn,before_session_id,track=None):
 def finish_session(conn,session_id,hash,end_reason=None,ended_at=None):
   cur = conn.execute("UPDATE sessions SET event_hash = ?, end_reason = ?, ended_at = ? WHERE id = ?",(hash,end_reason,ended_at,session_id))
   conn.commit()
+
+def save_car_settings(conn, session_id, traction_control, abs_level, brake_bias_rear, motor_map):
+  conn.execute("UPDATE sessions SET traction_control = ?, abs = ?, brake_bias_rear = ?, motor_map = ? WHERE id = ?",
+               (traction_control, abs_level, brake_bias_rear, motor_map, session_id))
+  conn.commit()
+
 
 def save_session_result(conn,session_id,grid,final_place,track_limit_strikes):
   conn.execute("UPDATE sessions SET grid = ?, final_place = ?, track_limit_strikes = ? WHERE id = ?",(grid,final_place,track_limit_strikes,session_id))

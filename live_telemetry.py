@@ -10,7 +10,7 @@ from lmu_data import LMUObjectOut, LMUConstants
 from dataclasses import dataclass,asdict
 from queue import Full, Empty, Queue
 from datetime import datetime
-from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_rivals,save_opponent_corners,save_pass_attempts
+from memory import connect_db,start_session,save_event,finish_session,save_lap,save_corner_stat,print_corner_report,set_session_track,save_radio,save_llm_call,save_session_result,save_car_settings,save_rivals,save_opponent_corners,save_pass_attempts
 from radio import Governor, Budget, Call, RACE_CONTROL
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
@@ -924,6 +924,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
     # the result of the session, read from the race snapshots as they arrive
     grid = None
     final_place = None
+    car_settings = None        # (tc, abs, rear bias, motor map) he last ran under green
     first_limit_steps = None
     last_limit_steps = None
     last_opponents = []
@@ -1049,6 +1050,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                 last_limit_steps = me.track_limit_steps
                 final_place = me.place
                 last_opponents = source.race.opponents
+                if source.race.session.game_phase == GREEN_PHASE:
+                    car_settings = (me.tc, me.abs, me.brake_bias_rear, me.motor_map)
             track_learner.add(own_laps, real_lap_distance, frame.brake, frame.throttle, frame.accel_lat)
             if learning_track and lap_counter.wrapped:
                 learned = track_learner.corners(own_laps)
@@ -1265,6 +1268,8 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
                     strikes = last_limit_steps - first_limit_steps
                 save_session_result(conn, session_id, grid, final_place, strikes)
                 save_rivals(conn, session_id, last_opponents)
+            if car_settings is not None:
+                save_car_settings(conn, session_id, *car_settings)
             save_opponent_corners(conn, session_id, performance.opponents.rows)
             save_pass_attempts(conn, session_id, racecraft.attempts)
             print_corner_report(conn, session_id)
