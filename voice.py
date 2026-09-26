@@ -426,7 +426,7 @@ class RadioDesk:
     It never touches the database (the main thread owns it): everything is reported through
     `results`, and the main loop writes the log."""
 
-    def __init__(self, voice, persona, budget, clean=False):
+    def __init__(self, voice, persona, budget, clean=False, synchronous=False):
         self.voice = voice
         self.persona = persona
         self.budget = budget
@@ -438,11 +438,17 @@ class RadioDesk:
         self.inbox = Queue(maxsize=1)
         self.results = Queue()
         self.latest_sim_time = 0.0
-        self.thread = threading.Thread(target=self.work, daemon=True)
-        self.thread.start()
+        # fast replays: each line is cooked and said on the spot, on sim time. The Governor already
+        # keeps the radio busy for as long as a line takes; the desk's own wall-clock waits made two
+        # replays of one tape disagree (27 Sep: a SLIDE_CAUGHT spoken in one run, not the other)
+        self.synchronous = synchronous
+        self.thread = None
+        if not synchronous:
+            self.thread = threading.Thread(target=self.work, daemon=True)
+            self.thread.start()
 
     def prepare(self, call):
-        if call.urgent or id(call) in self.orders:
+        if self.synchronous or call.urgent or id(call) in self.orders:
             return
         self.orders[id(call)] = self.kitchen.submit(self.cook, call)
 
@@ -501,6 +507,9 @@ class RadioDesk:
         return {"line": line, "audio": audio, "reason": reason}
 
     def submit(self, call):
+        if self.synchronous:
+            self.say_now(call)
+            return True
         self.prepare(call)
         try:
             self.admitted_at[id(call)] = time.perf_counter()
@@ -509,6 +518,14 @@ class RadioDesk:
         except Full:
             self.admitted_at.pop(id(call), None)
             return False
+
+    def say_now(self, call):
+        cooked = self.cook(call)
+        if cooked["line"] is None:
+            self.report(call, "no_line", reason=cooked["reason"])
+            return
+        self.voice.play(cooked["audio"], cooked["line"])
+        self.report(call, "spoken", line=cooked["line"], reason=cooked["reason"], latency_ms=0)
 
     def report(self, call, status, line=None, reason=None, latency_ms=None):
         self.results.put({"call": call, "status": status, "line": line, "reason": reason,
@@ -546,8 +563,9 @@ class RadioDesk:
         self.orders.pop(id(call), None)
 
     def stop(self, grace_s=15):
-        self.inbox.put(None)
-        self.thread.join(timeout=grace_s)
+        if self.thread is not None:
+            self.inbox.put(None)
+            self.thread.join(timeout=grace_s)
         self.kitchen.shutdown(wait=False, cancel_futures=True)
 
     def drain(self):

@@ -968,7 +968,7 @@ def run_session(replay, replay_speed, tape_path=TAPE_PATH, out_loud=None, clean=
         voice = Voice(out_loud, clone=False)        # the cloned voice is off (25 Sep, his call)
     if persona is None:
         persona = Persona(clean=clean)
-    desk = RadioDesk(voice, persona, budget, clean)
+    desk = RadioDesk(voice, persona, budget, clean, synchronous=REPLAY and not REPLAY_SPEED)
 
     conn = None
     session_id = None

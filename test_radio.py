@@ -117,6 +117,22 @@ def run_desk(line, the_call, budget=None):
     return voice, spoken, costs
 
 
+def test_a_fast_replay_desk_says_the_line_on_the_spot_on_sim_time():
+    # 27 Sep: two identical replays of one tape disagreed before any order (a SLIDE_CAUGHT spoken
+    # in one, not in the other): the desk cooked on a thread in wall time while the replay raced
+    # through sim time, so a line could go "stale" or find the desk "full" by chance
+    voice = FakeVoice()
+    desk = RadioDesk(voice, FakePersona(None), Budget(), clean=False, synchronous=True)
+    first = call(facts={"corner": "Arnage"}, template="Wide at Arnage.")
+    second = call(facts={"corner": "Indianapolis"}, template="Wide at Indianapolis.")
+    desk.latest_sim_time = first.sim_time + 1000.0      # sim time long gone by the time a thread looks
+    assert desk.submit(first) is True
+    assert desk.submit(second) is True                  # never "queue full": nothing is playing
+    statuses = [r["status"] for r in desk.drain() if not r.get("llm_only")]
+    assert statuses == ["spoken", "spoken"]
+    desk.stop()
+
+
 def test_a_good_line_is_spoken_and_its_cost_logged():
     the_call = call(facts={"corner": "T11 Parabolica", "speed_kmh": 170})
     voice, spoken, costs = run_desk("Wide at Parabolica. 170. Tidy it.", the_call)
