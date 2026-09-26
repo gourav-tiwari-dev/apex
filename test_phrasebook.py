@@ -57,7 +57,9 @@ REAL_INSTANT_LINES = {       # from the 23 and 24 Sep replays, 25 Sep
                 "Car behind, 1.5 seconds, closing fast.",
                 "Slow car ahead, before Mulsanne Chicane 1.", "Car stopped ahead, Arnage.",
                 "Three wide ahead. Stay out of it, let them fight.",
-                "Hypercar behind, 1.2 seconds. Hold your line, let it by on the exit.",
+                # 27 Sep: said about 15 s before it arrives, from how fast the gap really shrinks
+                "Hypercar behind, closing. On you in about 7 seconds. Hold your line, let it by on the exit.",
+                "LMP2 right behind you. Hold your line, let it by on the exit.",
                 "Two LMP2s fighting behind. Stay predictable, hold your line."],
     "engineer": ["Stick it. They're in your tow. Cover the inside into Porsche Curves.",
                  "WHAT A FUCKING MOVE! Get in there! Brave through there. Next one, 1.1 seconds.",

@@ -178,3 +178,16 @@ Built (replay of that tape, today's code): 1045.2 "You got hit and spun..." then
 stopped." and quiet. No "Wide" within 10 s of a spin or a hit, none below 30 km/h (parked on the grass),
 no blue flags below 60 km/h. Found on the way: RaceEngineer only read events on race-snapshot frames
 (5 a second), so the own-spin yellow rule rarely saw the spin; incidents are now read every frame.
+
+## 27 Sep (auto loop): faster classes - his mark "LMP do not detected" (58-car race)
+Tape truth (tools/class_truth.py): 4 LMP2s went by him while he raced. Before: "LMP2 behind, 2.5 seconds" at
+first sight, each LMP2 arriving 39-50 s later (an LMP2 closes on a GT3 ~0.05 s a second at Le Mans), two more
+calls dropped by the radio as "said_recently" (same words, other cars). Passes warned 0/4.
+Found building it: the race-distance gap of a lapping car never exists (a faster class is a lap up), so the
+gap was None all the way in; the road gap (seconds since I was where it is now) is what counts. The speed
+difference is useless as a closing rate (300 on the straight vs 150 braking read "3 s away" at a 3 s gap).
+Posted laps too: those LMP2s had slow last laps (they were among the GT3s because of trouble).
+Built: road gap, closing rate over the last 20 s (at least 8), called ~15 s before it arrives, or "right
+behind you" if it sits there; spotter hazards exempt from the same-words drop. After (same scoring):
+passes warned 2/4, arrivals within 1 s warned 2/5, calls followed by an arrival 2/5 (before 1/3). Thin data:
+one multiclass tape. Felber reached 1 s behind 10 s after his call and sat there 30 s through the corners.

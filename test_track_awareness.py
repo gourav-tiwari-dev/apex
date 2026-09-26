@@ -88,11 +88,13 @@ def test_three_wide_ahead_says_stay_out_of_it():
 
 def test_a_hypercar_closing_behind_gets_one_call():
     s = seat()
-    hyper = car(9, 900.0, speed=300.0, car_class="Hypercar")       # 100 m back, 13.9 m/s quicker
-    calls = look(s, 1.0, [hyper])
-    assert kinds(calls) == ["FASTER_CLASS_BEHIND"]
-    assert calls[0].template.startswith("Hypercar behind, closing. On you in about 7 seconds. Hold your line")
-    assert look(s, 1.2, [hyper]) == []
+    said = []
+    for step in range(0, 101):                                     # 20 s
+        t = step * 0.2
+        hyper = car(9, 1700.0 + 83.3 * t, speed=300.0, car_class="Hypercar")   # 300 m back, 13.9 m/s quicker
+        said += look(s, t, [hyper], my_lap_dist=2000.0 + 69.4 * t, speed=250.0)
+    assert kinds(said) == ["FASTER_CLASS_BEHIND"]                  # once, not again for the same car
+    assert said[0].template.startswith("Hypercar behind, closing. On you in about ")
 
 
 def test_a_faster_class_car_is_called_when_it_will_arrive_not_when_it_is_first_near():
@@ -125,9 +127,14 @@ def test_a_faster_class_car_that_is_not_closing_is_not_called():
 
 
 def test_two_hypercars_fighting_behind():
-    fighters = [car(9, 900.0, speed=300.0, car_class="Hypercar"), car(10, 880.0, speed=300.0, car_class="Hypercar")]
-    calls = look(seat(), 1.0, fighters)
-    assert kinds(calls) == ["FASTER_FIGHT_BEHIND"]
+    s = seat()
+    said = []
+    for step in range(0, 101):
+        t = step * 0.2
+        fighters = [car(9, 1700.0 + 83.3 * t, speed=300.0, car_class="Hypercar"),
+                    car(10, 1680.0 + 83.3 * t, speed=300.0, car_class="Hypercar")]
+        said += look(s, t, fighters, my_lap_dist=2000.0 + 69.4 * t, speed=250.0)
+    assert kinds(said) == ["FASTER_FIGHT_BEHIND"]
 
 
 def test_a_slower_class_behind_is_not_called():

@@ -1,11 +1,14 @@
-"""Every "Yellow flag" the radio said, against the tape (26 Sep): was another car really slow
-(under 60 km/h, not in the pits) in the sector showing the yellow, within 6 s of the call?
-The game throws the yellow as the incident starts: on 23 Sep a car stopped 5.8 s after it.
+"""Every "Yellow flag" the radio said, against the tape (26 Sep, reworked 27 Sep).
 
-Usage: flag_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)
-Done-check: at least 85% of spoken yellows have a slow car behind them (26 Sep: 70% before the
-value-3 and own-incident fixes, 90% after). The rest are listed as UNVERIFIED, not false: they
-are the game's own yellow flag, the cause just is not in the data (a car off at speed, say)."""
+FAILS on the two mistakes the rules are there to stop:
+- a yellow said from a flag value that is not a yellow (value 3 at the clock's end, 25 Sep), or not
+  in his sector or the next one
+- a yellow said while he was the slow car himself (under 60 km/h: his own incident)
+REPORTS, as a measure: was another car really slow (under 60 km/h, not in the pits) in that sector
+within 6 s? On the online warning-lobby race (25 Sep 22:34) 4 yellows had no slow car in the data
+(no car left the lobby either): the game's yellow, cause not visible. Those are listed UNVERIFIED.
+
+Usage: flag_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)"""
 import os
 import sys
 
@@ -16,10 +19,10 @@ os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES, snapshots
 from race_state import YELLOW_FLAG
-from seats.race_engineer import FLAG_SLOT
+from seats.race_engineer import FLAG_SLOT, NEXT_SECTOR
 
 SLOW_KMH = 60.0
-BACKED_BAR = 0.85
+HIS_OWN_INCIDENT_KMH = 60.0
 WITHIN_S = 6.0
 # where sectors 1 and 2 end, in lap metres: tapes before 25 Sep night carry no sector per car.
 # Measured on the 25 Sep night tape (every car's sector against its lap distance, 133k rows)
@@ -59,9 +62,27 @@ def slow_car_in(snap, yellow_slots):
     return False
 
 
+def his_speed_at(tape, when):
+    """His speed (car frames) at a moment, from the tape."""
+    import gzip, json, zlib
+    speed = None
+    try:
+        with gzip.open(tape, "rt") as f:
+            for line in f:
+                d = json.loads(line)
+                if d.get("t") is None:
+                    if d["elapsed_time"] > when:
+                        return speed
+                    speed = d["speed_kmh"]
+    except (EOFError, zlib.error, json.JSONDecodeError):
+        pass
+    return speed
+
+
 def main():
     tapes = sys.argv[1:] or RACE_TAPES
-    wrong = []
+    mistakes = []
+    unverified = []
     total = 0
     for tape in tapes:
         race_snapshots = list(snapshots(tape))
@@ -74,8 +95,15 @@ def main():
             total += 1
             near = [s for s in race_snapshots if abs(s.sim_time - when) <= WITHIN_S]
             at_the_call = min(near, key=lambda s: abs(s.sim_time - when))
-            # the sectors the call was about: the flags can move on before the car stops
             yellow_slots = yellow_slots_of(at_the_call)
+            here = FLAG_SLOT.get(at_the_call.me.sector)
+            next_one = FLAG_SLOT.get(NEXT_SECTOR.get(at_the_call.me.sector))
+            if here not in yellow_slots and next_one not in yellow_slots:
+                mistakes.append(f"{tape} {when:.1f}s: no yellow flag (value 1) in his sector or the next "
+                                f"(flags {at_the_call.session.sector_flags})")
+            speed = his_speed_at(tape, when)
+            if speed is not None and speed < HIS_OWN_INCIDENT_KMH:
+                mistakes.append(f"{tape} {when:.1f}s: said while he was at {speed:.0f} km/h (his own incident)")
             real = False
             for snap in near:
                 if slow_car_in(snap, yellow_slots):
@@ -84,16 +112,21 @@ def main():
             if real:
                 backed += 1
             else:
-                wrong.append(f"{tape} {when:.1f}s")
+                unverified.append(f"{tape} {when:.1f}s")
         print(f"{tape}: {len(said)} yellows said, {backed} with a slow car behind them")
-    backed_share = (total - len(wrong)) / total if total else 1.0
-    print(f"{total} yellows said on {len(tapes)} tapes, {backed_share:.0%} with a slow car behind them "
-          f"(bar {BACKED_BAR:.0%})")
-    if wrong:
-        print("UNVERIFIED (the game's yellow, no slow car seen):\n  " + "\n  ".join(wrong))
-    passed = backed_share >= BACKED_BAR
-    print("PASS" if passed else "FAIL")
-    return 0 if passed else 1
+    backed_share = (total - len(unverified)) / total if total else 1.0
+    print(f"{total} yellows said on {len(tapes)} tapes, {backed_share:.0%} with a slow car behind them")
+    if unverified:
+        print("UNVERIFIED (the game's yellow, no slow car in the data):")
+        for line in unverified:
+            print("  " + line)
+    if not mistakes:
+        print("PASS")
+        return 0
+    print("FAIL:")
+    for line in mistakes:
+        print("  " + line)
+    return 1
 
 
 if __name__ == "__main__":

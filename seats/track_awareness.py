@@ -54,7 +54,10 @@ GROUP_REARM_S = 300.0         # the same group (by its last car) is not called a
 FASTER_CLASS_WATCH_S = 3.0    # a faster class this close behind is watched
 FASTER_CLASS_ARRIVES_S = 15.0 # called when it will be on him within this
 RIGHT_BEHIND_S = 0.8          # this close it is called whatever it is doing
-CLOSING_HISTORY_S = 8.0       # the gap's shrink rate is read over this long
+CLOSING_HISTORY_S = 20.0      # the gap's shrink rate is read over this long, at least 8 s: an LMP2
+                              # gains on the straights, not in the corners, and 8 s on a straight
+                              # said "15 s" to cars 32 and 51 s away (58-car race, 27 Sep)
+MIN_CLOSING_HISTORY_S = 8.0
 MIN_CLOSING = 0.01            # seconds of gap a second: slower than this is not closing
 # LMU's classes, fastest first (WEC 2024-25: Hypercar, LMP2, LMGT3)
 CLASS_SPEED = {"hypercar": 3, "lmh": 3, "lmdh": 3, "lmp2": 2, "lmp3": 1, "gte": 1, "lmgt3": 0, "gt3": 0}
@@ -243,18 +246,18 @@ class TrackAwareness:
         me = race.me
         mine = class_rank(me.car_class)
         coming = []
+        watched = []                  # every faster car within the watch, closing or not
         for car in race.opponents:
             if car.in_pits or class_rank(car.car_class) <= mine:
                 continue
             metres = self.metres_behind_on_road(car, my_lap_dist)
             if metres is None:
                 continue
-            gap = self.clock.gap_behind(car.id, now)        # same point, seconds
-            if gap is None or gap < 0:
-                gap = metres / (car.speed_kmh / 3.6)
-            if gap > FASTER_CLASS_WATCH_S:
+            gap = self.road_gap_behind(metres)
+            if gap is None or gap > FASTER_CLASS_WATCH_S:
                 continue
-            arrives = self.arrives_in(car, gap, metres, my_speed_kmh, now)
+            arrives = self.arrives_in(car, gap, now)
+            watched.append((gap, car))
             soon = arrives is not None and arrives <= FASTER_CLASS_ARRIVES_S
             stuck_behind = arrives is None and gap <= RIGHT_BEHIND_S     # right there, not getting by
             if soon or stuck_behind:
@@ -263,8 +266,14 @@ class TrackAwareness:
             return []
         coming.sort(key=lambda item: item[0])
         gap, arrives, car = coming[0]
-        if len(coming) >= 2 and coming[1][0] - gap <= BATTLE_GAP_S:
-            key = ("faster_fight", tuple(sorted((coming[0][2].id, coming[1][2].id))))
+        # a fight: another faster car right with the first, whether or not its own arrival is known yet
+        partner = None
+        for other_gap, other in watched:
+            if other.id != car.id and abs(other_gap - gap) <= BATTLE_GAP_S:
+                partner = other
+                break
+        if partner is not None:
+            key = ("faster_fight", tuple(sorted((car.id, partner.id))))
             if self.fresh(key, now, OPPORTUNITY_REARM_S):
                 text = f"Two {spoken_class(car.car_class)}s fighting behind. Stay predictable, hold your line."
                 return [self.hazard("FASTER_FIGHT_BEHIND", text, now, {"gap_s": round(gap, 1)})]
@@ -281,23 +290,34 @@ class TrackAwareness:
             facts["arrives_in_s"] = round(arrives)
         return [self.hazard("FASTER_CLASS_BEHIND", text, now, facts)]
 
-    def arrives_in(self, car, gap, metres, my_speed_kmh, now):
-        """Seconds until that car is on him: the gap over how fast it is shrinking (last 8 s), or,
-        before there are 4 s of it, the speed difference. None when it is not closing."""
+    def arrives_in(self, car, gap, now):
+        """Seconds until that car is on him: the gap over how fast it is shrinking, measured on the
+        road over the last 20 s (at least 8). None before that, or when it is not closing. Not from
+        the speed difference: an LMP2 at 300 on the straight while he brakes at 150 read as "on you
+        in 3 seconds" at a 3 s gap, five false calls on the 58-car race (27 Sep)."""
         history = self.class_gaps.setdefault(car.id, [])
         history.append((now, gap))
         while history and now - history[0][0] > CLOSING_HISTORY_S:
             history.pop(0)
         first_time, first_gap = history[0]
-        if now - first_time >= CLOSING_HISTORY_S / 2:
-            closing = (first_gap - gap) / (now - first_time)
-            if closing < MIN_CLOSING:
-                return None
-            return gap / closing
-        faster_by = (car.speed_kmh - my_speed_kmh) / 3.6
-        if faster_by <= 1.0:
+        if now - first_time < MIN_CLOSING_HISTORY_S:
             return None
-        return metres / faster_by
+        closing = (first_gap - gap) / (now - first_time)
+        if closing < MIN_CLOSING:
+            return None
+        return gap / closing
+
+    def road_gap_behind(self, metres):
+        """Seconds since I was where that car is now, on the road. A faster class is usually a lap
+        up, so its race distance never matches mine and the race gap was None all the way in
+        (replay of the 58-car race, 27 Sep): the road is what counts. None until my trail has it."""
+        mine = self.clock.my_distance()
+        if mine is None or not self.clock.mine.time:
+            return None
+        when_i_was_there = self.clock.mine.time_at(mine - metres)
+        if when_i_was_there is None:
+            return None
+        return self.clock.mine.time[-1] - when_i_was_there
 
     def metres_behind_on_road(self, car, my_lap_dist):
         """Metres behind me on the road, for cars within a kilometre behind and moving."""
