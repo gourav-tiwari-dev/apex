@@ -24,9 +24,17 @@ GREEN_PHASE = 5
 # Live 25 Sep: Apex was restarted mid-race, had no laps at the line, and so no fuel picture.
 # He had 0.6 laps of energy for 1.7 laps of race; the radio read out litres, the coach said
 # "no need to pit", nothing warned him. Usage is now measured CONTINUOUSLY, per metre driven,
-# so it is known about 1.5 km after any start, restart or refuel.
-LIVE_MIN_M = 1500.0            # track driven before the live usage counts
+# so a "box" can come about 1.5 km after any start, restart or refuel.
+#
+# Replay of 25 Sep night (26 Sep): the burn per metre changes around a lap (the Porsche Curves and
+# the Mulsanne burn more than the chicanes), so 1.9 km stretched to a whole lap said 8.2 litres a
+# lap against 7.75 on the tape, and the radio said "tight, 0.0 laps spare" against 0.33. A number
+# now comes from a whole lap; part of a lap may only say "box", and only if it is box even at 10%
+# less burn. And his spin at the Porsche Curves had wiped the lap's burn as if it were a reset.
+LIVE_MIN_M = 1500.0            # track driven before part of a lap can say "box"
 LIVE_KEEP_LAPS = 1.2           # usage over the last lap or so: the current pace of burn
+PART_LAP_ERROR = 0.10          # part of a lap was 6-7% off on 25 Sep night; 10% to be sure
+BACKWARDS_RESET_M = 500.0      # GUESSED: a spin rolls back metres; a jump back this far is a reset
 # GUESSED: lift and coast plus short-shifting saves about 8% of usage (tune from his laps)
 LIFT_AND_COAST_SAVES = 0.08
 FUEL_RECHECK_S = 15.0
@@ -54,6 +62,21 @@ def verdict_of(spare, laps_left):
     if -spare <= LIFT_AND_COAST_SAVES * max(laps_left, 0.5):
         return "save"
     return "box"
+
+
+def picture_of(me, litres, energy, remaining):
+    """The fuel picture from the usage a lap: whichever of fuel or virtual energy runs out first."""
+    options = []
+    if litres > 0.05:
+        options.append((me.fuel / litres - remaining, "fuel"))
+    if energy > 0.0005 and me.virtual_energy > 0:
+        options.append((me.virtual_energy / energy - remaining, "energy"))
+    if not options:
+        return None
+    spare, limit = min(options)
+    spare = round(spare, 1) + 0.0              # + 0.0: never "-0.0 laps spare"
+    return {"spare_laps": spare, "laps_left": round(remaining, 1), "limit": limit,
+            "verdict": verdict_of(spare, remaining), "measured": "live, over the last lap driven"}
 
 
 def fuel_words(picture):
@@ -104,6 +127,8 @@ class Strategist:
         self.burn = []                 # (distance driven, fuel, energy) since the last refuel
         self.wraps = 0
         self.last_lap_dist = None
+        self.was_green = None          # None: Apex joined a race already running
+        self.first_lap_until = None    # distance where the first lap after a green flag ends
         self.last_live_check = None
         self.last_live_verdict = None
         self.box_said_lap = None
@@ -226,30 +251,58 @@ class Strategist:
             return
         if self.last_lap_dist is not None and lap_dist < self.last_lap_dist - self.track_m / 2:
             self.wraps += 1
+        elif self.last_lap_dist is not None and lap_dist > self.last_lap_dist + self.track_m / 2:
+            self.wraps -= 1                    # rolled back over the line in a spin
         self.last_lap_dist = lap_dist
         me = race.me
         if race.session.game_phase != GREEN_PHASE:
             self.burn = []                     # the formation lap burns at half pace: not race burn
+            self.was_green = False
             return
         if me.in_pits:
             self.burn = []                     # pit lane and refuelling: start again after it
             return
         distance = self.wraps * self.track_m + lap_dist
-        if self.burn and (me.fuel > self.burn[-1][1] + 0.5 or distance < self.burn[-1][0]):
-            self.burn = []                     # refuelled, or a reset
+        if self.was_green is False:
+            # the green flag: the start or a restart, and the lap after it is not a fuel lap
+            # (25 Sep night, in the traffic: 7.53 litres against 7.74-7.78 for the clean laps)
+            self.first_lap_until = distance + self.track_m
+        self.was_green = True
+        if self.burn and me.fuel > self.burn[-1][1] + 0.5:
+            self.burn = []                     # refuelled
+        elif self.burn and distance < self.burn[-1][0]:
+            if self.burn[-1][0] - distance > BACKWARDS_RESET_M:
+                self.burn = []                 # a jump back, not a spin: start again
+            else:
+                return                         # spun and rolled back: skip it, keep the lap's burn
         self.burn.append((distance, me.fuel, me.virtual_energy))
         while self.burn and distance - self.burn[0][0] > LIVE_KEEP_LAPS * self.track_m:
             self.burn.pop(0)
 
     def live_usage(self):
-        """(litres a lap, energy a lap) from the burn over the last lap or so, or None."""
+        """(litres a lap, energy a lap, whole lap?) or None. Over exactly the last lap once a whole
+        lap is in; before that over what there is, which is only good enough to say "box"."""
         if len(self.burn) < 2 or not self.track_m:
             return None
-        (d0, f0, e0), (d1, f1, e1) = self.burn[0], self.burn[-1]
-        driven = d1 - d0
+        end_distance, end_fuel, end_energy = self.burn[-1]
+        start = self.burn[0]
+        whole = False
+        for point in self.burn:
+            if end_distance - point[0] >= self.track_m:
+                start = point                  # the latest point still a whole lap back
+                whole = True
+            else:
+                break
+        if whole and self.first_lap_until is not None and start[0] < self.first_lap_until:
+            whole = False                      # the lap is the start's: only good enough for "box"
+            start = self.burn[0]
+        start_distance, start_fuel, start_energy = start
+        driven = end_distance - start_distance
         if driven < LIVE_MIN_M:
             return None
-        return (f0 - f1) / driven * self.track_m, (e0 - e1) / driven * self.track_m
+        litres = (start_fuel - end_fuel) / driven * self.track_m
+        energy = (start_energy - end_energy) / driven * self.track_m
+        return litres, energy, whole
 
     def laps_remaining(self, race, lap_dist):
         """Laps of driving still to do, the part of this lap included (1.7, not "2 to go")."""
@@ -271,18 +324,16 @@ class Strategist:
         remaining = self.laps_remaining(race, lap_dist)
         if usage is None or remaining is None:
             return None
-        litres, energy = usage
-        options = []
-        if litres > 0.05:
-            options.append((race.me.fuel / litres - remaining, "fuel"))
-        if energy > 0.0005 and race.me.virtual_energy > 0:
-            options.append((race.me.virtual_energy / energy - remaining, "energy"))
-        if not options:
+        litres, energy, whole = usage
+        picture = picture_of(race.me, litres, energy, remaining)
+        if picture is None or whole:
+            return picture
+        # part of a lap: box, and only if it is box even at 10% less burn
+        kinder = picture_of(race.me, litres * (1 - PART_LAP_ERROR), energy * (1 - PART_LAP_ERROR), remaining)
+        if kinder is None or kinder["verdict"] != "box":
             return None
-        spare, limit = min(options)
-        spare = round(spare, 1) + 0.0          # + 0.0: never "-0.0 laps spare"
-        return {"spare_laps": spare, "laps_left": round(remaining, 1), "limit": limit,
-                "verdict": verdict_of(spare, remaining), "measured": "live, over the last lap driven"}
+        picture["measured"] = "live, over part of a lap"
+        return picture
 
     def live_fuel(self, race, moment, now):
         """Keeps fuel_now fresh, and speaks up the moment the verdict turns bad, unasked."""

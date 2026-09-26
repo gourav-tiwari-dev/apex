@@ -23,6 +23,77 @@ def drive(strategist, energy_start, energy_per_lap, metres, lap_len=13000.0, tim
     return calls
 
 
+LAP = 13000.0
+
+
+def fuel_after(distance, first_half=3.0, second_half=4.8, start=50.0):
+    """Fuel left after driving this far, burning more in the second half of every lap, like the
+    Porsche Curves and the Mulsanne against the chicanes."""
+    laps_done = int(distance // LAP)
+    into = distance - laps_done * LAP
+    half = LAP / 2
+    if into < half:
+        this_lap = first_half * into / half
+    else:
+        this_lap = first_half + second_half * (into - half) / half
+    return start - laps_done * (first_half + second_half) - this_lap
+
+
+def see(strategist, distance, t, phase=5):
+    snap = race(t, {"lap_length": LAP, "game_phase": phase}, {"fuel": fuel_after(distance), "virtual_energy": 0.0})
+    strategist.see_burn(snap, distance % LAP)
+
+
+def test_the_first_lap_of_the_race_is_not_a_fuel_lap():
+    # replay of 25 Sep night (26 Sep): lap 1 burned 7.53 litres in the traffic, the clean laps
+    # 7.74-7.78, and measured over lap 1 the radio said "fine, 0.5 laps spare" (tape: tight, 0.33)
+    s = Strategist()
+    for step in range(0, 10):
+        see(s, step * 100.0, step, phase=4)      # the formation lap
+    for step in range(10, 150):                  # green: lap 1 and a bit more
+        see(s, step * 100.0, step)
+    litres, energy, whole = s.live_usage()
+    assert not whole                             # only lap 1 so far: good enough for "box" only
+    for step in range(150, 275):                 # a whole lap after lap 1: green at 1 km, so 27 km
+        see(s, step * 100.0, step)
+    litres, energy, whole = s.live_usage()
+    assert whole and abs(litres - 7.8) < 0.05
+
+
+def test_a_spin_does_not_wipe_the_fuel_measured_this_lap():
+    # replay of 25 Sep night (26 Sep): punted round at the Porsche Curves, the car rolled back, the
+    # burn was wiped as "a reset", and 1.9 km later the radio said "tight, 0.0 laps spare" (tape: 0.33)
+    s = Strategist()
+    t = 0
+    for step in range(0, 121):                   # 12 km
+        see(s, step * 100.0, t)
+        t += 1
+    see(s, 11980.0, t)                           # spun: rolled back 20 m, then 40 m
+    see(s, 11960.0, t + 1)
+    for step in range(120, 141):                 # on to 14 km
+        see(s, step * 100.0, t + 2 + step)
+    litres, energy, whole = s.live_usage()
+    assert whole
+    assert abs(litres - 7.8) < 0.05
+
+
+def test_the_burn_is_measured_over_exactly_the_last_lap():
+    s = Strategist()
+    for step in range(0, 171):                   # 17 km: a lap and a third
+        see(s, step * 100.0, step)
+    litres, energy, whole = s.live_usage()
+    assert whole and abs(litres - 7.8) < 0.05    # 1.2 laps kept, but a lap and a bit would say more
+
+
+def test_part_of_a_lap_is_not_stretched_into_a_number():
+    # the second half of the lap burns more: 3 km of it stretched to a lap says 9.6 litres, not 7.8
+    s = Strategist()
+    for step in range(70, 101):                  # 7 km to 10 km, just after a refuel
+        see(s, step * 100.0, step)
+    litres, energy, whole = s.live_usage()
+    assert not whole and litres > 9.0            # measured, but only good enough to say "box"
+
+
 def test_short_on_energy_is_called_box_this_lap_unasked():
     s = Strategist()
     calls = drive(s, energy_start=0.072, energy_per_lap=0.10, metres=3000)
@@ -30,9 +101,15 @@ def test_short_on_energy_is_called_box_this_lap_unasked():
     assert [c.template for c in calls if c.kind == "FUEL"][0].startswith("Box this lap for fuel.")
 
 
+# a number needs a whole lap measured (26 Sep): these drive 14 km of a 13 km lap. The time left at
+# the start is chosen so the end of the drive matches the 3 km drives they replaced (54 m/s)
+WHOLE_LAP_M = 14000
+WHOLE_LAP_S = WHOLE_LAP_M / 54
+
+
 def test_plenty_of_fuel_says_push_once_and_never_nags():
     s = Strategist()
-    calls = drive(s, energy_start=0.90, energy_per_lap=0.10, metres=6000)
+    calls = drive(s, energy_start=0.90, energy_per_lap=0.10, metres=WHOLE_LAP_M, time_left=256.0 + WHOLE_LAP_S)
     fuel = [c for c in calls if c.kind == "FUEL"]
     assert s.fuel_now["verdict"] == "fine"
     assert len(fuel) == 1 and fuel[0].template.endswith("Push.") and not fuel[0].immediate
@@ -41,9 +118,17 @@ def test_plenty_of_fuel_says_push_once_and_never_nags():
 def test_tight_fuel_is_said_not_only_save_or_box():
     # live 25 Sep: 0.3 laps spare the whole race and the radio never said "tight"
     s = Strategist()
-    calls = drive(s, energy_start=0.13, energy_per_lap=0.10, metres=3000)
+    calls = drive(s, energy_start=0.13 + 0.10 * 11000 / 13000, energy_per_lap=0.10, metres=WHOLE_LAP_M,
+                  time_left=200.4 + WHOLE_LAP_S)
     fuel = [c for c in calls if c.kind == "FUEL"]
     assert s.fuel_now["verdict"] == "tight" and fuel[0].template.startswith("Energy's tight")
+
+
+def test_part_of_a_lap_says_nothing_unless_it_is_box():
+    # the same car after 3 km: part of a lap cannot tell tight from fine, so it waits for the lap
+    s = Strategist()
+    calls = drive(s, energy_start=0.13, energy_per_lap=0.10, metres=3000)
+    assert [c for c in calls if c.kind == "FUEL"] == []
 
 
 def test_the_verdicts():
@@ -81,7 +166,11 @@ def test_after_a_save_call_fine_means_the_saving_is_working_not_push():
     assert s.told_to_save
     s.last_live_check = None
     s.burn = []
-    drive(s, energy_start=0.16, energy_per_lap=0.10, metres=3000)      # now it makes the flag, just
+    s.wraps = 0
+    s.last_lap_dist = None
+    # now it makes the flag, just
+    drive(s, energy_start=0.16 + 0.10 * 11000 / 13000, energy_per_lap=0.10, metres=WHOLE_LAP_M,
+          time_left=200.4 + WHOLE_LAP_S)
     assert s.fuel_now["verdict"] == "saving"
     assert fuel_words(s.fuel_now).startswith("Saving's working")
 
