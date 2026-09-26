@@ -135,3 +135,32 @@ Build:
 NOT built (say so): a spoken "plan change" call of its own - the spoken changes stay with the seats that
 own them (FUEL, DAMAGE, LAST_LAP); a model of his mood/stress. Live check pending: he has not used orders
 in a race yet (UNVERIFIED end to end with the real voice + model).
+
+## 27 Sep (auto loop): plans change with the race - an order is re-opened ONCE when its reason goes
+Research:
+- Leclerc, Singapore 2025, under long lift-and-coast orders: "Tell me when I can push again. I'm
+  losing a lot of time." Vasseur after: "we have to fix this". The driver expects the pit wall to SAY
+  when a restriction no longer applies (racefans.net/2025/10/06/ferrari-must-fix-lift-and-coast-problem-...).
+- Delegation research (Miller & Parasuraman 2007; "Delegation to automation: performance and
+  implications in non-optimal situations", HCII 2011): a delegated play works until conditions no longer
+  fit it; the benefit of delegation depends on the automation surfacing the change, not silently
+  carrying on or silently overriding.
+- Verstappen Brazil 2022 (already in orders.py): his decision stands; the cost is said once, never argued.
+Gap in Apex: he orders "we save", the fuel later turns fine, and the strategist says "Fuel's fine to the
+flag... Push." - a flat contradiction of his standing order, and no "you can stop saving" as his call.
+Build: under a save order, a "fine" fuel verdict is said once as "You said save. Fuel's fine now, N laps
+spare. You can push again, your call." The order stays until he changes it. Further "fine" calls stay
+silent (never nag). Done-check: test + replay with "we save" scripted on a tape where the fuel is fine.
+
+## 27 Sep (auto loop): FIND round 1 - what other LMU engineers do, checked against his tapes
+Sources: DRE (thedigitalraceengineer.com, "DRE now supports Le Mans Ultimate"): radio check, side-by-side,
+class position updates, pace feedback, fuel confidence, rain proximity, shared debris warnings, a
+brake+throttle overlap cue. Indie LMU engineer app (overtake.gg thread 295863, May 2026): moment to attack,
+"the car behind is becoming a real threat", divebomb warnings when the car ahead brakes earlier than you,
+pace gained/lost by sector.
+- Brake+throttle overlap: NOT BUILT. His race tapes: 6.7-7.5% of braking time with both pedals and no
+  overlap of 0.3 s or more in 4 of 5 races (throttle-to-brake transitions). The 5th (25 Sep night, 19.3%)
+  has its long overlaps only at the Porsche Curves / Ford chicanes: his punt and spin, and the fast
+  sweepers where two-pedal balance is a technique. No habit in the data: a cue would be noise.
+- Already in Apex: side-by-side (turned OFF by him), pace by corner (race model), threat behind
+  (CLOSING_ALARM), attack moments (ATTACK_PLAN / STICK_IT). Debris sharing needs a server: out of scope.
