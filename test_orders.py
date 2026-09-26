@@ -59,6 +59,34 @@ def test_push_still_hears_once_that_the_fuel_will_not_make_the_flag():
     assert orders.adjust(box) is box                     # worse news: said once more
 
 
+def test_a_save_order_is_reopened_once_when_the_fuel_turns_fine():
+    # Leclerc, Singapore 2025: "Tell me when I can push again." Before (27 Sep): under his own
+    # "we save" the strategist said "Fuel's fine to the flag... Push." - against his order
+    orders = StandingOrders()
+    orders.hear("ok save, lift and coast", 3, 400.0)
+    assert orders.get("pace") == "save"
+    fine = fuel_call("Fuel's fine to the flag, 1.2 laps spare. Push.", 1.2)
+    fine.facts["verdict"] = "fine"
+    said = orders.adjust(fine)
+    assert said.template == "You said save. Fuel's fine now, 1.2 laps spare. You can push again, your call."
+    assert orders.get("pace") == "save"                 # his order stands until he changes it
+    again = fuel_call("Fuel's fine to the flag, 1.4 laps spare. Push.", 1.4)
+    again.facts["verdict"] = "fine"
+    assert orders.adjust(again) is None                  # said once: never nag
+    tight = fuel_call("Fuel's tight, 0.3 laps spare. Lift and coast into the big stops.", 0.3)
+    tight.facts["verdict"] = "tight"
+    assert orders.adjust(tight) is tight                 # saving again matches his order
+
+
+def test_the_save_reopen_says_energy_when_energy_is_the_limit():
+    # replay of 24 Sep: the limit was virtual energy, and the line said "Fuel's fine now"
+    orders = StandingOrders()
+    orders.hear("ok save", 3, 400.0)
+    fine = fuel_call("Energy's fine to the flag, 1.8 laps spare. Push.", 1.8)
+    fine.facts["verdict"] = "fine"
+    assert orders.adjust(fine).template.startswith("You said save. Energy's fine now, 1.8 laps spare.")
+
+
 def test_what_he_asks_for_he_gets_whatever_the_orders():
     orders = StandingOrders()
     orders.hear("no more coaching", 4, 500.0)

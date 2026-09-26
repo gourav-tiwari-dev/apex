@@ -55,9 +55,12 @@ ORDERS = [
     ("no gaps", "Don't tell me the gaps.", {"GAP_REPORT"},
      lambda row: row[1] == "GAP_REPORT"),
 ]
-# bring it home is a pace order like push: its own run
+# bring it home and save are pace orders like push: each has its own run
 BRING_HOME = ("bring it home", "Bring it home, no risks.", {"ATTACK_PLAN"},
               lambda row: row[1] == "ATTACK_PLAN")
+# under his "we save" no fuel line may tell him to push; the change is said once as his call (27 Sep)
+SAVE = ("we save", "Ok save, lift and coast.", {"FUEL"},
+        lambda row: row[1] == "FUEL" and row[4].rstrip().endswith("Push."))
 
 
 class NoModel:
@@ -137,6 +140,10 @@ def check_tape(tape, orders, tag):
         bad = [r for r in spoken_unasked(stood) if broken(r)]
         # a dropped call is logged with its reason as the status (live_telemetry.log_dropped_calls)
         stopped = sum(1 for r in stood if r[2] == "his_order" and r[1] in kinds)
+        if name == "we save":
+            reopened = [r for r in spoken_unasked(stood) if r[4].startswith("You said save")]
+            if len(reopened) > 1:
+                failures.append(f"{tape}: 'you can push again' said {len(reopened)} times under 'we save'")
         if name == "we push":
             # short and box each said once, then it's his call: never nag
             said_verdicts = collections.Counter()
@@ -171,7 +178,7 @@ def main():
     tapes = sys.argv[1:] or RACE_TAPES
     report, failures = [], []
     for tape in tapes:
-        for orders, tag in ((ORDERS, "orders"), ([BRING_HOME], "bring home")):
+        for orders, tag in ((ORDERS, "orders"), ([BRING_HOME], "bring home"), ([SAVE], "save")):
             rows, bad = check_tape(tape, orders, tag)
             report += [(tape[5:20],) + row for row in rows]
             failures += bad

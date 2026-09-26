@@ -169,6 +169,19 @@ class StandingOrders:
                          f"{short} laps. Lift and coast in the big stops, or box.")
             call.template = call.conclusion = words
             return call
+        if call.kind == "FUEL" and self.get("pace") == "save" and call.facts.get("verdict") == "fine":
+            # the reason for his order has gone: said once, as his call, and the order stands
+            # (Leclerc, Singapore 2025: "Tell me when I can push again." 27 Sep: under his "we save"
+            # the strategist said "Fuel's fine to the flag... Push.", against his own order)
+            key = ("pace", "fine")
+            if key in self.cost_said:
+                return None                  # said once; never nag
+            self.cost_said.add(key)
+            spare = call.facts.get("spare_laps")
+            what = "Energy" if (call.template or "").startswith("Energy") else "Fuel"
+            words = f"You said save. {what}'s fine now, {spare} laps spare. You can push again, your call."
+            call.template = call.conclusion = words
+            return call
         if call.kind == "FIGHT_COST" and self.get("fight") == "fight":
             # he said fight: the call keeps its facts but loses the "settle" option
             words = (call.template or "").replace(" Commit or settle.", " Commit.").replace(" this lap or settle in.", " this lap.")
@@ -190,6 +203,9 @@ class StandingOrders:
             if words.startswith("You said push"):
                 return False
             return race_ending_fuel(call) is None
+        if call.kind == "FUEL" and pace == "save" and call.facts.get("verdict") == "fine":
+            # a "Push." worded before he said save; the change is said as his call instead
+            return not words.startswith("You said save")
         if call.kind in COACHING_KINDS and self.get("coaching") == "off":
             return True
         if call.kind == "GAP_REPORT" and self.get("gaps") == "off":
