@@ -36,6 +36,25 @@ def test_B_eleven_is_no_yellow_and_only_my_sector_or_the_next_one_counts():
     assert kinds(engineer.update(moment(3.0, race(3.0, {"sector_flags": [11, 1, 11]}, {"sector": 1})))) == ["YELLOW"]
 
 
+def test_B2_only_flag_value_1_is_a_yellow():
+    # replay of 25 Sep night (26 Sep): "Yellow flag. Yellow." when the clock ran out at 1387 s.
+    # That was value 3, which is there before the race and at the end; on all 5 race tapes a
+    # slow car sat in a sector showing 1 61.8% of the time, showing 3 2.5% (11, green: 1.7%)
+    engineer = RaceEngineer()
+    engineer.update(moment(0.0, race(0.0, {"sector_flags": [11, 11, 11]}, {"sector": 1})))
+    assert engineer.update(moment(1.0, race(1.0, {"sector_flags": [3, 11, 11]}, {"sector": 1}))) == []
+
+
+def test_B3_no_yellow_call_for_the_incident_he_is_in():
+    # replay of 25 Sep night: punted at the Porsche Curves, 168 -> 28 km/h, and the game's yellow
+    # for HIM came 3.4 s before the spin detector saw it, so "Yellow flag" was said to him
+    engineer = RaceEngineer()
+    engineer.update(moment(0.0, race(0.0, {"sector_flags": [11, 11, 11]}, {"sector": 1})))
+    crawling = moment(1.0, race(1.0, {"sector_flags": [1, 11, 11]}, {"sector": 1}))
+    crawling.frame.speed_kmh = 28.0
+    assert engineer.update(crawling) == []
+
+
 def test_H_no_spotter_in_the_garage_or_pits():
     spotter = Spotter()
     parked = replace(moment(0.0, race(0.0, me_changes={"in_pits": True}), nearby=near(0.0, (3.0, 0.0), (-3.0, 0.0))))

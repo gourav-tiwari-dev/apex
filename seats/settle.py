@@ -14,7 +14,7 @@ The chaos starts at lights out, and again at a restart (full-course yellow back 
 When it settles, the engineer says ONE summary line, in code's own words.
 """
 from radio import Call, ENGINEER
-from race_state import same_class_neighbours
+from race_state import same_class_neighbours, YELLOW_FLAG
 from seats.spotter import sides_taken, GREEN
 
 # GUESSED, then checked on the 24 Sep lap 1s (see test_settle.py): 15 s with nobody
@@ -29,7 +29,6 @@ NEIGHBOUR_PLACES = 2
 SETTLE_WITHIN_LAPS = 2
 RACE_SESSIONS = (10, 11, 12, 13)
 FULL_COURSE_YELLOW = 6
-NO_YELLOW = {0, 11}
 SUMMARY_TTL_S = 20.0
 
 PLACE_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
@@ -61,7 +60,7 @@ def neighbourhood(race):
 
 def yellow_anywhere(session):
     for flag in session.sector_flags:
-        if flag not in NO_YELLOW:
+        if flag == YELLOW_FLAG:
             return True
     return False
 

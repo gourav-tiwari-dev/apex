@@ -7,18 +7,20 @@ yellow) come from the voice bank; the rest is phrased by the persona on the next
 import math
 
 from radio import Call, RACE_CONTROL, ENGINEER
-from race_state import identity, same_class_neighbours, laps_to_go
+from race_state import identity, same_class_neighbours, laps_to_go, YELLOW_FLAG
 
 FORMATION = 3                 # mGamePhase values
 GREEN = 5
 SAFETY_CAR = 6
 FLAG = 8                      # the leader has taken the chequered flag
 BLUE_FLAG = 6                 # mFlag value
-# mSectorFlag read 11 in every sector for a whole green session (23 Sep 2026): 11 and 0 are
-# "no yellow". GUESSED: any other value is a local yellow; the first real yellow will confirm.
-NO_YELLOW = {0, 11}
-# Measured in the race of 23 Sep: 1 (and sometimes 3) = a local yellow, lasting 10-20 s, 13
-# times in 27 minutes around a 13.6 km lap. Only the yellow in my sector or the next matters.
+# mSectorFlag: 1 is a local yellow, nothing else is (race_state.YELLOW_FLAG, measured on all 5
+# race tapes 26 Sep). The 23 Sep note "1 (and sometimes 3)" was wrong about 3: it shows before
+# the race and when the clock runs out, and said "Yellow flag" at the end of the 25 Sep night
+# race. Yellows last 10-20 s. Only the yellow in my sector or the next matters.
+# Not for an incident he is in: below this he is the slow car or crawling past it (25 Sep night:
+# punted at the Porsche Curves, the game's yellow came 3.4 s before the spin detector saw it)
+HIS_OWN_INCIDENT_KMH = 60.0
 # GUESSED: the flag list uses the game's own sector numbering (index 0 = sector 3), like mSector.
 NEXT_SECTOR = {1: 2, 2: 0, 0: 1}
 # The game numbers MY sector 1, 2, 0 (0 = sector 3); the sector flags are a list in track order
@@ -168,7 +170,7 @@ class RaceEngineer:
         if me.flag == BLUE_FLAG and not self.blue_flag:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
-        yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag not in NO_YELLOW]
+        yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag == YELLOW_FLAG]
         here, next_one = FLAG_SLOT.get(me.sector), FLAG_SLOT.get(NEXT_SECTOR.get(me.sector))
         yellow_now = here in yellow_sectors or next_one in yellow_sectors
         # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow" twice
@@ -176,6 +178,8 @@ class RaceEngineer:
         if any(event.kind == "SPIN" for event in moment.events):
             self.own_spin_at = now
         own_yellow = self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
+        if moment.frame is not None and moment.frame.speed_kmh < HIS_OWN_INCIDENT_KMH:
+            own_yellow = True
         recent = self.yellow_said_at is not None and now - self.yellow_said_at < YELLOW_AGAIN_S
         if yellow_now and not self.yellow and phase == GREEN and not own_yellow and not recent:
             calls.append(urgent("YELLOW", "Yellow flag. Yellow.", now))
