@@ -3,7 +3,14 @@
 run_session reads his car frame by frame, feeds the detectors, the race model and the seats,
 lets the governor decide what goes on air, answers him when he speaks, and writes everything to
 the database. When the session ends (his own flag, the session changing, or Ctrl+C) it saves the
-result, and the corner map it learned if the track was new."""
+result, and the corner map it learned if the track was new.
+
+Every frame goes through the same steps, in this order (Session.run):
+    count his laps -> settle the track (first race snapshot only) -> note the result so far
+    -> learn the corners (new tracks) -> corner stats -> at the line: lap, reminders
+    -> detect events -> feed the race model and build the Moment -> the seats raise calls
+    -> hear him -> take the coach's answers -> the governor puts one call on air
+    -> write the tape (live) -> has the session ended?"""
 
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
@@ -76,14 +83,17 @@ from talk.scripted_talk import ScriptedTalk
 # to stop"): its spend is still charged here and logged, it just never refuses a question.
 BUDGET_PER_SESSION_RS = 10.0
 
-
-# SESSION_OVER (phase 8) comes when the LEADER takes the flag. On 23 Sep Apex stopped right there, with
-# Gourav still 400 m from his own finish line: every non-leader lost the end of the race.
-# So Apex waits for my own car to finish, then leaves the engineer time to call the result.
+# SESSION_OVER (phase 8) comes when the LEADER takes the flag. On 23 Sep Apex stopped right
+# there, with Gourav still 400 m from his own finish line: every non-leader lost the end of the
+# race. So Apex waits for my own car to finish, then leaves the engineer time to call the result.
 FINISHED_GRACE_S = 10.0
-FLAG_TIMEOUT_S = (
-    420.0  # a car that never takes the flag (parked, crashed out): stop anyway
-)
+# a car that never takes the flag (parked, crashed out): stop anyway
+FLAG_TIMEOUT_S = 420.0
+
+# what team memory knows about him, for the coach's my_habits tool
+HABIT_KINDS = ("lap_one", "corner_habit", "pass_attempts", "clean_race", "rival")
+# a coach answer that is no answer: the quick lane speaks instead, if it knows the question
+COACH_GAVE_UP = ("No clean answer", "Radio's lagging, mate. Ask me again")
 
 
 def database_file(conn):
@@ -139,127 +149,617 @@ def run_session(
     out_loud: speak through the speakers (default) or print lines (fast replays, tests).
     clean:    no swearing, for recordings other people will hear.
     persona:  who phrases the lines; tests pass a fake so no LLM call is ever made."""
-    REPLAY = replay
-    REPLAY_SPEED = replay_speed
-    if out_loud is None:
-        # a replay at max speed prints its lines, like v1 did
-        out_loud = not (REPLAY and not REPLAY_SPEED)
+    session = Session(
+        replay,
+        replay_speed,
+        tape_path,
+        out_loud,
+        clean,
+        persona,
+        launch_id,
+        voice,
+        script,
+    )
+    return session.run()
 
-    if REPLAY:
-        source = ReplaySource(REPLAY_SPEED, tape_path)
-        tape_out = tape_path
-    else:
+
+class SessionResult:
+    """How the session went, read from the race snapshots as they arrive; saved at the end."""
+
+    def __init__(self):
+        self.grid = None
+        self.final_place = None
+        self.car_settings = (
+            None  # (tc, abs, rear bias, motor map) he last ran under green
+        )
+        self.first_limit_steps = None
+        self.last_limit_steps = None
+        self.last_opponents = []
+
+    def see(self, race):
+        me = race.me
+        if self.grid is None:
+            self.grid = me.grid
+        if self.first_limit_steps is None:
+            self.first_limit_steps = me.track_limit_steps
+        self.last_limit_steps = me.track_limit_steps
+        self.final_place = me.place
+        self.last_opponents = race.opponents
+        if race.session.game_phase == GREEN_FLAG:
+            self.car_settings = (me.tc, me.abs, me.brake_bias_rear, me.motor_map)
+
+    def save(self, conn, session_id):
+        if self.final_place is not None:
+            strikes = None
+            if self.first_limit_steps is not None:
+                strikes = self.last_limit_steps - self.first_limit_steps
+            save_session_result(conn, session_id, self.grid, self.final_place, strikes)
+            save_rivals(conn, session_id, self.last_opponents)
+        if self.car_settings is not None:
+            save_car_settings(conn, session_id, *self.car_settings)
+
+
+class SessionEnd:
+    """The session ends itself: no Ctrl+C needed at the chequered flag. Only a session Apex saw
+    running: started on a results screen, it would end, restart and end again."""
+
+    def __init__(self):
+        self.saw_running = False
+        self.flag_seen_at = None
+        self.finished_at = None
+
+    def reason(self, race, now, session_type):
+        """ "session_over", "session_changed", or None while it goes on."""
+        if race is None:
+            return None
+        if race.session.game_phase < SESSION_OVER:
+            self.saw_running = True
+        flag_out = race.session.game_phase == SESSION_OVER and self.saw_running
+        if flag_out and self.flag_is_done(race.me, now):
+            return "session_over"
+        if session_type is not None and race.session.session != session_type:
+            return "session_changed"
+        return None
+
+    def flag_is_done(self, me, now):
+        """The flag is out: done once his own race is over and the grace has passed, or at
+        the timeout."""
+        if self.flag_seen_at is None:
+            self.flag_seen_at = now
+        my_race_done = me is None or me.finish_status != 0 or me.in_pits
+        if my_race_done and self.finished_at is None:
+            self.finished_at = now
+        grace_over = (
+            self.finished_at is not None and now - self.finished_at >= FINISHED_GRACE_S
+        )
+        return grace_over or now - self.flag_seen_at >= FLAG_TIMEOUT_S
+
+
+class Session:
+    """Everything one session keeps from frame to frame, and one method per step of a frame."""
+
+    def __init__(  # the options of run_session, passed straight on
+        self,
+        replay,
+        replay_speed,
+        tape_path,
+        out_loud,
+        clean,
+        persona,
+        launch_id,
+        voice,
+        script,
+    ):
+        self.replay = replay
+        self.replay_speed = replay_speed
+        self.launch_id = launch_id
+        if out_loud is None:
+            # a replay at max speed prints its lines, like v1 did
+            out_loud = not (replay and not replay_speed)
+        self.open_source(tape_path)
+        self.build_driving()
+        self.build_team(clean)
+        self.build_radio(clean, out_loud, voice, persona, script)
+        self.conn = None
+        self.session_id = None
+        self.result = SessionResult()
+        self.end = SessionEnd()
+        self.end_reason = "tape_end" if replay else "stopped_by_driver"
+
+    # ---- setting up -------------------------------------------------------------------------
+    def open_source(self, tape_path):
+        """Where the frames come from: a tape, or the game (and then a tape of it is written)."""
+        self.recorder = None
+        if self.replay:
+            self.source = ReplaySource(self.replay_speed, tape_path)
+            self.tape_out = tape_path
+            return
         info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, LMUObjectOut)
         info.create(0)
-        source = LiveSource(info)
+        self.source = LiveSource(info)
         # wall-clock is correct HERE: this names a file for a human, it is not
         # telemetry timing. All event timing still comes from mElapsedTime.
-        tape_out = f"tape_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl.gz"
-        tele_recorder = Recorder(tape_out)
-        print(f"Recording to {tape_out}")
+        self.tape_out = f"tape_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl.gz"
+        self.recorder = Recorder(self.tape_out)
+        print(f"Recording to {self.tape_out}")
 
-    # the corners of this track, for everything that names one. Old tapes carry no track
-    # name, so they keep the Monza map they were driven on
-    corner_map = CornerMap()
-    spin_detector = SpinDetector(corner_map)
-    detectors = [
-        HardBrakingDetector(corner_map),
-        LockUpDetector(corner_map),
-        CornerEntryDetection(corner_map),
-        ThrottleLift(corner_map),
-        OffTrackDetector(corner_map),
-        spin_detector,
-        SlideCaughtDetector(corner_map),
-        RearSnapDetector(corner_map),
-        WheelspinDetector(corner_map),
-    ]
+    def build_driving(self):
+        """What watches his own car: laps, corners, detectors."""
+        # the corners of this track, for everything that names one. Old tapes carry no track
+        # name, so they keep the Monza map they were driven on
+        corner_map = CornerMap()
+        self.corner_map = corner_map
+        self.spin_detector = SpinDetector(corner_map)
+        self.detectors = [
+            HardBrakingDetector(corner_map),
+            LockUpDetector(corner_map),
+            CornerEntryDetection(corner_map),
+            ThrottleLift(corner_map),
+            OffTrackDetector(corner_map),
+            self.spin_detector,
+            SlideCaughtDetector(corner_map),
+            RearSnapDetector(corner_map),
+            WheelspinDetector(corner_map),
+        ]
+        self.lap_counter = LapCounter()
+        self.lap_distance = LapDistance()
+        self.corner_stats = CornerStats(corner_map)
+        self.track = None
+        self.session_type = None
+        self.learning_track = False
+        self.track_learner = TrackMapLearner()
+        self.contacts = ContactDetection(corner_map)
+        self.validity = 1  # 1 = valid, 0 = invalidated
 
-    lap_counter = LapCounter()
-    lap_distance = LapDistance()
-    corner_stats = CornerStats(corner_map)
+    def build_team(self, clean):
+        """The seats, the race model they all read, and the governor that picks what is said."""
+        # the seats that watch the whole race (the performance seat rides on the detectors)
+        self.performance = PerformanceEngineer()
+        self.racecraft = Racecraft(self.performance)
+        # the one picture of the race (25 Sep): fed here, before any seat, and only read by them
+        self.model = RaceModel()
+        self.racecraft.share(self.model)
+        self.recall = MemoryRecall()
+        self.engineer = RaceEngineer()
+        self.strategist = Strategist()
+        self.seats = [
+            Spotter(),
+            self.engineer,
+            self.strategist,
+            self.performance,
+            self.racecraft,
+            self.recall,
+            TrackAwareness(),
+            QualifyingEngineer(),
+        ]
+        self.settle = RaceSettle()
+        self.governor = Governor()
+        # push-to-talk (M9): only live, and Apex races on without it if it is not set up
+        self.answers = Answers(
+            self.governor, self.engineer, self.strategist, self.performance, clean
+        )
+        # his standing orders: kept for the race, honoured by every seat and the coach (26 Sep)
+        self.orders = StandingOrders()
+        self.governor.orders = self.orders
+        self.engineer.orders = self.orders
+        self.answers.model = (
+            self.model
+        )  # the fixed answers read the same gaps as every seat
+        self.reminders = []  # {"remind_lap", "what"}: set by the agent, said at the line
+        self.heard_confidence = {}  # question -> Whisper's confidence, until the coach answers
 
-    track = None
-    session_type = None
-    learning_track = False
-    track_learner = TrackMapLearner()
+    def build_radio(self, clean, out_loud, voice, persona, script):
+        """His push-to-talk (or a script), the coach, the voice and the desk that cooks lines."""
+        self.talk = None
+        self.agent = None
+        if not self.replay:
+            self.talk = push_to_talk.start_if_set_up()
+        elif script:
+            self.talk = ScriptedTalk(self.source, script)
+        self.budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
+        if self.talk is not None and not self.replay:
+            # after the budget: it spends from it (24 Sep crash)
+            self.agent = RaceAgent(self.budget, clean)
+            self.agent.orders = self.orders
+        # one voice for the whole launch when apex.py passes it in: its banks load once
+        if voice is None:
+            voice = Voice(out_loud)
+        self.voice = voice
+        if persona is None:
+            persona = Persona(clean=clean)
+        self.desk = RadioDesk(
+            voice,
+            persona,
+            self.budget,
+            clean,
+            synchronous=self.replay and not self.replay_speed,
+        )
 
-    contacts = ContactDetection(corner_map)
-    # the result of the session, read from the race snapshots as they arrive
-    grid = None
-    final_place = None
-    car_settings = None  # (tc, abs, rear bias, motor map) he last ran under green
-    first_limit_steps = None
-    last_limit_steps = None
-    last_opponents = []
+    def start(self):
+        """The session's row in the database, and what earlier races taught."""
+        self.conn = connect_db()
+        session_started = datetime.now().isoformat(timespec="seconds")
+        self.session_id = start_session(
+            self.conn, session_started, self.tape_out, self.replay_speed, self.launch_id
+        )
+        # what he said "for good" in earlier races ("never tell me the gaps")
+        self.orders.load(self.conn)
+        # what team memory knows about every rival, for the racecraft plans
+        lap_one_facts = memory_facts(self.conn, "lap_one")
+        if lap_one_facts:
+            self.recall.lap_one = lap_one_facts[0]
+        for rival_fact in memory_facts(self.conn, "rival"):
+            self.racecraft.rivals[rival_fact["subject"]] = rival_fact["summary"]
+        # everything team memory knows about him, for the agent's my_habits tool
+        self.team_habits = []
+        for kind in HABIT_KINDS:
+            for fact in memory_facts(self.conn, kind):
+                self.team_habits.append(fact["summary"])
+        self.voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
 
-    # the seats that watch the whole race (the performance seat rides on the detectors)
-    performance = PerformanceEngineer()
-    racecraft = Racecraft(performance)
-    # the one picture of the race (25 Sep): fed here, before any seat, and only read by them
-    model = RaceModel()
-    racecraft.share(model)
-    recall = MemoryRecall()
-    engineer = RaceEngineer()
-    strategist = Strategist()
-    seats = [
-        Spotter(),
-        engineer,
-        strategist,
-        performance,
-        racecraft,
-        recall,
-        TrackAwareness(),
-        QualifyingEngineer(),
-    ]
-    settle = RaceSettle()
+    # ---- the session ------------------------------------------------------------------------
+    def run(self):
+        """Every frame through every step, until the session ends. Returns the session's id."""
+        try:
+            self.start()
+            for frame in self.source:
+                if self.one_frame(frame):
+                    break
+        except KeyboardInterrupt:
+            self.end_reason = "stopped_by_driver"
+        finally:
+            self.finish()
+        return self.session_id
 
-    governor = Governor()
-    # push-to-talk (M9): only live, and Apex races on without it if it is not set up
-    answers = Answers(governor, engineer, strategist, performance, clean)
-    # his standing orders: kept for the race, honoured by every seat and the coach (26 Sep)
-    orders = StandingOrders()
-    governor.orders = orders
-    engineer.orders = orders
-    answers.model = model  # the fixed answers read the same gaps as every seat
-    reminders = []  # {"remind_lap", "what"}: set by the agent, said at the line
-    heard_confidence = {}  # question -> Whisper's confidence, until the coach answers it
-    talk = None
-    agent = None
-    if not REPLAY:
-        talk = push_to_talk.start_if_set_up()
-    elif script:
-        talk = ScriptedTalk(source, script)
-    budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
-    if talk is not None and not REPLAY:
-        agent = RaceAgent(
-            budget, clean
-        )  # after the budget: it spends from it (24 Sep crash)
-        agent.orders = orders
-    # one voice for the whole launch when apex.py passes it in: its banks load once
-    if voice is None:
-        voice = Voice(out_loud)
-    if persona is None:
-        persona = Persona(clean=clean)
-    desk = RadioDesk(
-        voice, persona, budget, clean, synchronous=REPLAY and not REPLAY_SPEED
-    )
+    def one_frame(self, frame):
+        """The steps of one frame, in order. True when the session has ended."""
+        self.count_laps(frame)
+        race = self.source.race
+        # the track decides where the corners are, so it must be settled before
+        # anything below tags a corner onto a stat or an event
+        if self.track is None and race is not None:
+            self.settle_track(race)
+        if self.source.new_race and race.me is not None:
+            self.result.see(race)
+        self.learn_corners(frame)
+        stat = self.corner_stat(frame)
+        self.at_the_line(frame)
+        # the seats raise calls ...
+        events = self.detect(frame)
+        moment = self.moment_of(frame, stat, events)
+        self.seats_speak(moment)
+        # ... and the radio decides what goes on air, on sim time only
+        # quiet while actually braking or cornering hard. The map windows were the rule
+        # before, and at Le Mans they are long (Porsche Curves 1.4 km): 14 calls expired
+        # waiting for a straight in the first live race (23 Sep 2026)
+        in_corner = frame.brake > 0.2 or abs(frame.accel_lat) >= TURNING
+        self.governor.lap = self.lap_count
+        self.hear_him(frame)
+        if self.agent is not None:
+            for result in self.agent.finished():
+                self.take_coach_answer(result, frame)
+        self.put_on_air(frame, in_corner)
+        self.record(frame)
+        reason = self.end.reason(race, frame.elapsed_time, self.session_type)
+        if reason is not None:
+            self.end_reason = reason
+            return True
+        return False
 
-    conn = None
-    session_id = None
-    saw_running = False
-    flag_seen_at = None
-    finished_at = None
-    end_reason = "tape_end" if REPLAY else "stopped_by_driver"
+    def offer(self, call):
+        """A call for the governor; if it takes it, the desk starts cooking it at once."""
+        if self.governor.offer(call):
+            self.desk.prepare(call)
 
-    def log_finished_lines():
-        for result in desk.drain():
+    # ---- his car ----------------------------------------------------------------------------
+    def count_laps(self, frame):
+        # his own line crossings: where laps begin and end
+        self.own_laps = self.lap_counter.update(frame)
+        self.lap_count = self.own_laps
+        race = self.source.race
+        if (
+            self.session_type in RACE_SESSIONS
+            and race is not None
+            and race.me is not None
+        ):
+            green = race.session.game_phase == GREEN_FLAG
+            self.lap_count = self.lap_counter.race_lap(
+                race.me.laps, frame.elapsed_time, green
+            )
+        self.real_lap_distance = self.lap_distance.update(frame)
+
+    def settle_track(self, race):
+        """The first race snapshot: the track and session go in the database, the corner map is
+        loaded (or learning starts), and push-to-talk and team memory learn the corner names."""
+        self.track = race.session.track
+        self.session_type = race.session.session
+        me = race.me
+        set_session_track(
+            self.conn,
+            self.session_id,
+            self.track,
+            self.session_type,
+            race.session.game_phase,
+            me.car_class if me else None,
+            me.car_model if me else None,
+        )
+        self.corner_map.corners = corners_for_track(self.track)
+        if self.talk is not None and self.corner_map.corners:
+            self.talk.set_track_words([c["name"] for c in self.corner_map.corners])
+        # team memory for this track: the habits worth a reminder
+        habits = memory_facts(self.conn, "corner_habit", self.track)
+        habits += memory_facts(self.conn, "contact_corner", self.track)
+        for habit in habits:
+            self.recall.corner_habits.setdefault(habit["subject"], habit)
+        self.learning_track = self.corner_map.corners is None
+        if self.learning_track:
+            print(
+                f"[track: {self.track} - new track, learning its corners from your laps]"
+            )
+        else:
+            print(f"[track: {self.track} - corner map loaded]")
+
+    def learn_corners(self, frame):
+        self.track_learner.add(
+            self.own_laps, self.real_lap_distance, frame.brake, frame.accel_lat
+        )
+        if self.learning_track and self.lap_counter.wrapped:
+            learned = self.track_learner.corners(self.own_laps)
+            if learned is not None:
+                self.corner_map.corners = learned
+
+    def corner_stat(self, frame):
+        stat = self.corner_stats.update(frame, self.lap_count, self.real_lap_distance)
+        if stat:
+            print(stat)
+            save_corner_stat(self.conn, self.session_id, stat)
+        return stat
+
+    def at_the_line(self, frame):
+        """A lap done: save it, say the reminders due on this lap. And note an invalid lap."""
+        if self.lap_counter.wrapped:
+            save_lap(self.conn, self.session_id, self.own_laps - 1, self.validity)
+            self.validity = 1
+            for reminder in due_reminders(
+                self.reminders, self.lap_count, frame.elapsed_time
+            ):
+                self.offer(reminder)
+        # GUESSED - mLapInvalidated never observed True (n=33485)
+        if frame.lap_invalidated:
+            self.validity = 0
+
+    def detect(self, frame):
+        """This frame's events (contacts, offs, spins...): saved, and the performance seat's
+        calls on them offered."""
+        events = []
+        contact = self.contacts.update(frame, self.source.near, self.source.race)
+        if contact is not None:
+            contact.lap_count = self.lap_count
+            print(contact)
+            save_event(self.conn, self.session_id, contact)
+            events.append(contact)
+            if contact.kind == "CONTACT":
+                self.spin_detector.last_car_contact = contact.sim_time
+            if contact.kind in ("CONTACT", "IMPACT"):
+                self.performance.saw_hit(contact.sim_time)
+        for detector in self.detectors:
+            event = detector.update(frame)
+            if event:
+                event.lap_count = self.lap_count
+                print(event)
+                event_id = save_event(self.conn, self.session_id, event)
+                events.append(event)
+                call = self.performance.call_for_event(event, event_id)
+                if call is not None:
+                    self.offer(call)
+        return events
+
+    # ---- the race and the seats -------------------------------------------------------------
+    def moment_of(self, frame, stat, events):
+        """The race model fed first, then the Moment every seat looks at."""
+        corner_now = self.corner_map.at(self.real_lap_distance)
+        if self.source.new_race and self.source.race is not None:
+            self.model.see_race(self.source.race, frame.elapsed_time)
+        self.model.see_me(frame.lap_dist, frame.elapsed_time)
+        return Moment(
+            frame=frame,
+            race=self.source.race,
+            new_race=self.source.new_race,
+            near=self.source.near,
+            lap_count=self.lap_count,
+            lap_wrapped=self.lap_counter.wrapped,
+            corner=corner_now,
+            corner_stat=stat,
+            session_type=self.session_type,
+            corners=self.corner_map.corners,
+            events=events,
+            model=self.model,
+        )
+
+    def seats_speak(self, moment):
+        # first: is the start still chaos? Then nothing but the spotter, flags and answers
+        for call in self.settle.update(moment):
+            self.governor.settled = self.settle.settled
+            self.offer(call)
+        self.governor.settled = self.settle.settled
+        for seat in self.seats:
+            for call in seat.update(moment):
+                self.offer(call)
+
+    # ---- him --------------------------------------------------------------------------------
+    def hear_him(self, frame):
+        """What he said since the last frame, each answered in turn."""
+        if self.talk is None:
+            return
+        try:
+            heard_now = self.talk.poll()
+        except Exception as error:
+            # push-to-talk must never end a race: it switches itself off instead
+            print(
+                f"[push-to-talk off for this session: {error.__class__.__name__}: {error}]"
+            )
+            self.talk = None
+            return
+        for heard in heard_now:
+            self.answer(heard, frame)
+
+    def answer(self, heard, frame):
+        """One thing he said: "say again" if garbled, else his order, a question for the
+        coach, or a question the code answers."""
+        heard.text = fix_mishearing(heard.text)
+        if (
+            garbled(heard.text, getattr(heard, "confidence", None))
+            and intent_of(heard.text) is None
+        ):
+            self.say_again(heard, frame)
+            return
+        heard_order = None
+        if not is_mark(heard.text):
+            heard_order = self.orders.hear(
+                heard.text, self.lap_count, frame.elapsed_time
+            )
+        if heard_order is not None:
+            self.take_order(heard, heard_order, frame)
+            return
+        race = self.source.race
+        if (
+            self.agent is not None
+            and needs_agent(heard.text)
+            and race is not None
+            and race.me is not None
+        ):
+            self.ask_the_coach(heard, frame)
+            return
+        answer = self.answers.answer(
+            heard.text, race, self.lap_count, frame.elapsed_time
+        )
+        answer.facts["transcribe_ms"] = heard.transcribe_ms
+        answer.facts["confidence"] = getattr(heard, "confidence", None)
+        print(f"[asked: {heard.text!r} -> {answer.kind}: {answer.template}]")
+        self.offer(answer)
+
+    def say_again(self, heard, frame):
+        say_again = Call(
+            seat="race_engineer",
+            kind="ANSWER_UNHEARD",
+            sim_time=frame.elapsed_time,
+            priority=RACE_CONTROL,
+            ttl=10.0,
+            conclusion="Didn't catch that, mate. Say again.",
+            template="Didn't catch that, mate. Say again.",
+            asked=True,
+            facts={"heard": heard.text, "confidence": heard.confidence},
+        )
+        print(f"[garbled ({heard.confidence}): {heard.text!r} -> say again]")
+        self.offer(say_again)
+
+    def take_order(self, heard, heard_order, frame):
+        """An order: kept for the race and said back, no model needed."""
+        words, given = heard_order
+        ack = Call(
+            seat="race_engineer",
+            kind="ANSWER_ORDER",
+            sim_time=frame.elapsed_time,
+            priority=RACE_CONTROL,
+            ttl=10.0,
+            conclusion=words,
+            template=words,
+            asked=True,
+            facts={
+                "heard": heard.text,
+                "orders": [f"{o.topic}={o.stance}" for o in given],
+                "confidence": getattr(heard, "confidence", None),
+            },
+        )
+        self.orders.save(self.conn)
+        print(f"[order: {heard.text!r} -> {ack.facts['orders'] or 'back to normal'}]")
+        self.offer(ack)
+
+    def ask_the_coach(self, heard, frame):
+        """A real question: the agent looks at a still picture of the race."""
+        snapshot = Snapshot(
+            self.source.race,
+            self.lap_count,
+            self.real_lap_distance,
+            self.corner_map.corners,
+            self.engineer,
+            self.strategist,
+            self.performance,
+            self.racecraft,
+            self.governor,
+            self.team_habits,
+            contacts_by_car(self.conn, self.session_id),
+            db_path=database_file(self.conn),
+            session_id=self.session_id,
+            model=self.model,
+        )
+        self.agent.ask(heard.text, snapshot, frame.elapsed_time)
+        # logged with the answer: the "say again" threshold is tuned from these
+        self.heard_confidence[heard.text] = getattr(heard, "confidence", None)
+        self.voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
+        print(f"[asked the agent: {heard.text!r}]")
+
+    def take_coach_answer(self, result, frame):
+        """One answer back from the coach: its cost logged, its reminders and orders kept, and
+        the quick lane standing in when the coach gave up on a question it knows."""
+        now = frame.elapsed_time
+        for spent in result["costs"]:
+            save_llm_call(self.conn, self.session_id, "agent", spent)
+        heard_text = result["call"].facts.get("heard", "")
+        result["call"].facts["confidence"] = self.heard_confidence.pop(heard_text, None)
+        gave_up = result["call"].template.startswith(COACH_GAVE_UP)
+        race = self.source.race
+        if gave_up and intent_of(heard_text) is not None and race is not None:
+            # live 24 Sep: "what times do I need to catch the car ahead?" got "no clean
+            # answer" while the quick lane had the lap time. It speaks instead.
+            quick = self.answers.answer(heard_text, race, self.lap_count, now)
+            quick.facts["agent_gave_up"] = result["call"].template
+            result["call"] = quick
+        for action in result.get("actions", []):
+            self.reminders.append(action)  # "remind me to box on lap 12"
+        for topic, stance in result.get("orders", []):
+            try:
+                self.orders.set(topic, stance, heard_text, self.lap_count, now, "coach")
+                print(f"[order from the coach: {topic}={stance}]")
+            except ValueError:
+                print(f"[coach gave an order that does not exist: {topic}={stance}]")
+        if result.get("orders"):
+            self.orders.save(self.conn)
+        # .get: when the coach gave up, the quick answer stands in and has no timing
+        # (live 25 Sep: KeyError 'seconds' ended the session)
+        call = result["call"]
+        print(f"[agent: {call.template}  ({call.facts.get('seconds', '?')} s)]")
+        self.offer(call)
+
+    # ---- on air -----------------------------------------------------------------------------
+    def put_on_air(self, frame, in_corner):
+        on_air = self.governor.step(frame.elapsed_time, in_corner)
+        if on_air is not None:
+            if on_air.urgent:
+                played = self.voice.play_urgent(on_air.kind, on_air.template)
+                save_radio(
+                    self.conn,
+                    self.session_id,
+                    on_air,
+                    "spoken" if played else "no_bank_line",
+                    on_air.template,
+                    latency_ms=0,
+                )
+            elif not self.desk.submit(on_air):
+                save_radio(self.conn, self.session_id, on_air, "queue_full")
+        self.desk.latest_sim_time = frame.elapsed_time
+        self.log_dropped_calls()
+        self.log_finished_lines()
+
+    def log_finished_lines(self):
+        for result in self.desk.drain():
             call = result["call"]
             if result.get("llm_only"):
-                save_llm_call(conn, session_id, call.seat, result["llm"])
+                save_llm_call(self.conn, self.session_id, call.seat, result["llm"])
                 continue
             save_radio(
-                conn,
-                session_id,
+                self.conn,
+                self.session_id,
                 call,
                 result["status"],
                 result["line"],
@@ -271,427 +771,64 @@ def run_session(
                 and call.seat != "spotter"
                 and call.kind != "ANSWER_REPEAT"
             ):
-                answers.last_line = result[
-                    "line"
-                ]  # "say again" repeats the engineer, not "Clear"
+                # "say again" repeats the engineer, not "Clear"
+                self.answers.last_line = result["line"]
 
-    def log_dropped_calls():
-        for call, reason in governor.dropped:
-            desk.forget(call)
-            save_radio(conn, session_id, call, reason)
-        governor.dropped = []
+    def log_dropped_calls(self):
+        for call, reason in self.governor.dropped:
+            self.desk.forget(call)
+            save_radio(self.conn, self.session_id, call, reason)
+        self.governor.dropped = []
 
-    try:
-        conn = connect_db()
-        session_started = datetime.now().isoformat(timespec="seconds")
-        session_id = start_session(
-            conn, session_started, tape_out, REPLAY_SPEED, launch_id
-        )
-        orders.load(
-            conn
-        )  # what he said "for good" in earlier races ("never tell me the gaps")
-        # what team memory knows about every rival, for the racecraft plans
-        lap_one_facts = memory_facts(conn, "lap_one")
-        if lap_one_facts:
-            recall.lap_one = lap_one_facts[0]
-        for rival_fact in memory_facts(conn, "rival"):
-            racecraft.rivals[rival_fact["subject"]] = rival_fact["summary"]
-        # everything team memory knows about him, for the agent's my_habits tool
-        team_habits = []
-        for kind in ("lap_one", "corner_habit", "pass_attempts", "clean_race", "rival"):
-            for fact in memory_facts(conn, kind):
-                team_habits.append(fact["summary"])
-        voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
+    def record(self, frame):
+        """Live only: race lines go first, because on replay each one belongs to the car
+        frame after it."""
+        if self.recorder is None:
+            return
+        if self.source.new_race:
+            self.recorder.record(self.source.race)
+        if self.source.near is not None:
+            self.recorder.record(self.source.near)
+        self.recorder.record(frame)
 
-        # GUESSED — mLapInvalidated never observed True (n=33485)
-        validity = 1  # 1 = valid, 0 = invalidated
-        for frame in source:
-            own_laps = lap_counter.update(
-                frame
-            )  # his own line crossings: where laps begin and end
-            lap_count = own_laps
-            if (
-                session_type in RACE_SESSIONS
-                and source.race is not None
-                and source.race.me is not None
-            ):
-                green = source.race.session.game_phase == GREEN_FLAG
-                lap_count = lap_counter.race_lap(
-                    source.race.me.laps, frame.elapsed_time, green
-                )
-            real_lap_distance = lap_distance.update(frame)
-
-            # the track decides where the corners are, so it must be settled before
-            # anything below tags a corner onto a stat or an event
-            if track is None and source.race is not None:
-                track = source.race.session.track
-                session_type = source.race.session.session
-                me = source.race.me
-                set_session_track(
-                    conn,
-                    session_id,
-                    track,
-                    session_type,
-                    source.race.session.game_phase,
-                    me.car_class if me else None,
-                    me.car_model if me else None,
-                )
-                corner_map.corners = corners_for_track(track)
-                if talk is not None and corner_map.corners:
-                    talk.set_track_words([c["name"] for c in corner_map.corners])
-                # team memory for this track: the habits worth a reminder
-                for habit in memory_facts(conn, "corner_habit", track) + memory_facts(
-                    conn, "contact_corner", track
-                ):
-                    recall.corner_habits.setdefault(habit["subject"], habit)
-                learning_track = corner_map.corners is None
-                if learning_track:
-                    print(
-                        f"[track: {track} - new track, learning its corners from your laps]"
-                    )
-                else:
-                    print(f"[track: {track} - corner map loaded]")
-            if source.new_race and source.race.me is not None:
-                me = source.race.me
-                if grid is None:
-                    grid = me.grid
-                if first_limit_steps is None:
-                    first_limit_steps = me.track_limit_steps
-                last_limit_steps = me.track_limit_steps
-                final_place = me.place
-                last_opponents = source.race.opponents
-                if source.race.session.game_phase == GREEN_FLAG:
-                    car_settings = (me.tc, me.abs, me.brake_bias_rear, me.motor_map)
-            track_learner.add(own_laps, real_lap_distance, frame.brake, frame.accel_lat)
-            if learning_track and lap_counter.wrapped:
-                learned = track_learner.corners(own_laps)
-                if learned is not None:
-                    corner_map.corners = learned
-
-            stat = corner_stats.update(frame, lap_count, real_lap_distance)
-            if stat:
-                print(stat)
-                save_corner_stat(conn, session_id, stat)
-
-            if lap_counter.wrapped:
-                save_lap(conn, session_id, own_laps - 1, validity)
-                validity = 1
-                for reminder in due_reminders(reminders, lap_count, frame.elapsed_time):
-                    if governor.offer(reminder):
-                        desk.prepare(reminder)
-
-            if frame.lap_invalidated:
-                validity = 0
-
-            # the seats raise calls ...
-            frame_events = []
-            contact = contacts.update(frame, source.near, source.race)
-            if contact is not None:
-                contact.lap_count = lap_count
-                print(contact)
-                save_event(conn, session_id, contact)
-                frame_events.append(contact)
-                if contact.kind == "CONTACT":
-                    spin_detector.last_car_contact = contact.sim_time
-                if contact.kind in ("CONTACT", "IMPACT"):
-                    performance.saw_hit(contact.sim_time)
-            for detector in detectors:
-                event = detector.update(frame)
-                if event:
-                    event.lap_count = lap_count
-                    print(event)
-                    event_id = save_event(conn, session_id, event)
-                    frame_events.append(event)
-                    call = performance.call_for_event(event, event_id)
-                    if call is not None and governor.offer(call):
-                        desk.prepare(call)
-
-            corner_now = corner_map.at(real_lap_distance)
-            if source.new_race and source.race is not None:
-                model.see_race(source.race, frame.elapsed_time)
-            model.see_me(frame.lap_dist, frame.elapsed_time)
-            moment = Moment(
-                frame=frame,
-                race=source.race,
-                new_race=source.new_race,
-                near=source.near,
-                lap_count=lap_count,
-                lap_wrapped=lap_counter.wrapped,
-                corner=corner_now,
-                corner_stat=stat,
-                session_type=session_type,
-                corners=corner_map.corners,
-                events=frame_events,
-                model=model,
-            )
-            # first: is the start still chaos? Then nothing but the spotter, flags and answers
-            for call in settle.update(moment):
-                governor.settled = settle.settled
-                if governor.offer(call):
-                    desk.prepare(call)
-            governor.settled = settle.settled
-            for seat in seats:
-                for call in seat.update(moment):
-                    if governor.offer(call):
-                        desk.prepare(call)
-
-            # ... and the radio decides what goes on air, on sim time only
-            # quiet while actually braking or cornering hard. The map windows were the rule
-            # before, and at Le Mans they are long (Porsche Curves 1.4 km): 14 calls expired
-            # waiting for a straight in the first live race (23 Sep 2026)
-            in_corner = frame.brake > 0.2 or abs(frame.accel_lat) >= TURNING
-            governor.lap = lap_count
-            heard_now = []
-            if talk is not None:
-                try:
-                    heard_now = talk.poll()
-                except Exception as error:
-                    # push-to-talk must never end a race: it switches itself off instead
-                    print(
-                        f"[push-to-talk off for this session: {error.__class__.__name__}: {error}]"
-                    )
-                    talk = None
-            if talk is not None or heard_now:
-                for heard in heard_now:
-                    heard.text = fix_mishearing(heard.text)
-                    if (
-                        garbled(heard.text, getattr(heard, "confidence", None))
-                        and intent_of(heard.text) is None
-                    ):
-                        say_again = Call(
-                            seat="race_engineer",
-                            kind="ANSWER_UNHEARD",
-                            sim_time=frame.elapsed_time,
-                            priority=RACE_CONTROL,
-                            ttl=10.0,
-                            conclusion="Didn't catch that, mate. Say again.",
-                            template="Didn't catch that, mate. Say again.",
-                            asked=True,
-                            facts={"heard": heard.text, "confidence": heard.confidence},
-                        )
-                        print(
-                            f"[garbled ({heard.confidence}): {heard.text!r} -> say again]"
-                        )
-                        if governor.offer(say_again):
-                            desk.prepare(say_again)
-                        continue
-                    heard_order = (
-                        None
-                        if is_mark(heard.text)
-                        else orders.hear(heard.text, lap_count, frame.elapsed_time)
-                    )
-                    if heard_order is not None:
-                        # an order: kept for the race and said back, no model needed
-                        words, given = heard_order
-                        ack = Call(
-                            seat="race_engineer",
-                            kind="ANSWER_ORDER",
-                            sim_time=frame.elapsed_time,
-                            priority=RACE_CONTROL,
-                            ttl=10.0,
-                            conclusion=words,
-                            template=words,
-                            asked=True,
-                            facts={
-                                "heard": heard.text,
-                                "orders": [f"{o.topic}={o.stance}" for o in given],
-                                "confidence": getattr(heard, "confidence", None),
-                            },
-                        )
-                        orders.save(conn)
-                        print(
-                            f"[order: {heard.text!r} -> {ack.facts['orders'] or 'back to normal'}]"
-                        )
-                        if governor.offer(ack):
-                            desk.prepare(ack)
-                        continue
-                    if (
-                        agent is not None
-                        and needs_agent(heard.text)
-                        and source.race is not None
-                        and source.race.me is not None
-                    ):
-                        # a real question: the agent looks at a still picture of the race
-                        snapshot = Snapshot(
-                            source.race,
-                            lap_count,
-                            real_lap_distance,
-                            corner_map.corners,
-                            engineer,
-                            strategist,
-                            performance,
-                            racecraft,
-                            governor,
-                            team_habits,
-                            contacts_by_car(conn, session_id),
-                            db_path=database_file(conn),
-                            session_id=session_id,
-                            model=model,
-                        )
-                        agent.ask(heard.text, snapshot, frame.elapsed_time)
-                        # logged with the answer: the "say again" threshold is tuned from these
-                        heard_confidence[heard.text] = getattr(
-                            heard, "confidence", None
-                        )
-                        voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
-                        print(f"[asked the agent: {heard.text!r}]")
-                        continue
-                    answer = answers.answer(
-                        heard.text, source.race, lap_count, frame.elapsed_time
-                    )
-                    answer.facts["transcribe_ms"] = heard.transcribe_ms
-                    answer.facts["confidence"] = getattr(heard, "confidence", None)
-                    print(
-                        f"[asked: {heard.text!r} -> {answer.kind}: {answer.template}]"
-                    )
-                    if governor.offer(answer):
-                        desk.prepare(answer)
-            if agent is not None:
-                for result in agent.finished():
-                    for spent in result["costs"]:
-                        save_llm_call(conn, session_id, "agent", spent)
-                    heard_text = result["call"].facts.get("heard", "")
-                    result["call"].facts["confidence"] = heard_confidence.pop(
-                        heard_text, None
-                    )
-                    gave_up = result["call"].template.startswith(
-                        ("No clean answer", "Radio's lagging, mate. Ask me again")
-                    )
-                    if (
-                        gave_up
-                        and intent_of(heard_text) is not None
-                        and source.race is not None
-                    ):
-                        # live 24 Sep: "what times do I need to catch the car ahead?" got "no clean
-                        # answer" while the quick lane had the lap time. It speaks instead.
-                        quick = answers.answer(
-                            heard_text, source.race, lap_count, frame.elapsed_time
-                        )
-                        quick.facts["agent_gave_up"] = result["call"].template
-                        result["call"] = quick
-                    for action in result.get("actions", []):
-                        reminders.append(action)  # "remind me to box on lap 12"
-                    for topic, stance in result.get("orders", []):
-                        try:
-                            orders.set(
-                                topic,
-                                stance,
-                                heard_text,
-                                lap_count,
-                                frame.elapsed_time,
-                                "coach",
-                            )
-                            print(f"[order from the coach: {topic}={stance}]")
-                        except ValueError:
-                            print(
-                                f"[coach gave an order that does not exist: {topic}={stance}]"
-                            )
-                    if result.get("orders"):
-                        orders.save(conn)
-                    # .get: when the coach gave up, the quick answer stands in and has no timing
-                    # (live 25 Sep: KeyError 'seconds' ended the session)
-                    print(
-                        f"[agent: {result['call'].template}  ({result['call'].facts.get('seconds', '?')} s)]"
-                    )
-                    if governor.offer(result["call"]):
-                        desk.prepare(result["call"])
-            on_air = governor.step(frame.elapsed_time, in_corner)
-            if on_air is not None:
-                if on_air.urgent:
-                    played = voice.play_urgent(on_air.kind, on_air.template)
-                    save_radio(
-                        conn,
-                        session_id,
-                        on_air,
-                        "spoken" if played else "no_bank_line",
-                        on_air.template,
-                        latency_ms=0,
-                    )
-                elif not desk.submit(on_air):
-                    save_radio(conn, session_id, on_air, "queue_full")
-            desk.latest_sim_time = frame.elapsed_time
-            log_dropped_calls()
-            log_finished_lines()
-
-            if not REPLAY:
-                # race lines go first: on replay each one belongs to the car frame after it
-                if source.new_race:
-                    tele_recorder.record(source.race)
-                if source.near is not None:
-                    tele_recorder.record(source.near)
-                tele_recorder.record(frame)
-
-            # the session ends itself: no Ctrl+C needed at the chequered flag. Only a session
-            # Apex saw running: started on a results screen, it would end, restart and end again
-            if source.race is not None:
-                if source.race.session.game_phase < SESSION_OVER:
-                    saw_running = True
-                if source.race.session.game_phase == SESSION_OVER and saw_running:
-                    if flag_seen_at is None:
-                        flag_seen_at = frame.elapsed_time
-                    me = source.race.me
-                    my_race_done = me is None or me.finish_status != 0 or me.in_pits
-                    if my_race_done and finished_at is None:
-                        finished_at = frame.elapsed_time
-                    grace_over = (
-                        finished_at is not None
-                        and frame.elapsed_time - finished_at >= FINISHED_GRACE_S
-                    )
-                    if (
-                        grace_over
-                        or frame.elapsed_time - flag_seen_at >= FLAG_TIMEOUT_S
-                    ):
-                        end_reason = "session_over"
-                        break
-                if (
-                    session_type is not None
-                    and source.race.session.session != session_type
-                ):
-                    end_reason = "session_changed"
-                    break
-
-    except KeyboardInterrupt:
-        end_reason = "stopped_by_driver"
-
-    finally:
-        if talk is not None:
-            talk.close()
-        desk.stop()
-        if not REPLAY:
-            tele_recorder.stop()
-        if learning_track and track:
-            learned = track_learner.corners(lap_counter.lap_count)
+    # ---- the end ----------------------------------------------------------------------------
+    def finish(self):
+        """Everything closed, the learned corner map and the session saved, whatever ended it."""
+        if self.talk is not None:
+            self.talk.close()
+        self.desk.stop()
+        if self.recorder is not None:
+            self.recorder.stop()
+        if self.learning_track and self.track:
+            learned = self.track_learner.corners(self.lap_counter.lap_count)
             if learned is not None:
-                laps_used = len(track_learner.complete_laps(lap_counter.lap_count))
-                save_map(track, learned, laps_used)
-                print(
-                    f"[saved the corner map for {track}, learned from {laps_used} laps]"
+                laps_used = len(
+                    self.track_learner.complete_laps(self.lap_counter.lap_count)
                 )
-        decision_hash = governor.decision_hash()
-        if conn is not None and session_id:
-            log_dropped_calls()
-            log_finished_lines()
-            ended_at = datetime.now().isoformat(timespec="seconds")
-            finish_session(conn, session_id, decision_hash, end_reason, ended_at)
-            if final_place is not None:
-                strikes = None
-                if first_limit_steps is not None:
-                    strikes = last_limit_steps - first_limit_steps
-                save_session_result(conn, session_id, grid, final_place, strikes)
-                save_rivals(conn, session_id, last_opponents)
-            if car_settings is not None:
-                save_car_settings(conn, session_id, *car_settings)
-            save_opponent_corners(conn, session_id, performance.opponents.rows)
-            save_pass_attempts(conn, session_id, racecraft.attempts)
-            print_corner_report(conn, session_id)
-            print(
-                f"session {session_id} ended: {end_reason}   LLM spend ~Rs {budget.spent_rs:.2f}"
-            )
-        if conn is not None:
-            conn.close()
+                save_map(self.track, learned, laps_used)
+                print(
+                    f"[saved the corner map for {self.track}, learned from {laps_used} laps]"
+                )
+        decision_hash = self.governor.decision_hash()
+        if self.conn is not None and self.session_id:
+            self.save_session(decision_hash)
+        if self.conn is not None:
+            self.conn.close()
         print(decision_hash)
-    return session_id
 
-
-if __name__ == "__main__":
-    run_session(True, 1)
+    def save_session(self, decision_hash):
+        self.log_dropped_calls()
+        self.log_finished_lines()
+        ended_at = datetime.now().isoformat(timespec="seconds")
+        finish_session(
+            self.conn, self.session_id, decision_hash, self.end_reason, ended_at
+        )
+        self.result.save(self.conn, self.session_id)
+        save_opponent_corners(
+            self.conn, self.session_id, self.performance.opponents.rows
+        )
+        save_pass_attempts(self.conn, self.session_id, self.racecraft.attempts)
+        print_corner_report(self.conn, self.session_id)
+        print(
+            f"session {self.session_id} ended: {self.end_reason}   LLM spend ~Rs {self.budget.spent_rs:.2f}"
+        )
