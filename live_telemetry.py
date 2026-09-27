@@ -1,13 +1,13 @@
 import time
 import math
 import threading
-import json, gzip, hashlib, zlib
+import json, gzip, zlib
 
 
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
 from dataclasses import dataclass, asdict
-from queue import Full, Empty, Queue
+from queue import Queue
 from datetime import datetime
 from memory import (
     connect_db,
@@ -33,7 +33,7 @@ from seats.qualifying import QualifyingEngineer
 from orders import StandingOrders
 from persona import Persona
 from voice import Voice, RadioDesk
-from seats.performance import call_from_event, PerformanceEngineer
+from seats.performance import PerformanceEngineer
 from seats import Moment
 from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer
@@ -72,7 +72,6 @@ class CarState:
     max_rpm: float
     lap_dist: float  # from SCORING array
     lap_invalidated: bool  # from SCORING array
-    # grip: list               # daed
     wheel_rot: list  # 4× mRotation (rad/s) — VERIFIED alive
     accel_long: float  # mLocalAccel.z — braking/accel G
     accel_lat: float  # mLocalAccel.x — cornering G
@@ -117,17 +116,6 @@ def slip_ratio(wheel_rotation, wheel_radius, car_speed_ms):
 
     # Compare against how fast the car is actually moving over the ground.
     return (wheel_surface_speed - car_speed_ms) / car_speed_ms
-
-
-def match_opponents():
-    opponents = []
-    telemetry_by_id = {t.mID: t for t in telemetry if t.mID != 0}
-    for s in scoring:
-        if s.mID != 0:
-            telemetry_info = telemetry_by_id.get(s.mID)
-            opponents.append((s, telemetry_info))
-
-    return opponents
 
 
 # Corners come from track_map.py, the one place that decides where they are.
@@ -179,7 +167,6 @@ class LiveSource:
             max_rpm=my_car.mEngineMaxRPM,
             lap_dist=my_scoring.mLapDist,
             lap_invalidated=my_car.mLapInvalidated,
-            # grip=[my_car.mWheels[i].mGripFract for i in range(4)],   dead
             wheel_rot=[my_car.mWheels[i].mRotation for i in range(4)],
             accel_lat=my_car.mLocalAccel.x,
             accel_long=my_car.mLocalAccel.z,
