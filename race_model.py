@@ -15,24 +15,19 @@ What the field study of his four race tapes (tools/field_study.py) decided:
   - a per-car "model pace" against a class reference predicted next laps WORSE than the last lap,
     so pace is always between two cars, on the road, never from a reference
 
-It holds one TrackClock (every car's trail, mine included) and the segment times of every car
-(normal speed per 100 m of track: slow or stopped cars). Seats and the coach only read it.
+It holds one TrackClock (every car's trail, mine included), the battles between cars and the
+pit stops. Seats and the coach only read it.
 """
 
 import math
-import collections
 import statistics
 
 from gaps import TrackClock
 
-SEGMENT_M = 100.0  # track split for normal speeds (~136 at Le Mans)
-REFERENCE_PASSES = 40  # latest passes per segment that make the normal speed
-MIN_REFERENCE = 6
 STRETCHES = 8  # a lap of road trend = the median of 8 stretches
 SURE_LAPS = 2  # two laps of trend: the direction was right ~80% on his tapes
 BATTLE_S = 1.0  # same-point gap under this: a fight
 BATTLE_FOR_S = 8.0  # ... held this long: a battle (racecraft's 8 s confirmation)
-TRAIN_S = 1.0
 ME = "me"
 
 
@@ -41,14 +36,9 @@ class RaceModel:
         self.clock = TrackClock(lap_length)
         self.race = None
         self.now = None
-        self.seg = {}  # car key -> (segment index, time entered)
-        self.normal_times = collections.defaultdict(
-            lambda: collections.deque(maxlen=REFERENCE_PASSES)
-        )  # (class, segment) -> seconds
         self.close_since = {}  # (front key, back key) -> since when within BATTLE_S
         self.pit_events = []  # (time, car key, "in" / "out")
         self.was_in_pits = {}
-        self.predictions = []
 
     # ---- feeding it (the live loop, once per snapshot / frame, BEFORE any seat) ----------------
     @property
@@ -67,35 +57,11 @@ class RaceModel:
             if was is not None and was != o.in_pits:
                 self.pit_events.append((now, o.id, "in" if o.in_pits else "out"))
             self.was_in_pits[o.id] = o.in_pits
-            trail = self.clock.theirs.get(o.id)
-            if trail is not None and trail.distance and not o.in_pits:
-                self.segment(o.id, o.car_class, trail)
         self.pit_events = [e for e in self.pit_events if now - e[0] < 120]
         self.battles_update(now)
 
     def see_me(self, lap_dist, now):
         self.clock.see_me(lap_dist, now)
-        if (
-            self.race is not None
-            and self.clock.mine.distance
-            and not self.race.me.in_pits
-        ):
-            self.segment(ME, self.race.me.car_class, self.clock.mine)
-
-    def segment(self, key, car_class, trail):
-        d = trail.distance[-1]
-        index = int(d // SEGMENT_M)
-        last = self.seg.get(key)
-        if last is not None and index == last[0] + 1:
-            entered, left = (
-                trail.time_at(last[0] * SEGMENT_M),
-                trail.time_at(index * SEGMENT_M),
-            )
-            if entered is not None and left is not None and left > entered:
-                within = int(((last[0] * SEGMENT_M) % self.lap_length) // SEGMENT_M)
-                self.normal_times[(car_class, within)].append(left - entered)
-        if last is None or index != last[0]:
-            self.seg[key] = (index, self.now)
 
     # ---- where things are ---------------------------------------------------------------------
     def trail(self, key):
@@ -111,15 +77,6 @@ class RaceModel:
         if key == ME:
             return self.race.me
         return next((o for o in self.race.opponents if o.id == key), None)
-
-    def normal_speed(self, car_class, lap_dist):
-        """km/h cars of this class normally do at this point of the lap, or None."""
-        times = self.normal_times.get(
-            (car_class, int((lap_dist % self.lap_length) // SEGMENT_M))
-        )
-        if not times or len(times) < MIN_REFERENCE:
-            return None
-        return SEGMENT_M / statistics.median(times) * 3.6
 
     # ---- between two cars ---------------------------------------------------------------------
     def gap(self, front, back):
@@ -299,26 +256,3 @@ class RaceModel:
             ):
                 near.append((when, car_key))
         return near
-
-    def status(self, key):
-        car = self.car(key)
-        if car is None:
-            return None
-        if car.in_pits:
-            return "pit lane"
-        speed = getattr(car, "speed_kmh", None)
-        if speed is not None and speed < 20:
-            return "stopped"
-        return "racing"
-
-    # ---- forecasts, scored against what happened ------------------------------------------------
-    def predict(self, kind, subject, value, **context):
-        self.predictions.append(
-            {
-                "kind": kind,
-                "subject": subject,
-                "value": value,
-                "at": self.now,
-                **context,
-            }
-        )
