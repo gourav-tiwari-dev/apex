@@ -4,14 +4,8 @@ import json
 import time
 from dataclasses import replace
 
-from agent import (
-    RaceAgent,
-    Snapshot,
-    check_answer,
-    numbers_seen,
-    pace_words,
-    trend_words,
-)
+from agent import RaceAgent, Snapshot, check_answer, numbers_seen
+from coach.fight_maths import pace_words, trend_words
 from answers import needs_agent
 from words import lap_text
 from radio import Budget, Governor
@@ -338,7 +332,7 @@ def test_a_judgment_anywhere_in_the_question_goes_to_the_agent():
 
 
 def test_the_fight_call_is_made_by_code():
-    from agent import team_call
+    from coach.fight_maths import team_call
 
     # 24 Sep: last lap, 0.2 s behind, only 0.3 s a lap quicker - the model said "let it go"
     assert team_call("behind", 0.2, 239.7, 240.0, 1).startswith("DEFEND: last lap")
@@ -573,7 +567,7 @@ def test_the_car_behind_gets_the_team_call_for_when_it_arrives():
 def test_pace_is_never_his_start_lap_or_best_lap():
     # live 25 Sep: lap 2 invalid (-1), best = lap 1 with the start (4:17.9) -> "17 s a lap quicker"
     from dataclasses import replace
-    from agent import my_pace, recent_lap
+    from coach.fight_maths import my_pace, recent_lap
 
     snapshot_race = snapshot_at_lap_4()
     engineer = RaceEngineer()
@@ -601,7 +595,7 @@ def test_pace_is_measured_on_the_road_a_lap_apart():
 
 
 def test_let_by_only_for_a_car_genuinely_fast_and_measured():
-    from agent import team_call
+    from coach.fight_maths import team_call
 
     assert team_call("behind", 0.4, 240.0, 241.5, 5).startswith(
         "DEFEND"
