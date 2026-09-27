@@ -14,7 +14,7 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from live_telemetry import CarState
+from game.car_frame import CarState
 from driving.detectors import SpinDetector, SlideCaughtDetector
 from track_map import CornerMap, corners_for_track
 

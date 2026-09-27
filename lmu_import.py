@@ -38,7 +38,7 @@ from dataclasses import asdict
 
 import duckdb
 
-from live_telemetry import CarState
+from game.car_frame import CarState
 from driving.detectors import FRONT_RADIUS, REAR_RADIUS
 from race_state import Session, Me, RaceSnapshot
 

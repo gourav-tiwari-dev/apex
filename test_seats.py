@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from live_telemetry import CarState
+from game.car_frame import CarState
 from race_state import Session, Me, Opponent, RaceSnapshot, NearCar, NearCars
 from seats import Moment
 from seats.spotter import Spotter

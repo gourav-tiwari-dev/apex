@@ -1,5 +1,5 @@
 import json, gzip
-from live_telemetry import CarState
+from game.car_frame import CarState
 from driving.corner_stats import CornerStats
 from driving.laps import LapDistance, LapCounter
 

@@ -6,7 +6,7 @@ import json, gzip, zlib
 
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
-from dataclasses import dataclass, asdict
+from dataclasses import asdict
 from queue import Queue
 from datetime import datetime
 from memory import (
@@ -73,32 +73,7 @@ from driving.detectors import (
     ThrottleLift,
     WheelspinDetector,
 )
-
-
-@dataclass
-class CarState:
-    speed_kmh: float
-    throttle: float  # mFilteredThrottle
-    brake: float  # mFilteredBrake
-    gear: int
-    rpm: float
-    max_rpm: float
-    lap_dist: float  # from SCORING array
-    lap_invalidated: bool  # from SCORING array
-    wheel_rot: list  # 4× mRotation (rad/s) — VERIFIED alive
-    accel_long: float  # mLocalAccel.z — braking/accel G
-    accel_lat: float  # mLocalAccel.x — cornering G
-    surface: list  # 4x mWheels[i].mSurfaceType
-    yaw_rate: float  # mLocalRot
-    elapsed_time: float
-    # v2 fields. They default to None so tapes recorded before 23 Sep 2026 still load.
-    steering: float | None = None  # mUnfilteredSteering, -1 left .. 1 right (my input)
-    steering_filtered: float | None = None  # mFilteredSteering (what the car got)
-    pos: list | None = None  # mPos, world x/y/z in metres (the spotter needs it)
-    ori: list | None = None  # mOri, 3 rows of the orientation matrix
-    delta_best: float | None = None  # mDeltaBest, seconds against my best lap
-    last_impact_time: float | None = None  # mLastImpactET
-    last_impact_magnitude: float | None = None
+from game.car_frame import CarState
 
 
 class LiveSource:
