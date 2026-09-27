@@ -23,7 +23,7 @@ import session
 from question_bank import QUESTIONS
 from try_coach import frozen_race, DEFAULT_TAPE
 from coach.agent import RaceAgent
-from answers import Answers
+from talk.answers import Answers
 from radio import Budget
 
 GAVE_UP = (

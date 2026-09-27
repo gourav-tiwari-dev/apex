@@ -4,7 +4,10 @@ only the coach can answer it.
 Whisper's words are fixed where it mishears racing words ("Caulif" is quali), judged garbled
 or not from its own confidence, then matched against the questions the code answers by itself
 (INTENTS). A question with words beyond its intent, or asking for a judgment, goes to the
-coach instead (needs_agent)."""
+coach instead (needs_agent).
+
+Matching: every intent has phrases that ask for it. The intent with the LONGEST matching
+phrase wins, so "where am I losing time" is about lap time, not position ("where am i")."""
 
 import re
 

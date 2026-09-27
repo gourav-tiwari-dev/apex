@@ -6,18 +6,15 @@ ready as soon as the words are, and he hears it after the voice render (about 1.
 An agent with tools was the first plan; at about 1.8 s per model step it would have taken
 about 7 s to answer, which is a corner and a half at Le Mans.
 
-Matching: every intent has phrases that ask for it. The intent with the LONGEST matching
-phrase wins, so "where am I losing time" is about lap time, not position ("where am i").
+Which question he asked is talk/hearing.py; this module answers it.
 """
 
 
 from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go, multiclass, tyre_averages
-from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW
-from words import lap_text
-from game.constants import WHEEL_NAMES
+from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW, WHEEL_NAMES
 from seats.strategist import HOT_TYRE_C
-from words import Rotation
+from words import Rotation, lap_text
 from talk.hearing import intent_of, laps_asked
 
 ANSWER_TTL_S = 10.0
