@@ -10,14 +10,15 @@ import statistics
 from radio import Call, STRATEGY, ENGINEER
 from race_state import laps_to_go, leader_margin
 from game.constants import GREEN_FLAG, RACE_SESSIONS
+from game.constants import WHEEL_NAMES
+from race_state import NO_TYRE_READING_C
 
 FIRST_CALL_AFTER_LAPS = 2  # need two measured laps before saying anything about fuel
 RECHECK_EVERY_LAPS = 3
 SPARE_COMFORTABLE = 0.5  # laps of fuel spare above which it is simply "fine"
 # GUESSED upper edge of the GT3 slick window, Celsius, averaged across the tread.
 # Confirm on the first v2 tape: the audit shows real temperatures.
-TYRE_HOT_C = 105.0
-TYRE_NAMES = ["front left", "front right", "rear left", "rear right"]
+HOT_TYRE_C = 105  # a tyre over this at two lines in a row is cooking
 CALL_TTL_S = 25.0
 
 # Live 25 Sep: Apex was restarted mid-race, had no laps at the line, and so no fuel picture.
@@ -572,12 +573,11 @@ class Strategist:
     def tyre_check(self, me, now):
         calls = []
         for index, zones in enumerate(me.tyre_temps):
-            # 0 Kelvin (-273 C) means the game has no reading (pits, garage), 23 Sep
-            if not zones or min(zones) < -200:
+            if not zones or min(zones) <= NO_TYRE_READING_C:
                 continue
             average = round(sum(zones) / len(zones))
-            name = TYRE_NAMES[index]
-            if average > TYRE_HOT_C:
+            name = WHEEL_NAMES[index]
+            if average > HOT_TYRE_C:
                 self.hot_laps[index] = self.hot_laps.get(index, 0) + 1
             else:
                 self.hot_laps[index] = 0

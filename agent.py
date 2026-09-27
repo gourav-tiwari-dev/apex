@@ -41,11 +41,12 @@ from persona import (
     has_phrase,
 )
 from radio import Call, RACE_CONTROL
-from race_state import identity, same_class_neighbours, laps_to_go
-from seats.strategist import fine_margin
+from race_state import identity, same_class_neighbours, laps_to_go, tyre_averages
+from seats.strategist import HOT_TYRE_C, fine_margin
 import race_tools
 from orders import current_plan
 from words import lap_text
+from race_model import CATCH_UPPER
 
 MAX_ROUNDS = 4  # tool rounds before it must answer
 # asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
@@ -405,7 +406,6 @@ TOOLS = [
 
 
 CALL_WORDS = ("DEFEND", "LET BY", "ATTACK", "FOLLOW")
-HOT_TYRE_C = 105  # the strategist's "cooking" line
 OTHER_CLASS_NEAR_M = 400  # an other-class car this close behind is about to arrive
 
 
@@ -528,11 +528,6 @@ def pass_odds(quicker):
 CONTACT_LET_BY_QUICKER_S = (
     0.5  # contact once + at least this much quicker: a let-by is fair
 )
-CATCH_UPPER = (
-    1.5  # field study (25 Sep): 20 of 21 sure forecasts were caught, the time was
-)
-# off by a median 64%, and within 1.5x the forecast 95% of the time for
-# forecasts over a minute: say WHETHER and an upper bound, never "in 1.6 laps"
 
 
 def catch_words(laps, to_go):
@@ -1132,15 +1127,9 @@ class Snapshot:
         me = race.me
         state = {
             "fuel": strategist.fuel_now,
-            "tyre_temps_c": [
-                round(sum(z) / len(z)) for z in me.tyre_temps if z and min(z) > -200
-            ],
+            "tyre_temps_c": tyre_averages(me),
             "damage": sum(me.dents) > 0,
-            "tyres_overheating": any(
-                round(sum(z) / len(z)) > HOT_TYRE_C
-                for z in me.tyre_temps
-                if z and min(z) > -200
-            )
+            "tyres_overheating": any(t > HOT_TYRE_C for t in tyre_averages(me))
             or bool(me.overheating),
             "track_limit_steps": me.track_limit_steps,
             "penalty_at_steps": race.session.limit_steps_per_penalty,
@@ -1224,7 +1213,7 @@ class Snapshot:
                 )
         if self.car_state.get("tyres_overheating"):
             plan.append(
-                "TYRES are cooking (over 105 C): smoother, less sliding, or the pace goes."
+                f"TYRES are cooking (over {HOT_TYRE_C} C): smoother, less sliding, or the pace goes."
             )
         losing = sorted(
             (entry for entry in self.corners.values() if entry.get("fastest_gains_s")),

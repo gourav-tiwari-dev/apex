@@ -190,6 +190,19 @@ class NearCars:
     t: str = "near"
 
 
+# 0 Kelvin (-273 C) is the game's "no reading" for a tyre (pits, garage), 23 Sep
+NO_TYRE_READING_C = -200
+
+
+def tyre_averages(me):
+    """Each wheel's temperature (C, rounded, front left first), wheels with no reading left out."""
+    averages = []
+    for zones in me.tyre_temps:
+        if zones and min(zones) > NO_TYRE_READING_C:
+            averages.append(round(sum(zones) / len(zones)))
+    return averages
+
+
 def identity(opponent):
     """Who a rival is, across races. Online, LMU gives every Steam ID as 0 (measured 23 Sep
     2026), so the driver's name stands in: names can change, but 0 would make all 19 cars

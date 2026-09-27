@@ -28,6 +28,10 @@ STRETCHES = 8  # a lap of road trend = the median of 8 stretches
 SURE_LAPS = 2  # two laps of trend: the direction was right ~80% on his tapes
 BATTLE_S = 1.0  # same-point gap under this: a fight
 BATTLE_FOR_S = 8.0  # ... held this long: a battle (racecraft's 8 s confirmation)
+# field study (25 Sep): 20 of 21 sure catch forecasts came true, but the time was off by a
+# median 64%, and within 1.5x the forecast 95% of the time for forecasts over a minute: say
+# WHETHER and an upper bound, never "in 1.6 laps"
+CATCH_UPPER = 1.5
 ME = "me"
 
 

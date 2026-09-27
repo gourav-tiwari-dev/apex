@@ -16,6 +16,9 @@ GREEN_FLAG = 5  # racing
 SAFETY_CAR = 6  # the header's "full course yellow / safety car"
 SESSION_OVER = 8  # the leader has taken the flag, or the qualifying clock ran out
 
+# mWheels order
+WHEEL_NAMES = ("front left", "front right", "rear left", "rear right")
+
 # mFlag: the flag shown to one car (only 0, green, or 6)
 BLUE_FLAG = 6
 

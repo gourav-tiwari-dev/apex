@@ -14,9 +14,11 @@ import re
 
 from persona import words_to_digits
 from radio import Call, RACE_CONTROL
-from race_state import same_class_neighbours, laps_to_go, multiclass
+from race_state import same_class_neighbours, laps_to_go, multiclass, tyre_averages
 from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW
 from words import lap_text
+from game.constants import WHEEL_NAMES
+from seats.strategist import HOT_TYRE_C
 
 ANSWER_TTL_S = 10.0
 DEFAULT_QUIET_LAPS = 2
@@ -683,10 +685,6 @@ def laps_asked(text):
     return DEFAULT_QUIET_LAPS
 
 
-WHEEL_NAMES = ("front left", "front right", "rear left", "rear right")
-HOT_TYRE_C = 105  # the strategist's "cooking" line
-
-
 class Answers:
     """Builds the answer. Reads the seats it needs, never changes what they will say next,
     except for the governor's quiet laps."""
@@ -885,7 +883,7 @@ class Answers:
 
     # ---- v3 5b: lookups answered by code (his ask, 25 Sep) ------------------------------------
     def temps_by_wheel(self, me):
-        temps = [round(sum(z) / len(z)) for z in me.tyre_temps if z and min(z) > -200]
+        temps = tyre_averages(me)
         return temps if len(temps) == 4 else None
 
     def tyres(self, race):

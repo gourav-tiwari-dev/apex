@@ -18,8 +18,9 @@ import sqlite3
 import statistics
 from game.constants import BLUE_FLAG, QUALIFYING_SESSIONS, RACE_SESSIONS, SECTOR_YELLOW
 from words import lap_text
+from game.constants import WHEEL_NAMES
+from race_state import NO_TYRE_READING_C, tyre_averages
 
-WHEELS = ("front left", "front right", "rear left", "rear right")
 PHASES = {
     0: "before the session",
     1: "reconnaissance",
@@ -60,7 +61,7 @@ def wheel_values(values, digits=0):
         return None
     return {
         wheel: round(value, digits) if digits else round(value)
-        for wheel, value in zip(WHEELS, values)
+        for wheel, value in zip(WHEEL_NAMES, values)
     }
 
 
@@ -106,7 +107,7 @@ def standings(race):
 
 def full_car(race, strategist):
     me = race.me
-    temps = [round(sum(z) / len(z)) for z in me.tyre_temps if z and min(z) > -200]
+    temps = tyre_averages(me)
     state = {
         "fuel_litres": round(me.fuel, 1),
         "fuel_capacity_litres": round(me.fuel_capacity, 1),
@@ -120,8 +121,8 @@ def full_car(race, strategist):
         "tyre_temps_by_wheel_c": wheel_values(temps) if len(temps) == 4 else None,
         "tyre_temps_inner_centre_outer_c": {
             wheel: [round(t) for t in z]
-            for wheel, z in zip(WHEELS, me.tyre_temps)
-            if z and min(z) > -200
+            for wheel, z in zip(WHEEL_NAMES, me.tyre_temps)
+            if z and min(z) > NO_TYRE_READING_C
         }
         or None,
         "tyre_pressures_kpa": wheel_values(me.tyre_pressures),
