@@ -4,7 +4,8 @@ import json
 import time
 from dataclasses import replace
 
-from agent import RaceAgent, Snapshot, check_answer, numbers_seen
+from agent import RaceAgent, Snapshot
+from coach.answer_checks import check_answer, numbers_seen
 from coach.fight_maths import pace_words, trend_words
 from answers import needs_agent
 from words import lap_text
@@ -349,7 +350,7 @@ def test_the_fight_call_is_made_by_code():
 
 
 def test_an_override_needs_a_reason_the_data_backs():
-    from agent import split_call
+    from coach.answer_checks import split_call
 
     assert split_call("CALL: LET BY | OVERRIDE: contact\nLet Zino go.") == (
         "LET BY",
@@ -409,7 +410,7 @@ def test_a_slow_model_still_gets_the_team_call_through():
 
 
 def test_the_fallback_states_the_facts_that_could_change_the_call():
-    from agent import fallback
+    from coach.answer_checks import fallback
 
     snapshot = snapshot_at_lap_4()
     snapshot.contacts_in_fight = 2  # the car behind has hit him
@@ -451,7 +452,7 @@ def test_follow_ups_carry_the_last_three_exchanges_oldest_first():
 
 
 def test_the_fallback_gives_the_fight_call_only_to_a_fight_question():
-    from agent import fallback
+    from coach.answer_checks import fallback
 
     snapshot = snapshot_at_lap_4()
     assert (
@@ -526,7 +527,7 @@ def test_the_database_tool_reads_only(tmp_path):
 
 
 def test_explain_mode_allows_a_longer_answer_and_speeds_only_when_asked():
-    from agent import asks_to_explain, asks_about_speed, check_answer
+    from coach.answer_checks import asks_to_explain, asks_about_speed, check_answer
 
     assert asks_to_explain("What's the plan for the rest of the race?")
     assert asks_to_explain("why am I slow at Arnage") and not asks_to_explain(
@@ -541,7 +542,7 @@ def test_explain_mode_allows_a_longer_answer_and_speeds_only_when_asked():
 
 
 def test_an_answer_about_something_else_may_not_tack_on_the_car_behind():
-    from agent import tacked_on
+    from coach.answer_checks import tacked_on
 
     answer = "ABS 9, mate. The car behind is 0.7 a lap quicker, focus on that."
     assert tacked_on("What ABS setting do I have?", answer, in_fight=False)
@@ -609,7 +610,7 @@ def test_let_by_only_for_a_car_genuinely_fast_and_measured():
 
 
 def test_the_coach_cannot_contradict_a_sure_road_trend():
-    from agent import trend_honest
+    from coach.answer_checks import trend_honest
 
     picture = {
         "field_around_you": [
@@ -660,7 +661,7 @@ def test_never_let_a_slower_car_by_and_one_contact_is_not_enough():
 
 def test_he_and_she_become_it_for_free():
     # 25 Sep: two answers refused for "he" cost two extra model rounds
-    from agent import neutral_pronouns
+    from coach.answer_checks import neutral_pronouns
 
     assert (
         neutral_pronouns("He's diving, let him go, his exit is better.")
@@ -731,7 +732,7 @@ def test_qualifying_picture_without_a_time():
 def test_a_plan_question_is_not_a_fight_to_call():
     # live 27 Sep, formation lap: "What's the plan for this race?" was refused for having no CALL
     # line ("plan" counted as a fight word) and he got "No clean answer on that one"
-    from agent import about_the_fight
+    from coach.answer_checks import about_the_fight
 
     assert not about_the_fight("What's the plan for this race?")
     assert not about_the_fight("What position can we get by the end of the race?")

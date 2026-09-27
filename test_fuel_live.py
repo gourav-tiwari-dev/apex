@@ -4,7 +4,7 @@
 from dataclasses import replace
 
 from seats.strategist import Strategist, verdict_of, fuel_words
-from agent import fuel_honest
+from coach.answer_checks import fuel_honest
 from test_seats import moment, race
 from test_racecraft import rival
 
