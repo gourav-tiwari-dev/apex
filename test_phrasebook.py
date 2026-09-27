@@ -6,7 +6,7 @@ import numpy as np
 import phrasebook
 from phrasebook import Phrasebook, save_piece, sentences, trimmed, read_wav, to_wav
 from voice import Voice, RadioDesk
-from radio import Budget, Call, SPOTTER, RACECRAFT
+from radio import Budget, Call, SPOTTER
 from test_radio import FakeVoice, FakePersona
 
 RATE = 24000

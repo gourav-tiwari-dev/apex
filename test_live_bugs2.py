@@ -2,7 +2,6 @@
 
 import gzip
 import json
-import os
 from dataclasses import replace
 
 from seats.strategist import measured_lap, Strategist

@@ -280,7 +280,6 @@ def test_code_does_the_race_maths_so_every_answer_agrees():
 
 
 def test_a_lap_the_game_did_not_post_falls_back_to_the_best_lap_and_says_so():
-    snapshot = snapshot_at_lap_4()
     kossman = replace(
         behind_car(0.0),
         id=3,

@@ -3,7 +3,6 @@ import sqlite3
 import pytest
 
 import memory
-import team_memory
 from team_memory import build_profile, drives, save_fact, brief_facts, habits_at, rival
 
 
@@ -38,7 +37,7 @@ def add_event(conn, session_id, kind, corner, lap=3, other_car=None):
 
 def test_a_replayed_tape_counts_as_one_drive(tmp_path):
     conn = new_db(tmp_path)
-    live = add_session(conn, "tape_a.jsonl.gz", end_reason="stopped_by_driver")
+    add_session(conn, "tape_a.jsonl.gz", end_reason="stopped_by_driver")  # the live run
     replay = add_session(conn, "tape_a.jsonl.gz", end_reason="tape_end")
     other = add_session(conn, "tape_b.jsonl.gz")
     assert drives(conn) == [replay, other]  # tape_a once: its latest finished run

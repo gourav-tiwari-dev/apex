@@ -7,8 +7,6 @@ os.chdir(r"C:\Users\gourav\Downloads\apex_telemetry")
 from live_telemetry import ReplaySource
 from seats import Moment
 from seats.settle import RaceSettle, neighbourhood
-from seats.spotter import sides_taken
-import seats.settle as S
 
 for tape in sys.argv[1:]:
     src = ReplaySource(None, tape)

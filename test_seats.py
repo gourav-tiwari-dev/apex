@@ -385,7 +385,6 @@ def test_side_by_side_calls_are_off_by_default():
 def driving(t, heading_deg, moving_deg, x=0.0, z=0.0):
     """A frame at (x, z) pointing heading_deg, after moving along moving_deg (0 = +z)."""
     import math
-    from live_telemetry import CarState
 
     h = math.radians(heading_deg)
     # the nose is -z in the car's frame: pointing along h means ori[2], ori[8] = -sin h, -cos h

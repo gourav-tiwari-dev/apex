@@ -2,7 +2,6 @@
 Usage: race_model_check.py        (about a minute; no model calls, nothing written to apex.db)"""
 
 import os
-import re
 import statistics
 import sys
 import time

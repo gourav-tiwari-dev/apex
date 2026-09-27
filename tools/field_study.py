@@ -152,7 +152,7 @@ def study_pace():
                     )
                 seen[key] = lap_no
 
-        model = replay(tape, every)
+        replay(tape, every)
         for key, rows in crossings.items():
             laps = [(rows[i + 1][0] - rows[i][0]) for i in range(len(rows) - 1)]
             if len(laps) < 2:

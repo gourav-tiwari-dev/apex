@@ -5,7 +5,6 @@ import io, contextlib, os, sys
 
 os.chdir(r"C:\Users\gourav\Downloads\apex_telemetry")
 sys.path.insert(0, os.getcwd())
-import gaps
 import seats.racecraft as rc
 from live_telemetry import ReplaySource, corner_at
 from seats import Moment

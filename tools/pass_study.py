@@ -2,7 +2,6 @@
 did the car behind get past within the next lap - by how much quicker it was on the road?
 The team call (defend / let by / attack) uses these numbers.  Usage: pass_study.py"""
 
-import collections
 import os
 import sys
 

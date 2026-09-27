@@ -43,14 +43,14 @@ def test_no_gaps_until_the_lap_length_is_known():
     from test_seats import race
 
     clock = TrackClock()
-    for step in range(0, 50):
-        t = step * 0.2
+    for tick in range(0, 50):
+        t = tick * 0.2
         behind = replace(rival(25, 30.0, car_id=9), laps=1, lap_dist=7600.0 + 60.0 * t)
         clock.see_race(race(t, {}, {"laps": 1}, opponents=[behind]), t)
         clock.see_me(7800.0 + 60.0 * t, t)
     assert clock.gap_behind(9) is None  # the lap is not known yet
-    for step in range(50, 600):  # to 120 s
-        t = step * 0.2
+    for tick in range(50, 600):  # to 120 s
+        t = tick * 0.2
         lap_dist = (7600.0 + 60.0 * t) % 13621.0  # it crosses the line at ~100 s
         laps = 1 if 7600.0 + 60.0 * t < 13621.0 else 2
         behind = replace(rival(25, 30.0, car_id=9), laps=laps, lap_dist=lap_dist)
@@ -80,10 +80,10 @@ def test_the_catch_point_keeps_the_shape_of_the_lap():
         {"name": "C", "start": 5000.0, "end": 5300.0},
     ]
     # last lap: 1.0 s everywhere, except it got to 0.5 s through B (it is quicker there)
-    for step in range(0, 116):
-        point = step * 50.0 + 1.0
+    for stretch in range(0, 116):
+        point = stretch * 50.0 + 1.0
         gap = 0.5 if 1950 <= point <= 2250 else 1.0
-        clock.remember_gap(9, gap, step, point)
+        clock.remember_gap(9, gap, stretch, point)
     # now, one lap on at 1000 m: 0.8 s, so it closed 0.2 s in a lap at this point
     found = clock.catch_point(9, LAP + 1000.0 + 1.0, 0.8)
     assert found is not None
