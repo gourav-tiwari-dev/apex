@@ -132,7 +132,7 @@ def test_the_engineer_gets_two_lines_a_minute_the_spotter_is_never_counted():
     )  # the first one left the window
 
 
-def test_the_spotter_is_the_standard_voice_even_with_a_cloned_take():
+def test_the_spotter_calls_are_said_in_the_spotter_voice():
     from voice import SPOTTER_KINDS
 
     assert {
@@ -142,29 +142,6 @@ def test_the_spotter_is_the_standard_voice_even_with_a_cloned_take():
         "STILL_THERE",
         "CLEAR",
     } <= SPOTTER_KINDS
-
-
-def test_a_slow_max_line_is_skipped_not_said_in_another_voice():
-    from voice import Voice
-
-    class SlowClone:
-        failed = False
-
-        class ready:
-            @staticmethod
-            def is_set():
-                return True
-
-        def render(self, text, mood, seed=42, timeout=None):
-            return None
-
-    voice = Voice(out_loud=False, clone=False)
-    voice.out_loud = True  # pretend, without opening a speaker
-    voice.clone = SlowClone()
-    assert voice.render_with_engine("Box this lap.", wait_s=10.0) == (
-        None,
-        "clone_too_slow",
-    )
 
 
 def test_a_seat_line_is_said_in_code_words_with_a_max_closer_and_never_asks_the_model():

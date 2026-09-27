@@ -1,5 +1,5 @@
 """v3 step 5 (25 Sep 2026): instant lines play from pre-rendered sentences, joined in well under
-a millisecond, instead of ~1.3 s (edge-tts) or ~1.8 s (the clone) of live rendering."""
+a millisecond, instead of ~1.3 s (edge-tts) of live rendering."""
 
 import numpy as np
 
@@ -60,7 +60,7 @@ def test_one_missing_sentence_means_the_line_is_rendered_live(tmp_path):
         is None
     )
     assert (
-        Phrasebook("clone", folder=str(tmp_path)).join("Clear.") is None
+        Phrasebook("azure_engineer", folder=str(tmp_path)).join("Clear.") is None
     )  # no book at all
 
 
@@ -111,30 +111,19 @@ class Books:
         return f"{self.name}:{text}".encode()
 
 
-class UpClone:
-    failed = False
-
-    class ready:
-        @staticmethod
-        def is_set():
-            return True
-
-
-def voice_with_books(clone=None):
+def voice_with_books():
     v = Voice(out_loud=False)
     v.out_loud = True
-    v.clone = clone
-    v.books = {name: Books(name) for name in ("spotter", "engineer", "clone")}
+    v.books = {name: Books(name) for name in ("spotter", "engineer")}
     return v
 
 
-def test_the_spotter_book_for_spotter_lines_max_when_the_clone_is_up_else_the_standard_engineer():
+def test_the_spotter_book_for_spotter_lines_else_the_engineer_book():
     assert voice_with_books().from_bank("Slow car ahead.", spotter=True) == (
         b"spotter:Slow car ahead.",
         "standard",
     )
     assert voice_with_books().from_bank("Clear.") == (b"engineer:Clear.", "standard")
-    assert voice_with_books(UpClone()).from_bank("Clear.") == (b"clone:Clear.", "clone")
     assert Voice(out_loud=False).from_bank("Clear.") == (None, None)
 
 

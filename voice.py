@@ -8,21 +8,16 @@ Two paths, because they have different jobs:
   REFLECTIVE everything else: the persona phrases the call, the gate checks it, then it is
              rendered and played. This runs on a worker thread so the 60 Hz loop never waits.
 
-The voice itself (24 Sep 2026): the cloned engineer voice (GPT-SoVITS, fine-tuned on an
-interview, private to this laptop) when it is set up and running, edge-tts otherwise. The
-clone runs as its own process (voice_server.py) because it needs its own PyTorch; it warms up
-before the race, and any line it cannot make within CLONE_TIMEOUT_S falls back to edge-tts,
-so the radio is never silent. Recordings for clips use edge-tts only (--record).
+The voices (25 Sep 2026): Azure's voices with emotion when .env has a key, edge-tts otherwise
+(the mood carried in speed, loudness and pitch), and Windows' own offline voice when the
+network is gone, so the radio is never silent.
 
-Two voices, two jobs (his call, 24 Sep 2026): the SPOTTER is always the standard voice, and
-everything else is the engineer, Max. A slow Max line is waited for (up to its time to live),
-never swapped for the standard voice: that night he heard three voices and called it "not in
-harmony". The standard engineer voice now speaks only when the clone is not running at all.
+Two voices, two jobs (his call, 24 Sep 2026): the SPOTTER has its own voice, and everything
+else is the engineer, Max. (The cloned Max voice, off since 25 Sep, was removed in the
+refactor on 27 Sep; it is in git at tag pre-refactor, and its model folders are still on disk.)
 """
 
-import json
 import re
-import subprocess
 import asyncio
 import io
 import os
@@ -39,22 +34,12 @@ from azure_voice import AzureVoice
 # live 25 Sep: Ryan (British, soft) was "barely audible". Christopher: firm and clear, and
 # still a different voice from the spotter's Guy.
 ENGINEER_VOICE = "en-US-ChristopherNeural"
-HERE = os.path.dirname(os.path.abspath(__file__))
-CLONE_PYTHON = os.path.join(HERE, ".sovits", ".venv", "Scripts", "python.exe")
-CLONE_SERVER = os.path.join(HERE, "voice_server.py")
-CLONE_BANK_FOLDER = os.path.join("voice_bank", "clone")
-CLONE_TIMEOUT_S = (
-    5.0  # measured 1.2-3.1 s a line next to LMU; past this, edge-tts says it
-)
-CLONE_READY_TIMEOUT_S = 180.0
-MAX_CLONE_WAIT_S = (
-    30.0  # a line still not rendered after this is too late to say anyway
-)
 
-# the spotter's own lines: always the standard voice, even when a cloned take exists
+# the spotter's own lines: said in the spotter's voice
 SPOTTER_KINDS = {"CAR_LEFT", "CAR_RIGHT", "THREE_WIDE", "STILL_THERE", "CLEAR"}
 
-# how each kind of call should sound (the clone copies a reference clip per mood)
+# how each kind of call should sound: its mood sets the speed, loudness and pitch (PROSODY)
+# and Azure's speaking style
 URGENT_KINDS = {
     "CAR_LEFT",
     "CAR_RIGHT",
@@ -128,9 +113,6 @@ TENS_WORDS = [
     "eighty",
     "ninety",
 ]
-# measured 24 Sep: respelled, "Tertre Rouge" went from 42 % to 25 % of words misheard;
-# "Arnage" respelled got worse (40 -> 70 %), so it stays as written
-RESPELL = {"Tertre Rouge": "Tairt Roozh"}
 
 
 def number_words(n):
@@ -149,7 +131,7 @@ def lap_time_words(match):
     return f"{number_words(minutes)} {second_words} point {NUMBER_WORDS[int(tenth)]}"
 
 
-def speakable(text, clone=False):
+def speakable(text):
     """Racing shorthand in words a voice can say: "P4" came out as "before" (24 Sep)."""
     text = re.sub(r"\b(\d):(\d\d)\.(\d)\b", lap_time_words, text)  # 3:59.4
     text = re.sub(
@@ -158,113 +140,7 @@ def speakable(text, clone=False):
     text = re.sub(
         r"\bT(\d{1,2})\b", lambda m: "turn " + number_words(int(m.group(1))), text
     )
-    if clone:
-        for written, spoken in RESPELL.items():
-            text = text.replace(written, spoken)
     return text
-
-
-class CloneVoice:
-    """Talks to voice_server.py. Every failure (not set up, still warming up, crashed, too slow)
-    means None, and the caller says the line with edge-tts instead."""
-
-    def __init__(self, command=None, cwd=None, ready_timeout=CLONE_READY_TIMEOUT_S):
-        self.command = command or [CLONE_PYTHON, CLONE_SERVER]
-        self.ready = threading.Event()
-        self.failed = False
-        self.lock = threading.Lock()
-        self.answers = Queue()
-        self.next_id = 0
-        self.process = None
-        self.ready_timeout = ready_timeout
-        if not os.path.exists(self.command[0]) or not os.path.exists(self.command[-1]):
-            self.failed = True  # not set up on this machine: edge-tts, quietly
-            return
-        log = open(os.path.join(HERE, "voice_server.log"), "w", encoding="utf8")
-        env = dict(
-            os.environ,
-            PYTHONUTF8="1",
-            PYTHONUNBUFFERED="1",
-            APEX_PARENT_PID=str(os.getpid()),
-        )
-        self.process = subprocess.Popen(
-            self.command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=log,
-            text=True,
-            encoding="utf8",
-            env=env,
-            cwd=cwd,
-        )
-        threading.Thread(target=self.listen, daemon=True).start()
-        threading.Thread(target=self.watch_start, daemon=True).start()
-
-    def listen(self):
-        for line in self.process.stdout:
-            try:
-                answer = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if answer.get("ready"):
-                print(
-                    f"[engineer voice ready: cloned voice, loaded in {answer.get('load_s')} s]"
-                )
-                self.ready.set()
-            else:
-                self.answers.put(answer)
-        self.failed = True  # the process ended
-        self.ready.clear()
-
-    def watch_start(self):
-        if not self.ready.wait(self.ready_timeout):
-            print("[cloned voice did not start in time: using the standard voice]")
-            self.failed = True
-
-    def render(self, text, mood, seed=42, timeout=None):
-        """WAV bytes, or None to fall back. A different seed is a different take."""
-        if timeout is None:
-            timeout = (
-                CLONE_TIMEOUT_S  # read at call time: build_voice_bank.py raises it
-            )
-        if self.failed or not self.ready.is_set():
-            return None
-        with self.lock:  # one line at a time: the server is one GPU worker
-            self.next_id += 1
-            wanted = self.next_id
-            try:
-                self.process.stdin.write(
-                    json.dumps({"id": wanted, "text": text, "mood": mood, "seed": seed})
-                    + "\n"
-                )
-                self.process.stdin.flush()
-            except (OSError, ValueError):
-                self.failed = True
-                return None
-            deadline = time.perf_counter() + timeout
-            while True:
-                left = deadline - time.perf_counter()
-                if left <= 0:
-                    return None  # too slow this time; its late answer is skipped below
-                try:
-                    answer = self.answers.get(timeout=left)
-                except Empty:
-                    return None
-                if answer.get("id") != wanted:
-                    continue  # a late answer to a line already said by edge-tts
-                if "error" in answer:
-                    return None
-                with open(answer["path"], "rb") as f:
-                    audio = f.read()
-                try:
-                    os.remove(answer["path"])
-                except OSError:
-                    pass
-                return audio
-
-    def stop(self):
-        if self.process is not None and self.process.poll() is None:
-            self.process.kill()
 
 
 SPOTTER_VOICE = "en-US-GuyNeural"
@@ -357,11 +233,10 @@ class Voice:
     """The one owner of the speaker. Everything Apex says goes through here, so nothing can
     talk over anything else by accident (23 Sep: the brief, a yellow and the spotter overlapped)."""
 
-    def __init__(self, out_loud=True, clone=False, azure=True):
+    def __init__(self, out_loud=True, azure=True):
         self.out_loud = out_loud
         self.bank = {}
         self.books = {}
-        self.clone = None
         self.azure = None
         if out_loud and azure:
             # 25 Sep: Azure's voices with emotion styles; not set up -> edge-tts as before
@@ -374,8 +249,6 @@ class Voice:
             self.pygame = pygame
             pygame.mixer.init()
             pygame.mixer.set_num_channels(4)
-            if clone:
-                self.clone = CloneVoice()
             self.load_bank()
             # v3 step 5: the sentences of the instant lines, pre-rendered (phrasebook.py)
             self.books = {
@@ -385,8 +258,6 @@ class Voice:
             if self.azure is not None:
                 self.books["azure_spotter"] = Phrasebook("azure_spotter")
                 self.books["azure_engineer"] = Phrasebook("azure_engineer")
-            if self.clone is not None and not self.clone.failed:
-                self.books["clone"] = Phrasebook("clone")
             sizes = ", ".join(
                 f"{book} {len(pieces)}" for book, pieces in self.books.items()
             )
@@ -398,13 +269,6 @@ class Voice:
             path = os.path.join(BANK_FOLDER, key + ".wav")  # levelled (25 Sep)
             if not os.path.exists(path):
                 path = os.path.join(BANK_FOLDER, key + ".mp3")
-            cloned = os.path.join(CLONE_BANK_FOLDER, key + ".wav")
-            if (
-                self.clone is not None
-                and key not in SPOTTER_KINDS
-                and os.path.exists(cloned)
-            ):
-                path = cloned  # the urgent lines, pre-recorded in the cloned voice
             with_emotion = os.path.join(AZURE_BANK_FOLDER, key + ".wav")
             if self.azure is not None and os.path.exists(with_emotion):
                 path = with_emotion  # the urgent lines in Azure's voices, with emotion
@@ -446,13 +310,6 @@ class Voice:
         sound.play()
         return True
 
-    def clone_up(self):
-        return (
-            self.clone is not None
-            and not self.clone.failed
-            and self.clone.ready.is_set()
-        )
-
     def azure_up(self):
         return self.azure is not None and self.azure.ready
 
@@ -463,12 +320,10 @@ class Voice:
         speaks, only how fast."""
         if not self.out_loud:
             return None, None
-        if self.azure_up() and not self.clone_up():
+        if self.azure_up():
             book, engine = ("azure_spotter" if spotter else "azure_engineer"), "azure"
         elif spotter:
             book, engine = "spotter", "standard"
-        elif self.clone_up():
-            book, engine = "clone", "clone"
         else:
             book, engine = "engineer", "standard"
         pieces = self.books.get(book)
@@ -478,31 +333,15 @@ class Voice:
         return audio, engine
 
     def render(self, text, voice=ENGINEER_VOICE, mood="dry"):
-        """Text to audio bytes: the cloned voice if it is up and quick enough, else edge-tts
-        (about 1.3 s). None when printing instead of speaking."""
+        """Text to audio bytes: Azure's voice when it is up, else edge-tts (about 1.3 s).
+        None when printing instead of speaking."""
         return self.render_with_engine(text, voice, mood)[0]
 
-    def render_with_engine(self, text, voice=ENGINEER_VOICE, mood="dry", wait_s=None):
-        """(audio, which voice made it): "clone" or "standard". Logged per line (24 Sep: he
-        heard three different voices and nothing said how often each one spoke).
-
-        wait_s: how long this line may wait for the cloned voice. Given, a slow clone means
-        (None, "clone_too_slow"): the line is skipped, never said in another voice."""
+    def render_with_engine(self, text, voice=ENGINEER_VOICE, mood="dry"):
+        """(audio, which voice made it): "azure", "standard" or "offline". Logged per line
+        (24 Sep: he heard three different voices and nothing said how often each one spoke)."""
         if not self.out_loud:
             return None, None
-        if self.clone_up():
-            timeout = (
-                CLONE_TIMEOUT_S
-                if wait_s is None
-                else min(max(wait_s, CLONE_TIMEOUT_S), MAX_CLONE_WAIT_S)
-            )
-            audio = self.clone.render(
-                speakable(text, clone=True), mood, timeout=timeout
-            )
-            if audio is not None:
-                return audio, "clone"
-            if wait_s is not None and not self.clone.failed:
-                return None, "clone_too_slow"
         if self.azure_up():
             audio = self.azure.render(speakable(text), "engineer", mood)
             if audio is not None:
@@ -528,9 +367,8 @@ class Voice:
             return time.perf_counter()
         while self.pygame.mixer.get_busy():
             self.pygame.time.wait(20)
-        kind = (
-            "wav" if audio[:4] == b"RIFF" else "mp3"
-        )  # the clone makes WAV, edge-tts MP3
+        # levelled lines, the bank and Azure are WAV; an edge-tts line is MP3 if levelling failed
+        kind = "wav" if audio[:4] == b"RIFF" else "mp3"
         self.pygame.mixer.music.load(io.BytesIO(audio), kind)
         self.pygame.mixer.music.play()
         started = time.perf_counter()
@@ -540,10 +378,6 @@ class Voice:
 
     def say(self, text, voice=ENGINEER_VOICE, mood="dry"):
         return self.play(self.render(text, voice, mood), text)
-
-    def close(self):
-        if self.clone is not None:
-            self.clone.stop()
 
 
 class RadioDesk:
@@ -644,7 +478,7 @@ class RadioDesk:
                         engine = "standard"
                 elif hasattr(self.voice, "render_with_engine"):
                     audio, engine = self.voice.render_with_engine(
-                        line, mood=mood_of(call.kind), wait_s=call.ttl
+                        line, mood=mood_of(call.kind)
                     )
                 else:
                     audio, engine = (
@@ -653,12 +487,6 @@ class RadioDesk:
                     )
                 if engine:
                     call.facts["voice"] = engine
-                if engine == "clone_too_slow":
-                    return {
-                        "line": line,
-                        "audio": None,
-                        "reason": "cloned voice too slow",
-                    }
             except Exception as error:
                 return {
                     "line": line,

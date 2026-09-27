@@ -1,6 +1,6 @@
 """Joins real instant lines from the phrase bank, times the join, and has a transcriber listen
 to each result (a trim that clipped a word, or a join that slurs, shows up as misheard words).
-Usage: bank_check.py [--clone] [OUT_FOLDER]   the joined WAVs are saved to OUT_FOLDER to listen to."""
+Usage: bank_check.py [OUT_FOLDER]   the joined WAVs are saved to OUT_FOLDER to listen to."""
 
 import os
 import sys
@@ -29,13 +29,12 @@ MAX = [
     "This fight's costing you 1.4 seconds a lap. Car behind is coming. Go at Indianapolis this lap or settle in.",
 ]
 
-clone = "--clone" in sys.argv
 out = next((a for a in sys.argv[1:] if not a.startswith("--")), None)
 from faster_whisper import WhisperModel
 
 ears = WhisperModel("large-v3-turbo", device="cuda", compute_type="float16")
 worst = 0.0
-for book_name, lines in (("spotter", SPOTTER), ("clone" if clone else "engineer", MAX)):
+for book_name, lines in (("spotter", SPOTTER), ("engineer", MAX)):
     book = Phrasebook(book_name)
     for n, line in enumerate(lines):
         started = time.perf_counter()
@@ -49,7 +48,7 @@ for book_name, lines in (("spotter", SPOTTER), ("clone" if clone else "engineer"
             f.write(audio)
         segments, _ = ears.transcribe(path, language="en", beam_size=5)
         heard = " ".join(s.text.strip() for s in segments)
-        rate = error_rate(speakable(line, clone=book_name == "clone"), heard)
+        rate = error_rate(speakable(line), heard)
         worst = max(worst, rate)
         print(
             f"  {book_name:8s} join {took_ms:5.2f} ms  misheard {rate:4.0%}  heard: {heard}"

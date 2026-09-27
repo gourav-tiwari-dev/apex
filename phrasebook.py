@@ -1,6 +1,5 @@
 """Radio v3 step 5: every sentence an instant line can contain, rendered ahead of time, so the
-line plays the moment it is called instead of ~1.3 s (edge-tts) or ~1.8 s (the cloned voice)
-later.
+line plays the moment it is called instead of ~1.3 s (edge-tts) later.
 
 Why sentences and not whole lines: the lines carry numbers and places ("Car behind, 6 tenths,
 closing fast. It's already hit you once.", "Stick it. They're in your tow. Cover the inside
@@ -10,13 +9,14 @@ a short radio pause. A sentence end is where a voice pauses anyway, so the join 
 If any piece is missing, the line is rendered live as before: the bank only ever makes a line
 faster, never different.
 
-Three books, one per voice:
-    spotter    the standard spotter voice (edge-tts, SPOTTER_VOICE)
-    engineer   the standard engineer voice (edge-tts), used when the clone is not running
-    clone      Max, the cloned voice (voice_server.py), private to this laptop
+One book per voice:
+    spotter          the standard spotter voice (edge-tts, SPOTTER_VOICE)
+    engineer         the standard engineer voice (edge-tts, ENGINEER_VOICE)
+    azure_spotter    the same sentences in Azure's voices with emotion (when .env has a key)
+    azure_engineer
 
-    python build_voice_bank.py --phrases            spotter + engineer (needs internet)
-    python build_voice_bank.py --phrases --clone    Max (needs the cloned voice, GPU free)
+    python build_voice_bank.py --phrases    spotter + engineer (needs internet)
+    python build_voice_bank.py --azure      the Azure books
 """
 
 import hashlib
@@ -29,11 +29,10 @@ import wave
 import numpy as np
 
 PHRASE_FOLDER = os.path.join("voice_bank", "phrases")
-BOOKS = ("spotter", "engineer", "clone")
 JOIN_PAUSE_S = 0.12  # between two sentences, like a breath on the radio
 # live 25 Sep: "the engineer is barely audible, I don't hear half the sentence; the spotter is
 # loud and clear". Every line is now levelled to the same loudness (RMS), with a soft limiter so
-# it never cracks (0.25 cracked on 24 Sep with the clone).
+# it never cracks (0.25 cracked on 24 Sep).
 TARGET_RMS = 0.14
 LIMIT = 0.92  # the loudest a sample may ever be, as a share of full scale
 EDGE_PAD_S = 0.08  # kept either side of a trimmed sentence (soft "s"/"c" starts)

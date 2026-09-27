@@ -1,14 +1,11 @@
 """Render the urgent radio lines once, so they play in 0.01 ms during a race.
 
-    python build_voice_bank.py            the standard voice (edge-tts, needs internet)
-    python build_voice_bank.py --clone    the cloned engineer voice, into voice_bank/clone/
-    python build_voice_bank.py --phrases            the sentences of instant lines (phrasebook.py),
-                                                    spotter + standard engineer voice (internet)
-    python build_voice_bank.py --phrases --clone    the same sentences in Max's voice (GPU free)
-    python build_voice_bank.py --azure              all of it in Azure's voices with emotion (.env key)
+    python build_voice_bank.py              the standard voice (edge-tts, needs internet)
+    python build_voice_bank.py --phrases    the sentences of instant lines (phrasebook.py),
+                                            spotter + standard engineer voice (internet)
+    python build_voice_bank.py --azure      all of it in Azure's voices with emotion (.env key)
 
-Run it again after changing BANK_LINES. The cloned bank stays on this laptop
-(voice_bank/ is gitignored) and is used only when the cloned voice is on, never with --record.
+Run it again after changing BANK_LINES. voice_bank/ is gitignored.
 """
 
 import asyncio
@@ -19,34 +16,11 @@ from voice import (
     SPOTTER_KINDS,
     BANK_FOLDER,
     BANK_LINES,
-    CLONE_BANK_FOLDER,
-    CloneVoice,
     mood_of,
     render,
     speakable,
 )
 import voice
-
-CLONE_LINE_TIMEOUT_S = 30.0  # rendering ahead of time: no hurry, unlike a live line
-TAKES = 8
-# 24 Sep, first cloned bank: "Car left" came out as "Carla?", "Green" as "Brain". Very short
-# lines are this model's weak spot, so every take is checked by a transcriber and the best
-# kept. A spotter or flag line must be heard exactly, or it stays in the standard voice: a
-# clear standard "Car left" beats a cloned one that sounds like a name.
-MUST_BE_EXACT = {
-    "CAR_LEFT",
-    "CAR_RIGHT",
-    "THREE_WIDE",
-    "STILL_THERE",
-    "CLEAR",
-    "YELLOW",
-    "SAFETY_CAR",
-    "GREEN",
-    "BLUE_FLAG",
-    "LIGHTS_OUT",
-    "NOT_HERE",
-}
-GOOD_ENOUGH = 0.2  # the other lines: at most one word in five misheard
 
 
 def words(text):
@@ -86,62 +60,6 @@ def standard():
             f.write(radio_ready(audio))  # levelled like every live line
         print(f"  {key:14s} {speaker:20s} {text}")
     print(f"{len(BANK_LINES)} lines saved to {BANK_FOLDER}/")
-
-
-def cloned():
-    voice.CLONE_TIMEOUT_S = CLONE_LINE_TIMEOUT_S
-    clone = CloneVoice()
-    if clone.failed or not clone.ready.wait(240):
-        raise SystemExit(
-            "The cloned voice is not set up or did not start (see voice_server.log)."
-        )
-    from faster_whisper import WhisperModel
-
-    ears = WhisperModel("large-v3-turbo", device="cuda", compute_type="float16")
-    os.makedirs(CLONE_BANK_FOLDER, exist_ok=True)
-    trial = os.path.join(CLONE_BANK_FOLDER, "_take.wav")
-    kept = 0
-    try:
-        for key, (_, text) in BANK_LINES.items():
-            if key in SPOTTER_KINDS:
-                continue  # the spotter is always the standard voice (24 Sep)
-            target = os.path.join(CLONE_BANK_FOLDER, key + ".wav")
-            best = None
-            for take in range(TAKES):
-                audio = clone.render(
-                    speakable(text, clone=True), mood_of(key), seed=1000 + take
-                )
-                if audio is None:
-                    continue
-                with open(trial, "wb") as f:
-                    f.write(audio)
-                segments, _ = ears.transcribe(trial, language="en", beam_size=5)
-                heard = " ".join(s.text.strip() for s in segments)
-                rate = error_rate(text, heard)
-                if best is None or rate < best[0]:
-                    best = (rate, audio, heard, take + 1)
-                if rate == 0:
-                    break
-            limit = 0.0 if key in MUST_BE_EXACT else GOOD_ENOUGH
-            if best is not None and best[0] <= limit:
-                with open(target, "wb") as f:
-                    f.write(best[1])
-                kept += 1
-                print(f'  {key:14s} cloned  (take {best[3]}, heard "{best[2]}")')
-            else:
-                if os.path.exists(target):
-                    os.remove(target)  # the standard voice plays this one
-                heard = best[2] if best else "nothing"
-                print(
-                    f'  {key:14s} STANDARD voice: no take clear enough (best heard "{heard}")'
-                )
-    finally:
-        clone.stop()
-        if os.path.exists(trial):
-            os.remove(trial)
-    print(
-        f"{kept} of {len(BANK_LINES)} lines in the cloned voice, saved to {CLONE_BANK_FOLDER}/"
-    )
 
 
 EDGE_AT_ONCE = 6  # edge-tts renders in flight at once
@@ -272,77 +190,6 @@ def phrases_standard():
     )
 
 
-def phrases_cloned(kinds=None, takes=None):
-    """Max's voice. Each sentence: up to PHRASE_TAKES takes, checked by a transcriber; a sentence
-    no take says clearly is left out, and a line that needs it is rendered live (still Max)."""
-    import phrasebook
-
-    moods = phrasebook.units(kinds)["engineer"]
-    takes = takes or PHRASE_TAKES
-    wanted = phrasebook.missing("clone", moods)
-    print(f"{len(wanted)} sentences to render in Max's voice")
-    voice.CLONE_TIMEOUT_S = CLONE_LINE_TIMEOUT_S
-    clone = CloneVoice()
-    if clone.failed or not clone.ready.wait(240):
-        raise SystemExit(
-            "The cloned voice is not set up or did not start (see voice_server.log)."
-        )
-    from faster_whisper import WhisperModel
-
-    ears = WhisperModel("large-v3-turbo", device="cuda", compute_type="float16")
-    os.makedirs(phrasebook.PHRASE_FOLDER, exist_ok=True)
-    trial = os.path.join(phrasebook.PHRASE_FOLDER, "_take.wav")
-    kept, left_out = 0, []
-    try:
-        for n, text in enumerate(wanted, 1):
-            best = None
-            for take in range(takes):
-                audio = clone.render(
-                    speakable(text, clone=True), moods[text], seed=2000 + take
-                )
-                if audio is None:
-                    continue
-                with open(trial, "wb") as f:
-                    f.write(audio)
-                segments, _ = ears.transcribe(trial, language="en", beam_size=5)
-                heard = " ".join(s.text.strip() for s in segments)
-                rate = heard_right(text, heard)
-                if best is None or rate < best[0]:
-                    best = (rate, audio, heard)
-                if rate == 0:
-                    break
-            if best is not None and best[0] <= GOOD_ENOUGH:
-                phrasebook.save_piece("clone", text, best[1])
-                kept += 1
-            else:
-                left_out.append((text, best[2] if best else "nothing"))
-            if n % 25 == 0:
-                print(f"  {n}/{len(wanted)} ({kept} kept)")
-    finally:
-        clone.stop()
-        if os.path.exists(trial):
-            os.remove(trial)
-    for text, heard in left_out:
-        print(f'  LEFT OUT (live render instead): "{text}" heard "{heard}"')
-    print(f"done: {kept} of {len(wanted)} sentences in Max's voice")
-
-
-# 25 Sep, first 75 sentences at 3 takes: only 18 kept. The clone garbles short numbered lines
-# ("It's hit you 4 times" -> "I'd set you for time", "P25" -> "Day 25"), so more takes
-PHRASE_TAKES = 6
-
-
-def heard_right(text, heard):
-    """Misheard share, against the words as written and as the clone was told to say them
-    ("P four", "Tairt Roozh"), numbers compared as digits: the better of the two."""
-    from persona import words_to_digits
-
-    as_written = error_rate(
-        words_to_digits(text.lower()), words_to_digits(heard.lower())
-    )
-    return min(as_written, error_rate(speakable(text, clone=True), heard))
-
-
 SPOTTER_VOICE_NAME = voice.SPOTTER_VOICE
 
 
@@ -350,22 +197,6 @@ if __name__ == "__main__":
     if "--azure" in sys.argv:
         azure_bank()
     elif "--phrases" in sys.argv:
-        if "--clone" in sys.argv:
-            # e.g. --kinds PASS_PRAISE,STICK_IT --takes 12: another go at the lines that matter most
-            kinds = (
-                sys.argv[sys.argv.index("--kinds") + 1].split(",")
-                if "--kinds" in sys.argv
-                else None
-            )
-            takes = (
-                int(sys.argv[sys.argv.index("--takes") + 1])
-                if "--takes" in sys.argv
-                else None
-            )
-            phrases_cloned(kinds, takes)
-        else:
-            phrases_standard()
-    elif "--clone" in sys.argv:
-        cloned()
+        phrases_standard()
     else:
         standard()

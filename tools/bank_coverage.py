@@ -1,7 +1,5 @@
 """How many of the lines a replay said would play straight from the phrase bank.
-Usage: bank_coverage.py [--clone] REPLAY_DB [REPLAY_DB ...]   (from tools/replay_radio.py)
-
---clone checks Max's lines against the cloned book instead of the standard engineer one."""
+Usage: bank_coverage.py REPLAY_DB [REPLAY_DB ...]   (from tools/replay_radio.py)"""
 
 import collections
 import os
@@ -29,10 +27,10 @@ INSTANT = {
     "FIGHT_COST",
 }
 
-args = [a for a in sys.argv[1:] if a != "--clone"]
+args = sys.argv[1:]
 books = {
     "spotter": Phrasebook("spotter"),
-    "engineer": Phrasebook("clone" if "--clone" in sys.argv else "engineer"),
+    "engineer": Phrasebook("engineer"),
 }
 hits, total, misses = collections.Counter(), collections.Counter(), []
 for db in args:

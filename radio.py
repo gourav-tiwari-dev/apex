@@ -76,9 +76,7 @@ class Call:
     # v3: goes out the moment the radio is free, even mid-corner, and is never counted in the
     # talk budget (closing alarms, "stick it", praise at the moment it is earned)
     immediate: bool = False
-    voice: str = (
-        "engineer"  # "spotter": the standard spotter voice, never the cloned one
-    )
+    voice: str = "engineer"  # "spotter": said in the spotter's own voice
 
 
 def words_in(text):

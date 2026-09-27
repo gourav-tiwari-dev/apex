@@ -1137,13 +1137,9 @@ def run_session(
             budget, clean
         )  # after the budget: it spends from it (24 Sep crash)
         agent.orders = orders
-    # one voice for the whole launch when apex.py passes it in: the cloned voice takes about
-    # 30 s to load and warm up, which must not happen again between qualifying and the race
-    own_voice = voice is None
-    if own_voice:
-        voice = Voice(
-            out_loud, clone=False
-        )  # the cloned voice is off (25 Sep, his call)
+    # one voice for the whole launch when apex.py passes it in: its banks load once
+    if voice is None:
+        voice = Voice(out_loud)
     if persona is None:
         persona = Persona(clean=clean)
     desk = RadioDesk(
@@ -1570,8 +1566,6 @@ def run_session(
         if talk is not None:
             talk.close()
         desk.stop()
-        if own_voice:
-            voice.close()
         if not REPLAY:
             tele_recorder.stop()
         if learning_track and track:

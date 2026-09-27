@@ -109,5 +109,5 @@ def test_a_tape_cut_off_mid_write_replays_up_to_the_cut(tmp_path):
 def test_the_voice_that_spoke_is_known():
     from voice import Voice
 
-    silent = Voice(out_loud=False, clone=False)
+    silent = Voice(out_loud=False)
     assert silent.render_with_engine("Car left!") == (None, None)

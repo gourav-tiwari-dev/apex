@@ -82,17 +82,14 @@ def how_it_ended(conn, session_id):
 
 def race_night(clean, record=False):
     conn = connect_db("apex.db")
-    # the cloned voice starts loading now, while the brief is said; --record keeps it off, so a
-    # clip never carries it (24 Sep, his condition: "just my laptop, for my racing")
-    # 25 Sep: the cloned voice is OFF (his call: it took the GPU from LMU and was hard to hear).
-    # Azure's voices with emotion speak when .env has a key, edge-tts otherwise.
-    voice = Voice(out_loud=True, clone=False)
+    # one voice for the whole launch: Azure's voices with emotion when .env has a key,
+    # edge-tts otherwise
+    voice = Voice(out_loud=True)
     said = brief(conn)
     launch_id = datetime.now().isoformat(timespec="seconds")
     try:
         race_sessions(conn, clean, launch_id, voice, said)
     finally:
-        voice.close()
         conn.close()
 
 
