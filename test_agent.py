@@ -511,7 +511,7 @@ def test_a_reminder_is_set_only_for_a_later_lap():
 
 def test_the_database_tool_reads_only(tmp_path):
     import sqlite3
-    from race_tools import query_db
+    from coach.race_tools import query_db
 
     db = tmp_path / "t.db"
     conn = sqlite3.connect(db)
@@ -713,7 +713,7 @@ def test_a_question_away_from_the_fight_needs_no_call_line():
 
 
 def test_qualifying_picture_without_a_time():
-    from race_tools import qualifying_picture
+    from coach.race_tools import qualifying_picture
 
     rivals = [replace(behind_car(0.0), id=i, best_lap=239.0 + i) for i in range(1, 5)]
     quali = race(

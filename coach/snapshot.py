@@ -5,7 +5,7 @@ so every tool the coach calls answers about the same instant. run_tool carries o
 listed in coach/prompt.py: the race picture, the cars around him, the fight maths, the corners,
 fuel, the car, his habits, the database."""
 
-import race_tools
+from coach import race_tools
 from coach.answer_checks import about_the_fight
 from coach.fight_maths import (
     CONTACT_LET_BY_QUICKER_S,

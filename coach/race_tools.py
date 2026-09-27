@@ -42,7 +42,7 @@ GRIP = {
 SESSIONS = {0: "test day", 9: "warmup"}
 MAX_SQL_ROWS = 30
 SQL_STEPS_LIMIT = 2_000_000  # sqlite VM steps before a query is cut off (~0.1-0.3 s)
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the project folder
 KNOWLEDGE_FILE = os.path.join(HERE, "knowledge.md")
 
 
