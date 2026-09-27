@@ -337,7 +337,7 @@ def learn():
 
 
 def test():
-    from answers import intent_of
+    from talk.hearing import intent_of
     import sounddevice
 
     print(f"mic: {sounddevice.query_devices(kind='input')['name']}")

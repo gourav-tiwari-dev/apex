@@ -1,6 +1,7 @@
 """v3 step 5b (25 Sep 2026): push-to-talk as the last resort - say again, reminders."""
 
-from answers import Answers, intent_of, needs_agent
+from answers import Answers
+from talk.hearing import intent_of, needs_agent
 from session import due_reminders
 from radio import Governor
 from seats.race_engineer import RaceEngineer
@@ -78,7 +79,7 @@ def test_what_needs_judgment_still_goes_to_the_agent():
 
 
 def test_what_the_recognizer_wrote_live_still_gets_the_right_answer():
-    from answers import fix_mishearing, intent_of
+    from talk.hearing import fix_mishearing, intent_of
 
     assert (
         intent_of(fix_mishearing("How is the feeling?")) == "FUEL"
@@ -96,7 +97,7 @@ def test_fuel_gets_the_tank_from_the_first_lap():
 
 
 def test_a_guessed_transcription_gets_say_again_not_a_made_up_answer():
-    from answers import garbled
+    from talk.hearing import garbled
 
     assert garbled("3-1-1, Faucet's down.", -1.4)  # live 25 Sep
     assert not garbled("How's the fuel?", -0.3)
@@ -146,7 +147,7 @@ HIS_LOGGED_WORDS = [
 def test_say_again_on_his_own_logged_words():
     # 26 Sep: under the old -1.0 rule none of these got "say again", and the coach answered all
     # four garbled ones. Now every garbled one is asked again and none of his real questions is
-    from answers import garbled
+    from talk.hearing import garbled
 
     for confidence, words, is_garbled in HIS_LOGGED_WORDS:
         assert garbled(words, confidence) == is_garbled, (confidence, words)
@@ -214,7 +215,7 @@ def test_okay_got_it_is_acknowledged_not_sent_to_the_agent():
 def test_say_again_on_his_27_sep_words():
     # live 27 Sep: two real questions got "say again" ("quali" misheard, "problem" not a racing
     # word); the fragments still get it. Mishearings are fixed first, as live
-    from answers import garbled, fix_mishearing
+    from talk.hearing import garbled, fix_mishearing
 
     for confidence, words, is_garbled in [
         (-0.58, "I crashed in Caulif, fine.", False),

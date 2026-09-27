@@ -8,7 +8,7 @@ from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from coach.answer_checks import check_answer, numbers_seen
 from coach.fight_maths import pace_words, trend_words
-from answers import needs_agent
+from talk.hearing import needs_agent
 from words import lap_text
 from radio import Budget, Governor
 from seats.performance import PerformanceEngineer

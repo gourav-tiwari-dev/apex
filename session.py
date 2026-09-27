@@ -46,7 +46,8 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
-from answers import Answers, needs_agent, intent_of, fix_mishearing, garbled, is_mark
+from answers import Answers
+from talk.hearing import needs_agent, intent_of, fix_mishearing, garbled, is_mark
 from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from race_model import RaceModel
