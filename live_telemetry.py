@@ -61,6 +61,7 @@ from track_map import (
 )
 from game.constants import GREEN_FLAG, RACE_SESSIONS, SESSION_OVER
 from driving.laps import LapCounter, LapDistance
+from driving.corner_stats import CornerStats
 
 
 @dataclass
@@ -317,123 +318,6 @@ class Event:
     lap_count: int = 0
     other_car: str | None = None  # steam id of the other car in a contact
     magnitude: float | None = None  # how hard an impact was
-
-
-@dataclass
-class CornerStat:
-    lap_count: int
-    corner: str
-    brake_onset: float | None
-    min_speed: float | None
-    slow_zone: float | None
-    coast: float | None
-    time_s: float | None = None  # time from entering the corner window to leaving it
-    throttle_on: float | None = (
-        None  # lap distance where he is back on the power after the slowest point
-    )
-
-
-BRAKE_ON = 0.4
-THROTTLE_ON = (
-    0.5  # "on the power": half throttle after the slowest point (a controller trigger)
-)
-SLOW_ZONE_X = 10
-PEDAL_OFF = 0.05
-
-
-class CornerStats:
-    def __init__(self, corner_map=None):
-        self.corner_map = CornerMap() if corner_map is None else corner_map
-        self.corner = None
-        self.lap_count = None
-        self.brake_onset = None
-        self.min_speed = None
-        self.prev_brake = 0.0
-        self.frames = []
-        self.prev_time = None
-
-    def current_corner(self, real_lap_distance):
-        return self.corner_map.at(real_lap_distance)
-
-    def update(self, frame, lap_count, real_lap_distance):
-        now = self.current_corner(real_lap_distance)
-        was = self.corner
-        stat = None
-        step = 0.0
-        seconds = 0.0
-        coast = 0.0
-        slow_zone = 0
-        if self.prev_time is not None:
-            seconds = frame.elapsed_time - self.prev_time
-            step = frame.speed_kmh / 3.6 * seconds
-        if now is None and was is not None:
-            # LEAVING - hand back the row, then forget everything
-            time_s = 0.0
-            slowest = 0
-            for index, (speed, meters, throttle, brake, seconds, distance) in enumerate(
-                self.frames
-            ):
-                if speed <= self.min_speed + SLOW_ZONE_X:
-                    slow_zone += meters
-                if brake < PEDAL_OFF and throttle < PEDAL_OFF:
-                    coast += meters
-                time_s += seconds
-                if speed == self.min_speed:
-                    slowest = index
-            throttle_on = None
-            for speed, meters, throttle, brake, seconds, distance in self.frames[
-                slowest:
-            ]:
-                if throttle >= THROTTLE_ON:
-                    throttle_on = distance
-                    break
-            stat = CornerStat(
-                self.lap_count,
-                self.corner,
-                self.brake_onset,
-                self.min_speed,
-                slow_zone,
-                coast,
-                round(time_s, 3),
-                throttle_on,
-            )
-            self.corner = None
-            self.lap_count = None
-            self.brake_onset = None
-            self.min_speed = None
-            self.frames = []
-
-        elif now is not None:
-            if now != was:
-                # just arrived - start a fresh corner
-                self.corner = now
-                self.lap_count = lap_count
-                self.brake_onset = None
-                self.min_speed = None
-                self.frames = []
-
-            # measure - runs on the arrival frame too
-            if self.min_speed is None or frame.speed_kmh < self.min_speed:
-                self.min_speed = frame.speed_kmh
-
-            self.frames.append(
-                (
-                    frame.speed_kmh,
-                    step,
-                    frame.throttle,
-                    frame.brake,
-                    seconds,
-                    real_lap_distance,
-                )
-            )
-            # brake just crossed BRAKE_ON this frame: below it last frame, at or above it now
-            brake_crossed = self.prev_brake < BRAKE_ON and frame.brake >= BRAKE_ON
-            if self.brake_onset is None and brake_crossed:
-                self.brake_onset = real_lap_distance
-
-        self.prev_brake = frame.brake
-        self.prev_time = frame.elapsed_time
-        return stat
 
 
 class Detector:

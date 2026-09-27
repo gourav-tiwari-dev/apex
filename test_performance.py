@@ -1,6 +1,7 @@
 from dataclasses import replace
 
-from live_telemetry import CornerStat, RearSnapDetector
+from live_telemetry import RearSnapDetector
+from driving.corner_stats import CornerStat
 from race_state import Opponent
 from seats.performance import PerformanceEngineer, OpponentCorners, what_to_change
 from test_seats import frame, moment, race, kinds
