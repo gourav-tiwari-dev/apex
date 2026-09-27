@@ -19,6 +19,7 @@ from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW
 from words import lap_text
 from game.constants import WHEEL_NAMES
 from seats.strategist import HOT_TYRE_C
+from words import Rotation
 
 ANSWER_TTL_S = 10.0
 DEFAULT_QUIET_LAPS = 2
@@ -695,7 +696,7 @@ class Answers:
         self.strategist = strategist
         self.performance = performance
         self.clean = clean
-        self.said = {}  # intent -> how many times answered: the closers take turns
+        self.closers = Rotation(clean)
         self.last_line = None  # the last engineer line on air, for "say again" (set by the race loop)
         self.model = (
             None  # the race model (set by the race loop): the same gaps everywhere
@@ -705,10 +706,7 @@ class Answers:
         lines = CLOSERS.get(intent)
         if not lines:
             return ""
-        turn = self.said.get(intent, 0)
-        self.said[intent] = turn + 1
-        swearing, clean = lines[turn % len(lines)]
-        return " " + (clean if self.clean else swearing)
+        return " " + self.closers.next(intent, lines)
 
     def answer(self, text, race, lap, now):
         intent = intent_of(text)

@@ -1,3 +1,5 @@
+from words import Rotation
+
 """Max's voice for code's own lines, with no model in the loop.
 
 v3 (24 Sep 2026): the audit of that night's race found 27 of 38 kinds of line went through
@@ -49,8 +51,7 @@ CLOSERS = {
 
 class MaxLines:
     def __init__(self, clean=False):
-        self.clean = clean
-        self.turn = {}  # kind -> how many closers have been used
+        self.closers = Rotation(clean)
 
     def line(self, call):
         """The words to say for a call that is not phrased by the model."""
@@ -58,10 +59,7 @@ class MaxLines:
         pool = CLOSERS.get(call.kind)
         if not pool:
             return words
-        used = self.turn.get(call.kind, 0)
-        self.turn[call.kind] = used + 1
-        swearing, clean = pool[used % len(pool)]
-        closer = clean if self.clean else swearing
+        closer = self.closers.next(call.kind, pool)
         if not closer:
             return words
         return f"{words} {closer}"

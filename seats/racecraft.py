@@ -33,7 +33,7 @@ from seats.spotter import (
     LANE_MIN_M,
     LANE_MAX_M,
 )
-from words import tenths_words
+from words import Rotation, tenths_words
 from race_state import same_lap, identity, same_class_neighbours, said_place
 from gaps import TrackClock, ON_YOU_S
 from game.constants import GREEN_FLAG, RACE_SESSIONS
@@ -204,7 +204,7 @@ class Racecraft:
         self.pressure_since = {}  # car id -> when it got on my gearbox
         self.pressure_last = {}  # car id -> the last time it was on my gearbox
         self.held_said = set()
-        self.praise_turn = 0
+        self.praise_lines = Rotation(clean)  # both pools share one turn
         self.last_corner = None
         self.last_corner_exit = None  # when I last came out of a corner
         self.flips = {}  # car id -> (who passed whom, when, the move) not yet confirmed
@@ -818,8 +818,7 @@ class Racecraft:
 
     def praise(self, move, now):
         pool = BRILLIANT if move in BRILLIANT_MOVES else SOLID
-        hype = self.pick(pool[self.praise_turn % len(pool)])
-        self.praise_turn += 1
+        hype = self.praise_lines.next("praise", pool)
         # no "Clear." first (his call, 25 Sep): it doubled the spotter's "Clear."
         words = f"{hype} {MOVE_WORDS[move]}"
         if self.ahead is not None and self.gap_ahead is not None:
