@@ -5,7 +5,6 @@ Fuel is measured, never assumed: litres used per lap come from my own laps in th
 so the first call waits until two full laps are done.
 """
 
-import math
 import statistics
 
 from radio import Call, STRATEGY, ENGINEER

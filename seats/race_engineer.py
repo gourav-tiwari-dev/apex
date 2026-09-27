@@ -15,7 +15,6 @@ from race_state import (
     YELLOW_FLAG,
     said_place,
     class_place,
-    multiclass,
 )
 
 FORMATION = 3  # mGamePhase values
@@ -121,13 +120,6 @@ def tenths(seconds):
     return f"{count} tenths"
 
 
-def car_behind(race):
-    for opponent in race.opponents:
-        if opponent.place == race.me.place + 1:
-            return opponent
-    return None
-
-
 CATCH_UPPER = 1.5
 
 
@@ -165,7 +157,6 @@ class RaceEngineer:
         self.penalties = None
         self.dents = None
         self.last_report_lap = 0
-        self.last_gap_ahead = None
         self.gaps_at_line = {}  # "ahead" / "behind" -> (identity, gap) at the last line
         self.pits_said = set()  # (time, car) pit entries already called
         self.own_spin_at = None
