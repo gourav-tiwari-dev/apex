@@ -26,6 +26,11 @@ CRAWLING_KMH = 60.0
 # 214 -> 6 km/h at Indianapolis, stopped a minute, and nobody asked. A pit wall's first question
 # after a crash is "Are you OK?" (27 Sep, RACE_MODEL.md)
 INCIDENT_KINDS = ("SPIN", "CONTACT", "IMPACT")
+# Track limits: a step is said once it matters for a penalty. 24 Sep: "Track limits at X. Keep it
+# inside." at steps 3, 5, 6 and 7 of 20, never near one; Crew Chief users' commonest complaint is
+# off-track warnings every time "since they already know" (27 Sep, RACE_MODEL.md)
+LIMITS_SAY_FROM_SHARE = 0.5   # when he crosses half way to a penalty
+LIMITS_EVERY_STEP_LAST = 3    # and every step in the last three before it
 STOPPED_KMH = 20.0
 STOPPED_FOR_S = 3.0
 AFTER_INCIDENT_S = 30.0       # a stop this soon after a spin or a hit is that incident
@@ -233,9 +238,17 @@ class RaceEngineer:
                                 template="Penalty. Serve it."))
         self.penalties = me.penalties
 
-        # track limits (E3). GUESSED: the game counts limit "steps" and gives a penalty at
-        # limit_steps_per_penalty; confirm the numbers on the first v2 tape.
-        if self.limit_steps is not None and me.track_limit_steps > self.limit_steps:
+        # track limits (E3): the game counts limit "steps" and gives a penalty at
+        # limit_steps_per_penalty (seen on the tapes: 12 or 20)
+        stepped = self.limit_steps is not None and me.track_limit_steps > self.limit_steps
+        penalty_at = session.limit_steps_per_penalty
+        worth_a_word = True
+        if stepped and penalty_at:
+            half_way = penalty_at * LIMITS_SAY_FROM_SHARE
+            crossed_half = self.limit_steps < half_way <= me.track_limit_steps
+            near = me.track_limit_steps >= penalty_at - LIMITS_EVERY_STEP_LAST
+            worth_a_word = crossed_half or near
+        if stepped and worth_a_word:
             where = moment.corner or "that corner"
             facts = {"corner": where, "steps": me.track_limit_steps,
                      "penalty_at": session.limit_steps_per_penalty}

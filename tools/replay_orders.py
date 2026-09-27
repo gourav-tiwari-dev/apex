@@ -25,6 +25,7 @@ from orders import COACHING_KINDS
 from tapes import RACE_TAPES
 
 LEAD = 5.0      # seconds between his order and the call it should stop
+PRE_ORDER_MARGIN_S = 10.0
 
 def fuel_verdict(row):
     """"box" or "short" for a fuel line that means the car won't make the flag, else None."""
@@ -165,8 +166,10 @@ def check_tape(tape, orders, tag):
                    f"{sum(now[k] for k in watched)} said", "silent: " + ",".join(gone) if gone else "ok"))
     if gone:
         failures.append(f"{tape}: still silent after 'back to normal': {gone}")
-    # before the first order nothing changes
-    first = heard_at[0]
+    # before the first order nothing changes. Calls raised in the last 10 s before it are left out:
+    # the order's own "Copy..." takes the radio and can hold or expire a line raised just before
+    # (25 Sep 12:31: an OFF_TRACK raised just before the first order, 27 Sep)
+    first = heard_at[0] - PRE_ORDER_MARGIN_S
     b0 = collections.Counter(r[1] for r in said if r[0] < first)
     o0 = collections.Counter(r[1] for r in spoken_unasked(ordered) if r[0] < first)
     if b0 != o0:

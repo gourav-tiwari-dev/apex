@@ -191,3 +191,11 @@ Built: road gap, closing rate over the last 20 s (at least 8), called ~15 s befo
 behind you" if it sits there; spotter hazards exempt from the same-words drop. After (same scoring):
 passes warned 2/4, arrivals within 1 s warned 2/5, calls followed by an arrival 2/5 (before 1/3). Thin data:
 one multiclass tape. Felber reached 1 s behind 10 s after his call and sat there 30 s through the corners.
+
+## 27 Sep (auto loop): track limits said when a penalty gets near, not on every step
+Research: Crew Chief users' commonest complaint is off-track / cut-track warnings every time, "since they
+already know"; its max complaints per session (60 by default) is a setting drivers turn down (simracingsetup.com,
+"How To Set Up Crew Chief For iRacing"). Kimi Raikkonen's "leave me alone, I know what I'm doing" is the pro
+version. His own words: "less noise" (24 Sep).
+His tapes: track-limit steps 3, 5, 6, 7 of 20 on 24 Sep (4 calls), 1 step in three other races, 0 penalties ever.
+Built: a step is said when he crosses half way to a penalty, then on each of the last three before it.

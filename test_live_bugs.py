@@ -122,6 +122,20 @@ def test_J3_no_wide_call_right_after_a_spin_or_a_hit():
     assert seat.call_for_event(Event(kind="OFF_TRACK", sim_time=1204.0, speed_kmh=90.0, corner="Porsche Curves"), 4) is None
 
 
+def test_K_track_limits_are_said_when_a_penalty_gets_near_not_on_every_step():
+    # 24 Sep: "Track limits at X. Keep it inside." at steps 3, 5, 6 and 7 of 20, never near a penalty.
+    # Crew Chief users' commonest complaint is the same thing: off-track warnings every time "since
+    # they already know" (27 Sep, RACE_MODEL.md). Said from half way, then on each of the last 3
+    engineer = RaceEngineer()
+    engineer.update(moment(0.0, race(0.0, {"limit_steps_per_penalty": 20}, {"track_limit_steps": 0})))
+    said = {}
+    for t, steps in enumerate((3, 5, 6, 7, 9, 10, 12, 16, 17, 18, 19), start=1):
+        calls = engineer.update(moment(float(t), race(float(t), {"limit_steps_per_penalty": 20},
+                                                      {"track_limit_steps": steps}), corner="Arnage"))
+        said[steps] = "TRACK_LIMITS" in kinds(calls)
+    assert [steps for steps, spoken in said.items() if spoken] == [10, 17, 18, 19]
+
+
 def test_H_no_spotter_in_the_garage_or_pits():
     spotter = Spotter()
     parked = replace(moment(0.0, race(0.0, me_changes={"in_pits": True}), nearby=near(0.0, (3.0, 0.0), (-3.0, 0.0))))

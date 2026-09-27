@@ -142,11 +142,12 @@ def test_safety_car_then_green():
 def test_blue_flag_penalty_and_track_limits():
     engineer = RaceEngineer()
     engineer.update(moment(0.0, race(0.0)))
-    calls = engineer.update(moment(1.0, race(1.0, me_changes={"flag": 6, "penalties": 1, "track_limit_steps": 2}),
+    # 3 of 6: half way to a penalty is when a step becomes worth a word (27 Sep)
+    calls = engineer.update(moment(1.0, race(1.0, me_changes={"flag": 6, "penalties": 1, "track_limit_steps": 3}),
                                    corner="T4 Roggia"))
     assert kinds(calls) == ["BLUE_FLAG", "PENALTY", "TRACK_LIMITS"]
     limits = calls[2]
-    assert limits.facts == {"corner": "T4 Roggia", "steps": 2, "penalty_at": 6}
+    assert limits.facts == {"corner": "T4 Roggia", "steps": 3, "penalty_at": 6}
 
 
 def test_gap_report_every_three_laps_with_its_numbers_as_facts():
