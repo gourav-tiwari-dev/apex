@@ -1,7 +1,6 @@
 import sqlite3, json
 from race_state import identity
 from statistics import median
-from time import time
 
 SCHEMA = """
   CREATE TABLE IF NOT EXISTS sessions (
@@ -25,26 +24,11 @@ SCHEMA = """
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
 
-  CREATE TABLE IF NOT EXISTS  spoken(
-    id            INTEGER PRIMARY KEY,
-    event_id      INTEGER NOT NULL,
-    spoken_at     REAL    NOT NULL,
-    line          TEXT    NOT NULL,
-    FOREIGN KEY (event_id) REFERENCES events (id)
-  );
-
   CREATE TABLE IF NOT EXISTS laps (
     id            INTEGER PRIMARY KEY,
     session_id    INTEGER NOT NULL,
     lap_count     INTEGER NOT NULL,
     validity      INTEGER NOT NULL,          -- mCountLapFlag: 0/1/2
-    sector1       REAL,                      -- NOT WIRED YET (mCurSector1)
-    sector2       REAL,                      -- NOT WIRED YET (mCurSector2, cumulative s1+s2)
-    sector3       REAL,                      -- NOT WIRED YET (derive: mLastLapTime - sector2)
-    fuel          REAL,                      -- NOT WIRED YET (mFuel, litres, at lap start)
-    energy        REAL,                      -- NOT WIRED YET (mBatteryChargeFraction 0.0-1.0)
-    tyre_wear     REAL,                      -- NOT WIRED YET (mWear; PROXY for age, not age)
-    clean_air     INTEGER,                   -- NOT WIRED YET (mTimeBehindNext > 2.0 for the lap)
     UNIQUE (session_id, lap_count),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );
@@ -258,41 +242,10 @@ def save_event(conn, session_id, event):
     return cur.lastrowid
 
 
-def save_spoken(conn, event_id, spoken_at, line):
+def save_lap(conn, session_id, lap_count, validity):
     cur = conn.execute(
-        "INSERT INTO spoken (event_id,spoken_at,line) VALUES (?,?,?)",
-        (event_id, spoken_at, line),
-    )
-    conn.commit()
-
-
-def save_lap(
-    conn,
-    session_id,
-    lap_count,
-    validity,
-    sector1=None,
-    sector2=None,
-    sector3=None,
-    fuel=None,
-    energy=None,
-    tyre_wear=None,
-    clean_air=None,
-):
-    cur = conn.execute(
-        "INSERT INTO laps (session_id,lap_count,validity,sector1,sector2,sector3,fuel,energy,tyre_wear,clean_air) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (
-            session_id,
-            lap_count,
-            validity,
-            sector1,
-            sector2,
-            sector3,
-            fuel,
-            energy,
-            tyre_wear,
-            clean_air,
-        ),
+        "INSERT INTO laps (session_id, lap_count, validity) VALUES (?, ?, ?)",
+        (session_id, lap_count, validity),
     )
     conn.commit()
     return cur.lastrowid
@@ -341,7 +294,7 @@ def load_latest_contract(conn, before_session_id, track=None):
 
 
 def finish_session(conn, session_id, hash, end_reason=None, ended_at=None):
-    cur = conn.execute(
+    conn.execute(
         "UPDATE sessions SET event_hash = ?, end_reason = ?, ended_at = ? WHERE id = ?",
         (hash, end_reason, ended_at, session_id),
     )
@@ -647,13 +600,6 @@ def print_corner_report(conn, session_id=None):
         line += str(corner_row["incidents"]).rjust(5)
         print(line)
     print()
-
-
-def ranker(conn):
-    cur = conn.execute(
-        "SELECT corner,SUM(CASE WHEN kind='CORNER_ENTRY' THEN 1 ELSE 0 END) AS entries,SUM(CASE WHEN kind IN ('OFF_TRACK','SPIN','LOCKUP') THEN 1 ELSE 0 END) AS incidents,SUM(CASE WHEN kind IN ('OFF_TRACK','SPIN','LOCKUP') THEN 1 ELSE 0 END) * 1.0 / SUM(CASE WHEN kind='CORNER_ENTRY' THEN 1 ELSE 0 END) AS rate FROM events GROUP BY corner ORDER BY rate DESC"
-    )
-    return cur.fetchall()
 
 
 def load_reference(path):
