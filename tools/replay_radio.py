@@ -11,9 +11,9 @@ code, tape, out_db = (
 shutil.copy(r"C:\Users\gourav\Downloads\apex_telemetry\apex.db", out_db)
 os.chdir(code)
 sys.path.insert(0, code)
-import live_telemetry, memory
+import session, memory
 
-live_telemetry.connect_db = lambda db_path=None: memory.connect_db(out_db)
+session.connect_db = lambda db_path=None: memory.connect_db(out_db)
 
 
 class NoModel:
@@ -29,7 +29,7 @@ class NoModel:
 import io, contextlib
 
 with contextlib.redirect_stdout(io.StringIO()):
-    sid = live_telemetry.run_session(
+    sid = session.run_session(
         True, None, tape, out_loud=False, persona=NoModel()
     )
 conn = sqlite3.connect(out_db)

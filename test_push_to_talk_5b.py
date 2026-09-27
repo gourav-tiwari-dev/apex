@@ -1,7 +1,7 @@
 """v3 step 5b (25 Sep 2026): push-to-talk as the last resort - say again, reminders."""
 
 from answers import Answers, intent_of, needs_agent
-from live_telemetry import due_reminders
+from session import due_reminders
 from radio import Governor
 from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist

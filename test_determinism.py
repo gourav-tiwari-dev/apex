@@ -4,7 +4,7 @@ at any replay speed. Both run on the 3-lap tape, with no LLM and no sound."""
 import hashlib
 import json
 
-import live_telemetry
+import session
 import memory
 
 # What the v1 detectors produced on the 3-lap tape (measured 23 Sep 2026, before the radio
@@ -26,9 +26,9 @@ class FakePersona:
 def run(tmp_path, monkeypatch, name, speed):
     db_path = str(tmp_path / f"{name}.db")
     monkeypatch.setattr(
-        live_telemetry, "connect_db", lambda: memory.connect_db(db_path)
+        session, "connect_db", lambda: memory.connect_db(db_path)
     )
-    session_id = live_telemetry.run_session(
+    session_id = session.run_session(
         True, speed, out_loud=False, persona=FakePersona()
     )
     conn = memory.connect_db(db_path)

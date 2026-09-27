@@ -18,7 +18,7 @@ def mark(ok):
 
 def d1_one_picture():
     """No seat feeds its own clock when the race model is shared; one RaceModel in the live loop."""
-    live = open(os.path.join(HERE, "live_telemetry.py"), encoding="utf8").read()
+    live = open(os.path.join(HERE, "session.py"), encoding="utf8").read()
     one_model = (
         live.count("RaceModel()") == 1
         and "racecraft.share(model)" in live

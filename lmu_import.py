@@ -335,7 +335,7 @@ def load_into_apex(tape_paths):
     """Replay converted tapes into apex.db, once each, then rebuild the team memory."""
     import contextlib
     import io
-    from live_telemetry import run_session
+    from session import run_session
     from memory import connect_db
     from team_memory import build_profile
 

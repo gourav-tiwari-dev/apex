@@ -1,6 +1,6 @@
 """Spins and caught slides, checked by a second way of seeing them (26 Sep).
 
-The detectors (live_telemetry.SpinDetector, SlideCaughtDetector) compare where the car points
+The detectors (driving/detectors.py: SpinDetector, SlideCaughtDetector) compare where the car points
 (its orientation matrix) with where it is going (its position 0.1 s ago). This check uses
 neither of those pairings: it adds up the yaw rate to see how far the BODY turned over 3 s, and
 compares that with how far the PATH turned over the same 3 s. Body turned 90 degrees more than

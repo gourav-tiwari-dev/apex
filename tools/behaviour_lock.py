@@ -94,16 +94,16 @@ def tables_written(connection, session_id):
 
 def replay_one(tape):
     """What one tape made Apex write: {radio rows, decision hash, every table's rows}."""
-    import live_telemetry
+    import session
     import memory
 
     database = os.path.join(
         tempfile.gettempdir(), f"apex_lock_{os.path.basename(tape)}.db"
     )
     shutil.copy(GOLDEN_DB, database)
-    live_telemetry.connect_db = lambda db_path=None: memory.connect_db(database)
+    session.connect_db = lambda db_path=None: memory.connect_db(database)
     with contextlib.redirect_stdout(io.StringIO()):
-        session_id = live_telemetry.run_session(
+        session_id = session.run_session(
             True,
             None,
             os.path.join(TAPES_FOLDER, tape),

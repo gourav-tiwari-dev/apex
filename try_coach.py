@@ -37,7 +37,7 @@ import time
 
 from dataclasses import replace
 
-import live_telemetry
+import session
 import memory
 from race_state import identity, same_class_neighbours
 import ptt as push_to_talk
@@ -175,7 +175,7 @@ def frozen_race(tape, lap):
         return Kept
 
     for name in ("Strategist", "PerformanceEngineer", "Racecraft", "Governor"):
-        setattr(live_telemetry, name, keep(name, getattr(live_telemetry, name)))
+        setattr(session, name, keep(name, getattr(session, name)))
 
     real = memory.connect_db("apex.db")
     habits = []
@@ -185,7 +185,7 @@ def frozen_race(tape, lap):
 
     frozen = {}
     lap_started = {}
-    Engineer = live_telemetry.RaceEngineer
+    Engineer = session.RaceEngineer
 
     class FreezingEngineer(Engineer):
         def __init__(self):
@@ -225,11 +225,11 @@ def frozen_race(tape, lap):
                 frozen["base_to_go"] = self.to_go_at_line
             return calls
 
-    live_telemetry.RaceEngineer = FreezingEngineer
+    session.RaceEngineer = FreezingEngineer
     throwaway = os.path.join(tempfile.mkdtemp(), "try_coach.db")
-    live_telemetry.connect_db = lambda: memory.connect_db(throwaway)
+    session.connect_db = lambda: memory.connect_db(throwaway)
     with contextlib.redirect_stdout(io.StringIO()):
-        live_telemetry.run_session(True, None, tape, out_loud=False, persona=NoVoice())
+        session.run_session(True, None, tape, out_loud=False, persona=NoVoice())
     if "snapshot" not in frozen:
         raise SystemExit(f"that tape never reached lap {lap}")
     return frozen, made

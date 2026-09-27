@@ -1,3 +1,10 @@
+"""One session, start to finish: practice, qualifying or a race, live or from a tape.
+
+run_session reads his car frame by frame, feeds the detectors, the race model and the seats,
+lets the governor decide what goes on air, answers him when he speaks, and writes everything to
+the database. When the session ends (his own flag, the session changing, or Ctrl+C) it saves the
+result, and the corner map it learned if the track was new."""
+
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
 from datetime import datetime

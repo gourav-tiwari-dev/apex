@@ -19,7 +19,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.chdir(HERE)
 
-import live_telemetry
+import session
 from question_bank import QUESTIONS
 from try_coach import frozen_race, DEFAULT_TAPE
 from agent import RaceAgent
@@ -60,8 +60,8 @@ def main():
     print("replaying the race to freeze it ...")
     frozen, seats = frozen_race(args.tape, args.lap)
     snapshot = frozen["snapshot"]
-    conn = live_telemetry.connect_db()
-    snapshot.db_path = live_telemetry.database_file(conn)
+    conn = session.connect_db()
+    snapshot.db_path = session.database_file(conn)
     snapshot.session_id = conn.execute("SELECT MAX(id) FROM sessions").fetchone()[0]
     conn.close()
     race, lap = frozen["race"], frozen["lap"]

@@ -75,7 +75,7 @@ def test_a_session_already_over_at_startup_does_not_end_straight_away(
     """Started on the results screen, Apex must wait, not end and restart in a loop."""
     import gzip, json
     from dataclasses import asdict
-    import live_telemetry, memory
+    import session, memory
     from race_state import read_race_snapshot
     from test_race_state import fake_game, first_frames
     from test_determinism import FakePersona
@@ -89,12 +89,12 @@ def test_a_session_already_over_at_startup_does_not_end_straight_away(
         for frame in first_frames(50):
             out.write(json.dumps(asdict(frame)) + "\n")
     db = str(tmp_path / "t.db")
-    monkeypatch.setattr(live_telemetry, "connect_db", lambda: memory.connect_db(db))
-    session = live_telemetry.run_session(
+    monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db))
+    session_id = session.run_session(
         True, None, tape, out_loud=False, persona=FakePersona()
     )
     conn = memory.connect_db(db)
     reason = conn.execute(
-        "SELECT end_reason FROM sessions WHERE id = ?", (session,)
+        "SELECT end_reason FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()[0]
     assert reason == "tape_end"  # it kept going instead of ending on the first frame

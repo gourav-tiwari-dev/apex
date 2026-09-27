@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
-import live_telemetry
+import session
 import memory
 from orders import COACHING_KINDS
 from tapes import RACE_TAPES
@@ -109,9 +109,9 @@ def replay(tape, script, name):
     conn.execute("DROP TABLE IF EXISTS standing_orders")
     conn.commit()
     conn.close()
-    live_telemetry.connect_db = lambda db_path=None: memory.connect_db(out_db)
+    session.connect_db = lambda db_path=None: memory.connect_db(out_db)
     with contextlib.redirect_stdout(io.StringIO()):
-        sid = live_telemetry.run_session(
+        sid = session.run_session(
             True, None, tape, out_loud=False, persona=NoModel(), script=script
         )
     conn = sqlite3.connect(out_db)
@@ -183,7 +183,7 @@ def check_tape(tape, orders, tag):
         would = [r for r in said if r[1] in kinds and start <= r[0] < normal_at]
         stood = [r for r in ordered if start <= r[0] < normal_at]
         bad = [r for r in spoken_unasked(stood) if broken(r)]
-        # a dropped call is logged with its reason as the status (live_telemetry.log_dropped_calls)
+        # a dropped call is logged with its reason as the status (session.log_dropped_calls)
         stopped = sum(1 for r in stood if r[2] == "his_order" and r[1] in kinds)
         if name == "we save":
             reopened = [

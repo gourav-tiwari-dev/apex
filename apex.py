@@ -14,7 +14,7 @@ import argparse
 from memory import latest_session_id, load_latest_contract, connect_db
 from tts import speak
 from debrief import for_speaking, run_debrief
-from live_telemetry import run_session
+from session import run_session
 from game.tape import TAPE_PATH
 from team_memory import build_profile, facts as memory_facts
 from memory import save_radio

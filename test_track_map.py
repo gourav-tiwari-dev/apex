@@ -2,7 +2,7 @@ import gzip
 import json
 from dataclasses import asdict
 
-import live_telemetry
+import session
 import memory
 import track_map
 from game.tape import ReplaySource
@@ -55,10 +55,10 @@ def test_a_new_track_is_learned_while_driving_and_saved(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
     monkeypatch.setattr(track_map, "MAPS_FOLDER", str(tmp_path / "maps"))
     monkeypatch.setattr(
-        live_telemetry, "connect_db", lambda: memory.connect_db(db_path)
+        session, "connect_db", lambda: memory.connect_db(db_path)
     )
 
-    live_telemetry.run_session(True, None, tape, out_loud=False, persona=FakePersona())
+    session.run_session(True, None, tape, out_loud=False, persona=FakePersona())
 
     saved = track_map.load_map("Test Ring")
     assert saved is not None
