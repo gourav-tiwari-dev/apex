@@ -223,9 +223,7 @@ class TrackAwareness:
         calls = []
         calls += self.slow_or_stopped_ahead(race, moment, corners, now)
         calls += self.three_wide_ahead(race, moment, now)
-        calls += self.faster_class_behind(
-            race, moment.frame.lap_dist, moment.frame.speed_kmh, now
-        )
+        calls += self.faster_class_behind(race, moment.frame.lap_dist, now)
         calls += self.fights_ahead(race, now)
         return calls
 
@@ -364,7 +362,7 @@ class TrackAwareness:
             offsets.append(((car.x - lead.x) * dz - (car.z - lead.z) * dx) / moved)
         return max(offsets) - min(offsets)
 
-    def faster_class_behind(self, race, my_lap_dist, my_speed_kmh, now):
+    def faster_class_behind(self, race, my_lap_dist, now):
         me = race.me
         mine = class_rank(me.car_class)
         coming = []

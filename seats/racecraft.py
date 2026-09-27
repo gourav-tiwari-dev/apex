@@ -270,9 +270,9 @@ class Racecraft:
         return pair[1] if self.clean else pair[0]
 
     # ---- the plans ------------------------------------------------------------------------
-    def attack_plan(self, opponent, gap, corners, now):
+    def attack_plan(self, opponent, corners, now):
         edges = self.edges_against(identity(opponent))
-        # the gap is for the log, not the line: a plan is where, not how far
+        # a plan is where, not how far: no gap in it
         facts = {"driver": opponent.driver}
         history = self.history_with(identity(opponent))
         if history:
@@ -311,7 +311,7 @@ class Racecraft:
             evidence={"rival": identity(opponent)},
         )
 
-    def defend_plan(self, opponent, gap, corners, now):
+    def defend_plan(self, opponent, corners, now):
         edges = self.edges_against(identity(opponent))
         facts = {"driver": opponent.driver}
         danger = None
@@ -521,14 +521,14 @@ class Racecraft:
         # one plan per rival, plus one upgrade once there is a real corner to use: at the
         # start there is no data yet, and "stay close, no lunges" is the right call then
         if self.in_fight(self.ahead, self.gap_ahead, FIGHT_GAP_S, now):
-            plan = self.attack_plan(self.ahead, self.gap_ahead, corners, now)
+            plan = self.attack_plan(self.ahead, corners, now)
             key = (identity(self.ahead), "attack", "strong_corner" in plan.facts)
             if key not in self.plans_said and self.plan_allowed(now):
                 self.last_plan_time = now
                 self.plans_said.add(key)
                 calls.append(plan)
         if self.in_fight(self.behind, self.gap_behind, DEFEND_GAP_S, now):
-            plan = self.defend_plan(self.behind, self.gap_behind, corners, now)
+            plan = self.defend_plan(self.behind, corners, now)
             key = (identity(self.behind), "defend", "his_corner" in plan.facts)
             if key not in self.plans_said and self.plan_allowed(now):
                 self.last_plan_time = now

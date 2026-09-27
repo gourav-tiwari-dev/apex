@@ -407,7 +407,7 @@ class RaceEngineer:
         )
         if moment.lap_wrapped and due and moment.lap_count > 1:
             self.last_report_lap = moment.lap_count
-            calls.append(self.gap_report(race, now, moment.model, moment.lap_count))
+            calls.append(self.gap_report(race, now, moment.model))
         return calls
 
     def race_picture(self, race, lap, now, model=None):
@@ -473,7 +473,6 @@ class RaceEngineer:
         """At the line: a lap spent within a second of the same car, not getting closer, and my
         road laps behind it clearly slower than my laps in clean air -> say what it costs and the
         two ways out. Real engineers make this call; Apex never did."""
-        me = race.me
         lap = model.road_lap("me")
         ahead, _, _, _ = same_class_neighbours(race, model)
         stuck_since = (
@@ -626,13 +625,13 @@ class RaceEngineer:
 
     def alone(self, race, model):
         """No car of his class within ALONE_S ahead or behind on the road."""
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
+        _, gap_ahead, _, gap_behind = same_class_neighbours(race, model)
         near = [
             g for g in (gap_ahead, gap_behind) if g is not None and 0 <= g <= ALONE_S
         ]
         return not near
 
-    def gap_report(self, race, now, model=None, lap=None):
+    def gap_report(self, race, now, model=None):
         """Place, his lap against his best, and the cars either side with the road trend. Gaps come
         from the race model: the game's own gap said "closing 43.8" and "car behind -213.6" in his
         online lobby (25 Sep). A gap over REPORT_MAX_GAP_S is said as "nobody close"."""
