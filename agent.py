@@ -41,7 +41,7 @@ from persona import (
     has_phrase,
 )
 from radio import Call, RACE_CONTROL
-from race_state import same_class_neighbours, laps_to_go
+from race_state import identity, same_class_neighbours, laps_to_go
 from seats.strategist import fine_margin
 import race_tools
 from orders import current_plan
@@ -404,7 +404,6 @@ TOOLS = [
 
 
 CALL_WORDS = ("DEFEND", "LET BY", "ATTACK", "FOLLOW")
-OVERRIDE_REASONS = ("damage", "contact", "class", "tyres")
 HOT_TYRE_C = 105  # the strategist's "cooking" line
 OTHER_CLASS_NEAR_M = 400  # an other-class car this close behind is about to arrive
 
@@ -447,9 +446,9 @@ def fallback(snapshot, question=""):
         call = snapshot.team_calls.get(side)
         if call:
             words = f"Radio's lagging, mate. Team says {call}"
-            for reason in ("contact", "damage", "class", "tyres"):
+            for reason, warning in FALLBACK_WARNINGS.items():
                 if reason in snapshot.override_evidence():
-                    words += " " + FALLBACK_WARNINGS[reason]
+                    words += " " + warning
             return words
     return "Radio's lagging, mate. Ask me again."
 
@@ -1083,7 +1082,7 @@ class Snapshot:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
             else:
                 entry["their_pace"] = "not known: no lap time posted yet"
-            key = racecraft_key(opponent)
+            key = identity(opponent)
             edges = racecraft.edges_against(key)
             # named for what they measure: speed carried through the middle, NOT braking (24 Sep:
             # "corners_they_are_quicker" came back as "quicker in every braking zone")
@@ -1178,7 +1177,7 @@ class Snapshot:
             for side, car in (("car_ahead", ahead), ("car_behind", behind)):
                 if car is None:
                     continue
-                edge = racecraft.edges_against(racecraft_key(car)).get(name)
+                edge = racecraft.edges_against(identity(car)).get(name)
                 if edge is not None and abs(edge) >= 3.0:
                     entry[side] = (
                         "you are quicker here" if edge > 0 else "they are quicker here"
@@ -1339,12 +1338,6 @@ class Snapshot:
                 "known": sorted(self.corners),
             }
         return {"error": f"no tool {name}"}
-
-
-def racecraft_key(opponent):
-    from race_state import identity
-
-    return identity(opponent)
 
 
 def without_empty(value):
@@ -1646,10 +1639,9 @@ class RaceAgent:
     """Runs on its own thread. ask() returns at once; finished() hands back the answer Calls
     and the cost of every model call, for the race loop to put on air and log."""
 
-    def __init__(self, budget, clean=False, client=None, thinking=False):
+    def __init__(self, budget, clean=False, client=None):
         self.budget = budget
         self.clean = clean
-        self.thinking = thinking
         self.exchanges = []  # the last questions and answers, for follow-ups
         self.orders = (
             None  # his standing orders (orders.StandingOrders), set by the race loop
@@ -1769,9 +1761,8 @@ class RaceAgent:
             max_tokens=MAX_TOKENS,
             timeout=timeout,
             tools=[{"type": "function", "function": tool} for tool in TOOLS],
-            extra_body={
-                "thinking": {"type": "enabled" if self.thinking else "disabled"}
-            },
+            # thinking off: 2-3x quicker and cheaper, the same calls (module docstring)
+            extra_body={"thinking": {"type": "disabled"}},
         )
         usage = response.usage
         cost = self.budget.charge(usage.prompt_tokens, usage.completion_tokens)
