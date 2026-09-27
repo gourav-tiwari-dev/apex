@@ -206,7 +206,7 @@ class TrackClock:
         return self.mine.distance[-1]
 
     # ---- gaps ------------------------------------------------------------------------------
-    def gap_behind(self, car_id, now):
+    def gap_behind(self, car_id):
         """Seconds between me and a car behind, at the point where it is now."""
         trail = self.theirs.get(car_id)
         if trail is None or not trail.distance:
@@ -216,7 +216,7 @@ class TrackClock:
             return None
         return trail.time[-1] - when_i_was_there
 
-    def gap_ahead(self, car_id, now):
+    def gap_ahead(self, car_id):
         """Seconds between a car ahead and me, at the point where I am now."""
         trail = self.theirs.get(car_id)
         me = self.my_distance()
@@ -323,7 +323,7 @@ class TrackClock:
         return -slope
 
     # ---- where it catches ------------------------------------------------------------------
-    def catch_point(self, car_id, point, gap, corners=None):
+    def catch_point(self, car_id, point, gap):
         """(distance raced where it gets within ON_YOU_S, closing per lap), within one lap;
         or None (not closing, or not one full lap of this pair yet). point: the distance
         raced where gap was measured."""

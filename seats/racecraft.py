@@ -389,9 +389,9 @@ class Racecraft:
         if car is None:
             return None
         if side == "ahead":
-            gap = self.clock.gap_ahead(car.id, now)
+            gap = self.clock.gap_ahead(car.id)
         else:
-            gap = self.clock.gap_behind(car.id, now)
+            gap = self.clock.gap_behind(car.id)
         if gap is None:
             self.gap_points[side] = (
                 None  # the game's estimate: no same-point gap to build on
@@ -743,7 +743,7 @@ class Racecraft:
             return []
         self.last_lost_place_time = now
         nearest = self.next_corner(moment.frame.lap_dist, corners)
-        gap = self.clock.gap_ahead(car.id, now)
+        gap = self.clock.gap_ahead(car.id)
         if gap is not None and gap <= TOW_S and nearest is not None:
             # still in its tow: the switchback, right now
             return [
@@ -770,7 +770,7 @@ class Racecraft:
         stick_now = False
         for car_id in list(self.open_passes):
             pass_ = self.open_passes[car_id]
-            gap = self.clock.gap_behind(car_id, now)
+            gap = self.clock.gap_behind(car_id)
             if gap is None and self.behind is not None and self.behind.id == car_id:
                 gap = self.gap_behind
             if (
@@ -891,7 +891,7 @@ class Racecraft:
         for opponent in race.opponents:
             if opponent.car_class != me.car_class or opponent.place != me.place + 1:
                 continue
-            gap = self.clock.gap_behind(opponent.id, now)
+            gap = self.clock.gap_behind(opponent.id)
             rate = self.clock.closing_rate(opponent.id, now)
             if (
                 gap is not None

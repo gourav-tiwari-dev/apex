@@ -484,7 +484,7 @@ class TrackAwareness:
             self.group_since = None
             return []
         nearest = rivals[0]
-        reach = self.clock.gap_ahead(nearest.id, now)
+        reach = self.clock.gap_ahead(nearest.id)
         if reach is None or not ALREADY_IN_IT_S < reach <= OPPORTUNITY_REACH_S:
             self.group_since = None
             return []

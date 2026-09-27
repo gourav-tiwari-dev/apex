@@ -30,9 +30,9 @@ def test_the_gap_is_when_both_cars_passed_the_same_point():
     clock.lap_length = LAP
     clock.mine = trail(0.0, 50.0, 60.0)
     clock.theirs[9] = trail(1.0, 50.0, 59.0)  # the same car, a second later
-    assert abs(clock.gap_behind(9, 60.0) - 1.0) < 0.01
+    assert abs(clock.gap_behind(9) - 1.0) < 0.01
     clock.theirs[4] = trail(-0.6, 50.0, 60.6)  # a car 0.6 s up the road
-    assert abs(clock.gap_ahead(4, 60.0) - 0.6) < 0.01
+    assert abs(clock.gap_ahead(4) - 0.6) < 0.01
 
 
 def test_no_gaps_until_the_lap_length_is_known():
@@ -48,7 +48,7 @@ def test_no_gaps_until_the_lap_length_is_known():
         behind = replace(rival(25, 30.0, car_id=9), laps=1, lap_dist=7600.0 + 60.0 * t)
         clock.see_race(race(t, {}, {"laps": 1}, opponents=[behind]), t)
         clock.see_me(7800.0 + 60.0 * t, t)
-    assert clock.gap_behind(9, 9.8) is None  # the lap is not known yet
+    assert clock.gap_behind(9) is None  # the lap is not known yet
     for step in range(50, 600):  # to 120 s
         t = step * 0.2
         lap_dist = (7600.0 + 60.0 * t) % 13621.0  # it crosses the line at ~100 s
@@ -56,7 +56,7 @@ def test_no_gaps_until_the_lap_length_is_known():
         behind = replace(rival(25, 30.0, car_id=9), laps=laps, lap_dist=lap_dist)
         clock.see_race(race(t, {}, {"laps": 1}, opponents=[behind]), t)
         clock.see_me((7800.0 + 60.0 * t) % 13621.0, t)
-    gap = clock.gap_behind(9, 119.8)  # a car crossed the line: known
+    gap = clock.gap_behind(9)  # a car crossed the line: known
     assert gap is not None and abs(gap - 200.0 / 60.0) < 0.1
 
 
@@ -102,8 +102,8 @@ def test_the_catch_point_keeps_the_shape_of_the_lap():
 
 def seat_with_gaps(behind=None, ahead=None):
     seat = Racecraft(PerformanceEngineer())
-    seat.clock.gap_behind = lambda car_id, now: behind
-    seat.clock.gap_ahead = lambda car_id, now: ahead
+    seat.clock.gap_behind = lambda car_id: behind
+    seat.clock.gap_ahead = lambda car_id: ahead
     seat.clock.lap_length = LAP
     seat.clock.theirs[9] = Trail()
     seat.clock.theirs[9].add(1000.0, 0.0)  # where the car behind is
@@ -113,9 +113,9 @@ def seat_with_gaps(behind=None, ahead=None):
 def test_a_car_closing_fast_sets_off_the_alarm_in_the_spotter_voice():
     seat = seat_with_gaps()
     seat.clock.closing_rate = lambda car_id, now: 0.06
-    seat.clock.gap_behind = lambda car_id, now: 2.6
+    seat.clock.gap_behind = lambda car_id: 2.6
     step(seat, 100.0, opponents=[rival(6, 8.9, car_id=9)])  # too far back yet
-    seat.clock.gap_behind = lambda car_id, now: 0.9
+    seat.clock.gap_behind = lambda car_id: 0.9
     calls = step(seat, 100.2, opponents=[rival(6, 8.9, car_id=9)])
     alarm = [c for c in calls if c.kind == "CLOSING_ALARM"]
     assert alarm and alarm[0].voice == "spotter" and alarm[0].immediate
@@ -225,7 +225,7 @@ def test_closing_on_the_car_ahead_needs_it_slower_on_the_lap():
 
 def pass_sequence(seat, gap_after=0.3):
     step(seat, 100.0, lap=3, opponents=[rival(4, 7.7, car_id=5)])  # it's ahead
-    seat.clock.gap_behind = lambda car_id, now: gap_after
+    seat.clock.gap_behind = lambda car_id: gap_after
     through = dict(
         me_changes={"place": 4, "time_behind_leader": 7.6},
         opponents=[rival(5, 7.9, car_id=5)],
@@ -264,14 +264,14 @@ def test_a_pass_is_not_praised_until_it_is_held_then_it_is():
         me_changes={"place": 4, "time_behind_leader": 7.6},
         opponents=[rival(5, 7.9, car_id=5)],
     )
-    seat.clock.gap_behind = lambda car_id, now: 0.3
+    seat.clock.gap_behind = lambda car_id: 0.3
     step(
         seat, 110.0, lap=3, new_race=False, corner="T11 Parabolica", **after
     )  # the braking zone
     calls = step(seat, 115.0, lap=3, corner=None, **after)  # through it, still ahead
     # live 25 Sep: still 0.3 s behind is not a finished pass ("I did not make the overtake completely")
     assert "PASS_PRAISE" not in kinds(calls)
-    seat.clock.gap_behind = lambda car_id, now: 0.6
+    seat.clock.gap_behind = lambda car_id: 0.6
     calls = step(seat, 120.0, lap=3, corner=None, **after)  # half a second back: done
     praise = [c for c in calls if c.kind == "PASS_PRAISE"]
     assert praise and not praise[0].template.startswith(
@@ -286,7 +286,7 @@ def test_a_pass_is_not_praised_until_it_is_held_then_it_is():
 def test_a_pass_that_breaks_the_tow_is_clear_at_once():
     seat = seat_with_gaps()
     pass_sequence(seat, gap_after=0.3)
-    seat.clock.gap_behind = lambda car_id, now: 1.2
+    seat.clock.gap_behind = lambda car_id: 1.2
     calls = step(
         seat,
         104.0,
@@ -347,7 +347,7 @@ def test_contact_during_the_pass_means_no_praise():
         events=[hit],
         me_changes={"place": 4, "time_behind_leader": 7.6},
     )
-    seat.clock.gap_behind = lambda car_id, now: 1.5
+    seat.clock.gap_behind = lambda car_id: 1.5
     calls = step(
         seat,
         104.0,
@@ -361,7 +361,7 @@ def test_contact_during_the_pass_means_no_praise():
 def test_late_on_the_brakes_is_a_brilliant_move():
     seat = seat_with_gaps()
     step(seat, 100.0, lap=3, opponents=[rival(4, 7.7, car_id=5)])
-    seat.clock.gap_behind = lambda car_id, now: 1.3
+    seat.clock.gap_behind = lambda car_id: 1.3
     snapshot_changes = dict(
         me_changes={"place": 4, "time_behind_leader": 7.6},
         opponents=[rival(5, 9.0, car_id=5)],
@@ -394,7 +394,7 @@ def test_late_on_the_brakes_is_a_brilliant_move():
 
 def gearbox(seat, start, end, gap, **kw):
     """A snapshot every 5 s from start to end with the car behind at that gap."""
-    seat.clock.gap_behind = lambda car_id, now: gap
+    seat.clock.gap_behind = lambda car_id: gap
     calls = []
     t = start
     while t <= end:
@@ -408,7 +408,7 @@ def test_defending_that_held_gets_praise():
     gearbox(
         seat, 100.0, 170.0, 0.4, opponents=[rival(6, 8.4, car_id=9)]
     )  # on his gearbox 70 s
-    seat.clock.gap_behind = lambda car_id, now: 1.8
+    seat.clock.gap_behind = lambda car_id: 1.8
     calls = step(seat, 175.0, opponents=[rival(6, 9.8, car_id=9)])  # then gone
     assert "DEFEND_HELD" in kinds(calls)
 
@@ -422,7 +422,7 @@ def test_no_defence_praise_for_a_car_that_only_drifted_back():
     calls = gearbox(
         seat, 170.0, 235.0, 1.1, **behind
     )  # ...then sat back, not attacking
-    seat.clock.gap_behind = lambda car_id, now: 1.8
+    seat.clock.gap_behind = lambda car_id: 1.8
     calls += step(seat, 240.0, opponents=[rival(6, 9.8, car_id=9)])
     assert "DEFEND_HELD" not in kinds(calls)
 
@@ -443,9 +443,9 @@ def test_the_pass_being_held_is_not_also_a_defence():
     step(
         seat, 172.0, lap=3, new_race=False, corner="T11 Parabolica", **after
     )  # a braking zone
-    seat.clock.gap_behind = lambda car_id, now: 0.6
+    seat.clock.gap_behind = lambda car_id: 0.6
     calls = step(seat, 175.0, lap=3, corner=None, **after)  # the pass is done: praised
-    seat.clock.gap_behind = lambda car_id, now: 1.8
+    seat.clock.gap_behind = lambda car_id: 1.8
     calls += step(seat, 178.0, lap=3, corner=None, **after)  # and it falls away
     assert "PASS_PRAISE" in kinds(calls)
     assert "DEFEND_HELD" not in kinds(calls)

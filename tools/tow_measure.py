@@ -51,7 +51,7 @@ for tape in TAPES:
                 if lo <= f.lap_dist <= hi:
                     ahead, game_gap, _, _ = same_class_neighbours(r)
                     gap = (
-                        clock.gap_ahead(ahead.id, f.elapsed_time)
+                        clock.gap_ahead(ahead.id)
                         if ahead is not None
                         else None
                     )

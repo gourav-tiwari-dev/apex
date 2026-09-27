@@ -63,9 +63,9 @@ def run(min_per_lap, max_gap):
                     if w[4] is not None:
                         continue
                     if w[0] == "CLOSING_ALARM":
-                        g = seat.clock.gap_behind(w[1], f.elapsed_time)
+                        g = seat.clock.gap_behind(w[1])
                     else:
-                        g = seat.clock.gap_ahead(w[1], f.elapsed_time)
+                        g = seat.clock.gap_ahead(w[1])
                     if g is not None and g <= 0.35:
                         if w[0] == "CLOSING_ALARM":
                             o = seat.cars.get(w[1])
