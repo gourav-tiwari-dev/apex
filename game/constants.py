@@ -1,8 +1,9 @@
 """Le Mans Ultimate's numbers, by name, in one place.
 
 Every value is the game's own, from its shared memory header (lmu_data.py); the comments add
-what his races showed. Before 27 Sep 2026 these were typed again in eleven files, under
-different names (phase 8 alone was FLAG, FLAG_OUT, GAME_PHASE_OVER and SESSION_OVER).
+what his races showed. Before 27 Sep 2026, 15 files defined these again under different
+names (phase 8 alone was FLAG, FLAG_OUT, GAME_PHASE_OVER and SESSION_OVER), and 2 more used the
+bare numbers.
 """
 
 # mSession: 0 test day, 1-4 practice, 5-8 qualifying, 9 warm-up, 10-13 race
