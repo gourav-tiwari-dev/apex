@@ -695,7 +695,6 @@ class Answers:
         self.engineer = engineer
         self.strategist = strategist
         self.performance = performance
-        self.clean = clean
         self.closers = Rotation(clean)
         self.last_line = None  # the last engineer line on air, for "say again" (set by the race loop)
         self.model = (
