@@ -11,7 +11,10 @@ LIVE_MODEL = (
     "deepseek-v4-flash"  # during a session: the push-to-talk coach, line phrasing
 )
 DEBRIEF_MODEL = "deepseek-v4.1-flash"  # after the race: the debrief
-ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+# .env sits in the project folder, one up from coach/
+ENV_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+)
 
 
 def open_client(timeout):

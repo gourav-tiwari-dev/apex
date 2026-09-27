@@ -5,7 +5,7 @@ from memory import reference_from_race, reference_from_self, save_radio
 from radio import Call, MEMORY
 from seats.setup_engineer import advice_for
 from tts import speak
-from llm import DEBRIEF_MODEL, open_client
+from coach.llm import DEBRIEF_MODEL, open_client
 
 DEBRIEF_PROMPT = (
     "You are a race engineer debriefing your driver after a session. "

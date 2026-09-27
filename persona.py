@@ -11,7 +11,7 @@ tells him WHERE the move works, because hasty moves in close racing cost him saf
 
 import re
 import time
-from llm import LIVE_MODEL, open_client
+from coach.llm import LIVE_MODEL, open_client
 
 MAX_WORDS = 12  # the prompt asks for 10; the gate allows a little slack, never more
 FAILURES_TO_OPEN = 3  # consecutive LLM failures before the circuit opens
