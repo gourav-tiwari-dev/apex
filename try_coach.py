@@ -41,7 +41,8 @@ import session
 import memory
 from race_state import identity, same_class_neighbours
 import ptt as push_to_talk
-from agent import RaceAgent, Snapshot
+from agent import RaceAgent
+from coach.snapshot import Snapshot
 from answers import Answers, needs_agent
 from lmu_import import NoVoice
 from radio import Budget
