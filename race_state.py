@@ -386,6 +386,34 @@ def same_class_neighbours(race, model=None):
     return ahead, gap_ahead, behind, gap_behind
 
 
+def multiclass(race):
+    """True when other classes share the track: then the place he races for is his place in class."""
+    for opponent in race.opponents:
+        if opponent.car_class != race.me.car_class:
+            return True
+    return False
+
+
+def class_place(race, place, car_class):
+    """A car's place among its own class: one more than the cars of that class ahead of it overall."""
+    ahead = 0
+    if race.me.car_class == car_class and race.me.place < place:
+        ahead += 1
+    for opponent in race.opponents:
+        if opponent.car_class == car_class and opponent.place < place:
+            ahead += 1
+    return ahead + 1
+
+
+def said_place(race):
+    """His place as the radio says it: "P7 in class" in a multiclass race, "P7" otherwise. Replay of
+    the 58-car race (27 Sep): "Settled. P54, up seven." and "P43." were overall places among
+    Hypercars and LMP2s, when among the GT3s he races he was P18 and P7."""
+    if multiclass(race):
+        return f"P{class_place(race, race.me.place, race.me.car_class)} in class"
+    return f"P{race.me.place}"
+
+
 def track_length(race, model=None):
     """The lap in metres: the session's own figure. Live 25 Sep: the farthest car's distance
     stood in for it, and on lap 1 that is ~1.9 km of a 13.6 km lap, so a 20-minute race at Le Mans

@@ -275,3 +275,34 @@ def test_a_timed_race_is_counted_with_the_leaders_pace():
                                                     "last_lap": 242.0}, opponents=[leader, backmarker])
     # the leader crosses in ~227 s, has 13 s left, so starts one more lap: he does laps 5 and 6
     assert laps_to_go(snapshot, 242.0) == 2
+
+
+def mixed_field():
+    """Him (GT3, P5 overall) behind three Hypercars and one GT3: P2 in his class."""
+    cars = [replace(behind_car(0.3), id=20 + n, place=n, car_class="Hypercar", steam_id=20 + n) for n in (1, 2, 3)]
+    cars.append(replace(behind_car(0.3), id=30, place=4, car_class="GT3", steam_id=30))
+    return cars
+
+
+def test_L_in_a_multiclass_race_his_place_is_his_place_in_class():
+    # replay of the 58-car race (27 Sep): "Settled. P54, up seven." and "P43." were overall places
+    # among Hypercars and LMP2s; among the GT3s he races he was P18 and P7
+    from race_state import said_place, class_place, multiclass
+    mixed = race(1.0, {}, {"place": 5}, opponents=mixed_field())
+    assert multiclass(mixed)
+    assert class_place(mixed, 5, "GT3") == 2
+    assert said_place(mixed) == "P2 in class"
+    alone_in_class = race(1.0, {}, {"place": 5}, opponents=[replace(c, car_class="GT3") for c in mixed_field()])
+    assert not multiclass(alone_in_class)
+    assert said_place(alone_in_class) == "P5"
+
+
+def test_L2_the_finish_and_the_gap_report_say_the_class_place():
+    engineer = RaceEngineer()
+    engineer.update(moment(0.0, race(0.0, {}, {"place": 5}, opponents=mixed_field())))
+    done = engineer.update(replace(moment(1.0, race(1.0, {}, {"place": 5, "finish_status": 1}, opponents=mixed_field())),
+                                   session_type=10))
+    finish = [c for c in done if c.kind == "FINISH"][0]
+    assert finish.template == "Chequered flag. P2 in class."
+    report = RaceEngineer().gap_report(race(2.0, {}, {"place": 5}, opponents=mixed_field()), 2.0)
+    assert report.template.startswith("P2 in class.")

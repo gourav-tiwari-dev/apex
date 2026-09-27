@@ -27,7 +27,7 @@ import statistics
 from radio import Call, RACECRAFT, ENGINEER, SPOTTER
 from seats.spotter import side_and_overlap, sides_taken, CAR_LENGTH_M, LANE_MIN_M, LANE_MAX_M
 from seats.performance import tenths_words
-from race_state import same_lap, identity, same_class_neighbours
+from race_state import same_lap, identity, same_class_neighbours, said_place
 from gaps import TrackClock, ON_YOU_S
 
 FIGHT_GAP_S = 1.0             # a same-class car within a second ahead is a fight
@@ -544,7 +544,7 @@ class Racecraft:
         elif self.reputation.hit_recently(car.id, now) and not self.touched(car, moment):
             gift = "Car ahead's in trouble."
         if gift is not None:
-            return [self.instant("PLACE_GIFT", f"P{race.me.place}. {gift}", now, {"place": race.me.place},
+            return [self.instant("PLACE_GIFT", f"{said_place(race)}. {gift}", now, {"place": race.me.place},
                                  seat="race_engineer", priority=ENGINEER)]
         self.last_earned_pass_at = now
         self.open_passes[car.id] = {"move": move, "at": now, "corner": moment.corner, "left_pass_corner": False,

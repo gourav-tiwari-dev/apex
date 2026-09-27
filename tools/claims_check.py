@@ -21,20 +21,25 @@ sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES, snapshots
+from race_state import class_place
 
 PLACE_WITHIN_S = 2.0
 FLIP_FLOP_S = 60.0
 GOOD_FUEL = ("fine", "saving")
 BAD_FUEL = ("save", "short", "box")
 HIS_PLACE_KINDS = ("FINISH", "GAP_REPORT", "SETTLED")
-PLACE_WORD = re.compile(r"\bP(\d{1,2})\b")
+PLACE_WORD = re.compile(r"\bP(\d{1,2})( in class)?\b")
 
 
-def places_between(race_snapshots, start, end):
+def places_between(race_snapshots, start, end, in_class=False):
+    """His places on the tape in that window: overall, or among his class ("P7 in class", 27 Sep)."""
     places = set()
     for snap in race_snapshots:
         if start <= snap.sim_time <= end:
-            places.add(snap.me.place)
+            if in_class:
+                places.add(class_place(snap, snap.me.place, snap.me.car_class))
+            else:
+                places.add(snap.me.place)
     return places
 
 
@@ -57,11 +62,12 @@ def main():
             facts = json.loads(facts or "{}")
             kinds[kind] += 1
             if kind in HIS_PLACE_KINDS:
-                for number in PLACE_WORD.findall(line):
+                for number, in_class in PLACE_WORD.findall(line):
                     places_checked += 1
-                    around = places_between(race_snapshots, when - PLACE_WITHIN_S, when + PLACE_WITHIN_S)
+                    around = places_between(race_snapshots, when - PLACE_WITHIN_S, when + PLACE_WITHIN_S,
+                                            in_class=bool(in_class))
                     if around and int(number) not in around:
-                        false_claims.append(f"{tape} {when:.1f}s {kind}: said P{number}, tape had "
+                        false_claims.append(f"{tape} {when:.1f}s {kind}: said P{number}{in_class}, tape had "
                                             f"{sorted(around)}: {line!r}")
             if kind in ("LAST_LAP", "FLAG_LAST_LAP") and finish_laps is not None:
                 last_laps_checked += 1

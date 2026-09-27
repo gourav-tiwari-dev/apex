@@ -7,7 +7,7 @@ yellow) come from the voice bank; the rest is phrased by the persona on the next
 import math
 
 from radio import Call, RACE_CONTROL, ENGINEER
-from race_state import identity, same_class_neighbours, laps_to_go, YELLOW_FLAG
+from race_state import identity, same_class_neighbours, laps_to_go, YELLOW_FLAG, said_place, class_place, multiclass
 
 FORMATION = 3                 # mGamePhase values
 GREEN = 5
@@ -206,9 +206,10 @@ class RaceEngineer:
                                     now, {}, template="Flag's out. Last lap. Bring it home."))
         if in_race and me.finish_status == 1 and not self.finish_called:
             self.finish_called = True
-            calls.append(spoken("FINISH", f"Chequered flag. P{me.place}. Tell him where he finished, like a team would.",
-                                now, {"place": me.place}, priority=RACE_CONTROL,
-                                template=f"Chequered flag. P{me.place}."))
+            place = said_place(race)
+            calls.append(spoken("FINISH", f"Chequered flag. {place}. Tell him where he finished, like a team would.",
+                                now, {"place": me.place, "class_place": class_place(race, me.place, me.car_class)},
+                                priority=RACE_CONTROL, template=f"Chequered flag. {place}."))
         self.phase = phase
 
         # flags (E2)
@@ -332,7 +333,7 @@ class RaceEngineer:
                     or race.me.place - car.place > PITS_AHEAD_PLACES:
                 continue
             self.pits_said.add((when, key))
-            words = f"P{car.place}'s in the pits. That's a place for you."
+            words = f"P{class_place(race, car.place, car.car_class)}'s in the pits. That's a place for you."
             calls.append(spoken("PITS_AHEAD", words, now, {"their_place": car.place}, template=words))
         return calls
 
@@ -448,8 +449,8 @@ class RaceEngineer:
         from the race model: the game's own gap said "closing 43.8" and "car behind -213.6" in his
         online lobby (25 Sep). A gap over REPORT_MAX_GAP_S is said as "nobody close"."""
         me = race.me
-        facts = {"place": me.place}
-        parts = [f"P{me.place}."]
+        facts = {"place": me.place, "class_place": class_place(race, me.place, me.car_class)}
+        parts = [f"{said_place(race)}."]
         if self.my_lap:
             best = me.best_lap if me.best_lap > 0 else self.my_lap
             minutes, seconds = lap_time_parts(self.my_lap)

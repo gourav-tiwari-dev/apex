@@ -199,3 +199,12 @@ already know"; its max complaints per session (60 by default) is a setting drive
 version. His own words: "less noise" (24 Sep).
 His tapes: track-limit steps 3, 5, 6, 7 of 20 on 24 Sep (4 calls), 1 step in three other races, 0 penalties ever.
 Built: a step is said when he crosses half way to a penalty, then on each of the last three before it.
+
+## 27 Sep (auto loop): in a multiclass race his place is his place in class
+Source: DRE (thedigitalraceengineer.com, "DRE now supports Le Mans Ultimate") lists class position updates as
+an LMU feature; WEC engineers give the class place ("P3 in class"). His own qualifying seat already said class P.
+His 58-car race (18 Hyper, 19 LMP2, 25 GT3), replay before: "Settled. P54, up seven.", "P44.", "P43." - overall
+places, when among the GT3s he races he was P18, P11 and P7.
+Built: race_state.said_place / class_place / multiclass. Multiclass: "Settled. P18 in class, up six.", "P11 in
+class.", "Chequered flag. P7 in class.", the place gift, "P5's in the pits" by class place; "what position?"
+answers "P7 in class, of 25. P43 overall." One-class races say exactly what they said before.

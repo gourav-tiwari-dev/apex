@@ -13,7 +13,7 @@ import re
 
 from persona import words_to_digits
 from radio import Call, RACE_CONTROL
-from race_state import same_class_neighbours, laps_to_go
+from race_state import same_class_neighbours, laps_to_go, multiclass
 
 ANSWER_TTL_S = 10.0
 DEFAULT_QUIET_LAPS = 2
@@ -431,6 +431,8 @@ class Answers:
         return f"{focus['corner']}. The fastest car finds {amount} there. {focus['advice']}"
 
     def position(self, race):
+        if multiclass(race):
+            return self.class_standing(race)          # "P7 in class, of 25. P43 overall."
         return f"P{race.me.place}."
 
     # ---- v3 5b: lookups answered by code (his ask, 25 Sep) ------------------------------------

@@ -98,7 +98,7 @@ def units(kinds=None):
         "DEFEND_HELD": {"Mega defending, mate. They've got fucking nothing.", "Mega defending, mate. They've got nothing."},
         "PASSED": {"Stay in the tow."} | {f"Get it back into {name}." for name in corners},
         "PASS_RETAKEN": {"They're back past. Go again."} | {f"You're quicker out of {name}." for name in corners},
-        "PLACE_GIFT": {f"P{n}." for n in range(1, 41)} | {"Car ahead's pitting.", "Car ahead's out.", "Car ahead's in trouble."},
+        "PLACE_GIFT": {f"P{n}." for n in range(1, 41)} | {f"P{n} in class." for n in range(1, 41)} | {"Car ahead's pitting.", "Car ahead's out.", "Car ahead's in trouble."},
         "FIGHT_COST": {"Car behind is coming.", "Commit or settle."}
                       | {f"This fight's costing you {gap} a lap." for gap in gap_words(FIGHT_COST_S, 6.0)}
                       | {f"Go at {name} this lap or settle in." for name in corners},

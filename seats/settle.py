@@ -14,7 +14,7 @@ The chaos starts at lights out, and again at a restart (full-course yellow back 
 When it settles, the engineer says ONE summary line, in code's own words.
 """
 from radio import Call, ENGINEER
-from race_state import same_class_neighbours, YELLOW_FLAG
+from race_state import same_class_neighbours, YELLOW_FLAG, said_place, class_place
 from seats.spotter import sides_taken, GREEN
 
 # GUESSED, then checked on the 24 Sep lap 1s (see test_settle.py): 15 s with nobody
@@ -72,6 +72,7 @@ class RaceSettle:
         self.calm_since = None
         self.last_neighbourhood = None
         self.place_at_start = None
+        self.class_place_at_start = None
         self.chaos_lap = None        # the lap the chaos began on (lights out or a restart)
         self.chaos_since = None      # when it began
 
@@ -97,6 +98,7 @@ class RaceSettle:
             self.chaos_since = moment.now
             if self.place_at_start is None or self.last_phase != FULL_COURSE_YELLOW:
                 self.place_at_start = race.me.place
+                self.class_place_at_start = class_place(race, race.me.place, race.me.car_class)
         self.last_phase = phase
         if self.settled:
             return []
@@ -134,7 +136,9 @@ class RaceSettle:
     def summary(self, race, now, model=None):
         me = race.me
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
-        words = [f"Settled. P{me.place}, {places_moved(self.place_at_start or me.place, me.place)}."]
+        now_in_class = class_place(race, me.place, me.car_class)
+        start_in_class = self.class_place_at_start or now_in_class
+        words = [f"Settled. {said_place(race)}, {places_moved(start_in_class, now_in_class)}."]
         # only a gap worth hearing (live 25 Sep, online: "Car ahead 148.4. Car behind -213.6.")
         if ahead is not None and gap_ahead is not None and 0 <= gap_ahead <= SAY_GAP_UP_TO_S:
             words.append(f"Car ahead {gap_ahead:.1f}.")
