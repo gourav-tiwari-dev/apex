@@ -50,6 +50,30 @@ SESSION_TABLES = (
     "llm_calls",
 )
 NOT_COMPARED = {"id", "started_at", "ended_at", "latency_ms", "tape_path"}
+# his voice on two real races (as tools/replay_orders.py scripts it), so the path that hears him,
+# takes his orders and answers him is locked too: (laps done, seconds, words), None = sim time
+TALK = {
+    "tape_20260925_123131.jsonl.gz": [
+        (None, 140.0, "What's the gap to the car ahead?"),
+        (None, 170.0, "No coaching this race."),
+        (None, 200.0, "How's the fuel?"),
+        (None, 230.0, "Mark."),
+        (None, 260.0, "Okay, got it."),
+        (None, 290.0, "Where am I?"),
+        (None, 320.0, "Flat out, we fight."),
+        (None, 350.0, "What's the plan for this race?"),
+        (None, 380.0, "Back to normal."),
+    ],
+    "tape_20260927_103016.jsonl.gz": [
+        (None, 200.0, "What lap is it?"),
+        (None, 400.0, "How are my tyres?"),
+        (None, 600.0, "What's the gap behind?"),
+        (None, 800.0, "Stop coaching."),
+        (None, 1000.0, "What's the problem?"),
+        (None, 1200.0, "I crashed in Caulif"),
+        (None, 1300.0, "Coaching back on."),
+    ],
+}
 SHOWN_DIFFERENCES = 5
 
 
@@ -86,19 +110,28 @@ def tables_written(connection, session_id):
             f"select {columns} from {table} where session_id=? order by id",
             (session_id,),
         ).fetchall()
+    # his standing orders belong to no session: the whole table, as it stands after the run
+    tables["standing_orders"] = connection.execute(
+        "select topic, stance, said from standing_orders order by topic"
+    ).fetchall()
     as_lists = {}
     for table, rows in tables.items():
         as_lists[table] = [list(row) for row in rows]
     return as_lists
 
 
-def replay_one(tape):
+def replay_one(tape, script=None):
     """What one tape made Apex write: {radio rows, decision hash, every table's rows}."""
-    import session
     import memory
 
+    try:
+        import session
+    except ImportError:  # the code before the refactor called it live_telemetry.py
+        import live_telemetry as session
+
     database = os.path.join(
-        tempfile.gettempdir(), f"apex_lock_{os.path.basename(tape)}.db"
+        tempfile.gettempdir(),
+        f"apex_lock_{os.path.basename(tape)}{'_talk' if script else ''}.db",
     )
     shutil.copy(GOLDEN_DB, database)
     session.connect_db = lambda db_path=None: memory.connect_db(database)
@@ -109,6 +142,7 @@ def replay_one(tape):
             os.path.join(TAPES_FOLDER, tape),
             out_loud=False,
             persona=NoModel(),
+            script=script,
         )
     connection = sqlite3.connect(database)
     rows = connection.execute(
@@ -127,21 +161,30 @@ def replay_one(tape):
     }
 
 
+def cases():
+    """(name, tape, talk?): every race tape as it was, then the two with his voice."""
+    every = [(tape, tape, False) for tape in RACE_TAPES]
+    every += [(f"{tape}.talk", tape, True) for tape in TALK]
+    return every
+
+
 def replay_all():
-    """Every race tape at once, each in its own process: tape -> what it wrote (None: failed)."""
+    """Every case at once, each in its own process: name -> what it wrote (None: failed)."""
     workers = []
-    for tape in RACE_TAPES:
-        output = os.path.join(tempfile.gettempdir(), f"apex_lock_{tape}.json")
-        process = subprocess.Popen([sys.executable, __file__, "one", tape, output])
-        workers.append((tape, output, process))
+    for name, tape, talk in cases():
+        output = os.path.join(tempfile.gettempdir(), f"apex_lock_{name}.json")
+        command = [sys.executable, __file__, "one", tape, output]
+        if talk:
+            command.append("talk")
+        workers.append((name, output, subprocess.Popen(command)))
     results = {}
-    for tape, output, process in workers:
+    for name, output, process in workers:
         process.wait()
         if process.returncode != 0 or not os.path.exists(output):
-            results[tape] = None
+            results[name] = None
             continue
         with open(output, encoding="utf-8") as f:
-            results[tape] = json.load(f)
+            results[name] = json.load(f)
     return results
 
 
@@ -149,14 +192,14 @@ def record():
     os.makedirs(GOLDEN, exist_ok=True)
     if not os.path.exists(GOLDEN_DB):
         shutil.copy(os.path.join(HERE, "apex.db"), GOLDEN_DB)
-    for tape, result in replay_all().items():
+    for name, result in replay_all().items():
         if result is None:
-            print(f"{tape}: REPLAY FAILED, nothing recorded")
+            print(f"{name}: REPLAY FAILED, nothing recorded")
             continue
-        with open(os.path.join(GOLDEN, tape + ".json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(GOLDEN, name + ".json"), "w", encoding="utf-8") as f:
             json.dump(result, f)
         written = sum(len(rows) for rows in result["tables"].values())
-        print(f"{tape}: recorded {len(result['rows'])} radio rows, {written} other rows")
+        print(f"{name}: recorded {len(result['rows'])} radio rows, {written} other rows")
     return 0
 
 
@@ -207,23 +250,23 @@ def compare(golden, result):
 
 def check():
     failures = 0
-    for tape, result in replay_all().items():
-        golden_file = os.path.join(GOLDEN, tape + ".json")
+    for name, result in replay_all().items():
+        golden_file = os.path.join(GOLDEN, name + ".json")
         if result is None:
-            print(f"{tape}: REPLAY FAILED")
+            print(f"{name}: REPLAY FAILED")
             failures += 1
             continue
         if not os.path.exists(golden_file):
-            print(f"{tape}: no baseline yet (run record)")
+            print(f"{name}: no baseline yet (run record)")
             failures += 1
             continue
         with open(golden_file, encoding="utf-8") as f:
             golden = json.load(f)
         if "tables" not in golden:
-            print(f"{tape}: the baseline has no tables (recorded by the old lock): run record")
+            print(f"{name}: the baseline has no tables (recorded by the old lock): run record")
             failures += 1
             continue
-        print(f"{tape}:")
+        print(f"{name}:")
         differences = compare(golden, result)
         if differences:
             failures += 1
@@ -235,8 +278,8 @@ def check():
     return 0 if failures == 0 else 1
 
 
-def one(tape, output):
-    result = replay_one(tape)
+def one(tape, output, talk=False):
+    result = replay_one(tape, TALK[tape] if talk else None)
     with open(output, "w", encoding="utf-8") as f:
         json.dump(result, f)
     return 0
@@ -247,5 +290,5 @@ if __name__ == "__main__":
     if command == "record":
         sys.exit(record())
     if command == "one":
-        sys.exit(one(sys.argv[2], sys.argv[3]))
+        sys.exit(one(sys.argv[2], sys.argv[3], len(sys.argv) > 4))
     sys.exit(check())
