@@ -1,5 +1,6 @@
 import json, gzip
-from live_telemetry import CarState, LapDistance, LapCounter, CornerStats
+from live_telemetry import CarState, CornerStats
+from driving.laps import LapDistance, LapCounter
 
 TAPE = "tape_60hz_clean.jsonl.gz"
 GOLDEN = "golden_telemetry.json"

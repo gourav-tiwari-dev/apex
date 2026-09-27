@@ -91,7 +91,7 @@ def test_B3_no_yellow_call_for_the_incident_he_is_in():
 def test_I_in_a_race_the_lap_he_is_on_is_the_games():
     # replay of 25 Sep night (27 Sep): his own line crossings made the formation lap "lap 1", so
     # race lap 1 was "lap 2" for the coach, his reminders and the debrief ("2 contacts: lap 2")
-    from live_telemetry import LapCounter
+    from driving.laps import LapCounter
 
     counter = LapCounter()
 

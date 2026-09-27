@@ -5,7 +5,8 @@ from dataclasses import asdict
 import live_telemetry
 import memory
 import track_map
-from live_telemetry import ReplaySource, LapCounter, LapDistance
+from live_telemetry import ReplaySource
+from driving.laps import LapCounter, LapDistance
 from race_state import read_race_snapshot
 from test_race_state import fake_game
 from track_map import TrackMapLearner, MONZA_CORNERS, borrow_names, corner_at
