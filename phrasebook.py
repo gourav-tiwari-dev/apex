@@ -196,11 +196,18 @@ def decode_mp3(mp3_bytes):
 
     if not pygame.mixer.get_init():
         pygame.mixer.init(frequency=24000, size=-16, channels=1)
+    # the mixer opens in stereo even when asked for mono (measured: (24000, -16, 2)); read as
+    # mono, every sentence came out twice as long and a transcriber heard nonsense
     rate, _, channels = pygame.mixer.get_init()
     raw = np.frombuffer(
         pygame.mixer.Sound(file=io.BytesIO(mp3_bytes)).get_raw(), dtype=np.int16
     )
     return raw.reshape(-1, channels).mean(axis=1).astype(np.int16), rate
+
+
+def mp3_to_wav(mp3_bytes):
+    """edge-tts's MP3 as WAV bytes: the phrase bank joins raw samples, so it keeps WAV."""
+    return to_wav(*decode_mp3(mp3_bytes))
 
 
 def radio_ready(audio):

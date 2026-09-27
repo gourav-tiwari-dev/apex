@@ -124,26 +124,6 @@ def azure_bank():
     )
 
 
-def mp3_to_wav(mp3_bytes):
-    """edge-tts only makes MP3; the phrasebook joins raw samples, so decode it once here."""
-    import io
-    import pygame
-    import phrasebook
-
-    if not pygame.mixer.get_init():
-        pygame.mixer.init(frequency=24000, size=-16, channels=1)
-    # the mixer opens in stereo even when asked for mono (measured: (24000, -16, 2)); read as
-    # mono, every sentence came out twice as long and a transcriber heard nonsense
-    rate, _, channels = pygame.mixer.get_init()
-    import numpy as np
-
-    raw = np.frombuffer(
-        pygame.mixer.Sound(file=io.BytesIO(mp3_bytes)).get_raw(), dtype=np.int16
-    )
-    samples = raw.reshape(-1, channels).mean(axis=1)
-    return phrasebook.to_wav(samples, rate)
-
-
 def phrases_standard():
     import phrasebook
 
@@ -184,7 +164,7 @@ def phrases_standard():
             failed += 1
             print(f"  FAILED {book:8s} {text}  ({audio!r})")
             continue
-        phrasebook.save_piece(book, text, mp3_to_wav(audio))
+        phrasebook.save_piece(book, text, phrasebook.mp3_to_wav(audio))
     print(
         f"done: {len(jobs) - failed} saved, {failed} failed (run again to retry the failed ones)"
     )
