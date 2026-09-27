@@ -13,6 +13,7 @@ Checked on the 11-lap Monza tape (23 Sep 2026): all 7 hand corners found with no
 ones from only 3 laps, and from 5 and 11. With lifts counted, or at 0.5 g, warm-up lifts and
 the Serraglio kink turned into fake corners until about 11 laps.
 """
+
 import json
 import os
 import re
@@ -21,26 +22,26 @@ import re
 # start = earliest braking - 25 m, end = back to full throttle and straight (lateral g < 0.5) + 25 m
 # Curva Grande is taken flat, so it keeps its old hand-picked window
 MONZA_CORNERS = [
-    {"name": "T1 Rettifilo",   "start":  747, "end": 1088},
-    {"name": "T3 Curva Grande","start": 1250, "end": 1760},
-    {"name": "T4 Roggia",      "start": 1974, "end": 2321},
-    {"name": "T6 Lesmo 1",     "start": 2431, "end": 2742},
-    {"name": "T7 Lesmo 2",     "start": 2768, "end": 2998},
-    {"name": "T8 Ascari",      "start": 3795, "end": 4318},
+    {"name": "T1 Rettifilo", "start": 747, "end": 1088},
+    {"name": "T3 Curva Grande", "start": 1250, "end": 1760},
+    {"name": "T4 Roggia", "start": 1974, "end": 2321},
+    {"name": "T6 Lesmo 1", "start": 2431, "end": 2742},
+    {"name": "T7 Lesmo 2", "start": 2768, "end": 2998},
+    {"name": "T8 Ascari", "start": 3795, "end": 4318},
     {"name": "T11 Parabolica", "start": 4992, "end": 5584},
 ]
 
 MAPS_FOLDER = "track_maps"
 
-SLICE_M = 5              # track is judged in 5 m slices
-BRAKING = 0.05           # any brake pressure at all
-TURNING = 6.0            # 0.6 g lateral, in m/s^2
-CORE_SHARE = 0.5         # a corner's core: busy on at least half the laps
-EDGE_SHARE = 0.35        # its edges: busy on at least a third of the laps
-MERGE_GAP_M = 40         # busy stretches closer than this are one corner
-MIN_CORNER_M = 40        # anything shorter is a wobble, not a corner
+SLICE_M = 5  # track is judged in 5 m slices
+BRAKING = 0.05  # any brake pressure at all
+TURNING = 6.0  # 0.6 g lateral, in m/s^2
+CORE_SHARE = 0.5  # a corner's core: busy on at least half the laps
+EDGE_SHARE = 0.35  # its edges: busy on at least a third of the laps
+MERGE_GAP_M = 40  # busy stretches closer than this are one corner
+MIN_CORNER_M = 40  # anything shorter is a wobble, not a corner
 PAD_M = 25
-MIN_LAPS = 3             # never learn a track from fewer laps than this
+MIN_LAPS = 3  # never learn a track from fewer laps than this
 
 
 def corner_at(corners, distance):
@@ -60,7 +61,7 @@ class TrackMapLearner:
     """Watches laps as they are driven and can produce a corner map at any time."""
 
     def __init__(self):
-        self.busy_by_lap = {}      # lap -> set of busy slice numbers
+        self.busy_by_lap = {}  # lap -> set of busy slice numbers
         self.track_length = 0.0
 
     def add(self, lap_count, distance, brake, throttle, accel_lat):
@@ -136,7 +137,9 @@ def borrow_names(learned, named):
     """Give learned corners the real names where they sit on a named corner."""
     for corner in learned:
         for known in named:
-            shorter = min(corner["end"] - corner["start"], known["end"] - known["start"])
+            shorter = min(
+                corner["end"] - corner["start"], known["end"] - known["start"]
+            )
             if overlap(corner, known) >= 0.5 * shorter:
                 corner["name"] = known["name"]
                 break
@@ -151,7 +154,11 @@ def map_path(track):
 def save_map(track, corners, laps_used):
     os.makedirs(MAPS_FOLDER, exist_ok=True)
     with open(map_path(track), "w") as f:
-        json.dump({"track": track, "learned_from_laps": laps_used, "corners": corners}, f, indent=1)
+        json.dump(
+            {"track": track, "learned_from_laps": laps_used, "corners": corners},
+            f,
+            indent=1,
+        )
 
 
 def load_map(track):

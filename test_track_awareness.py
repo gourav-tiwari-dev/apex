@@ -1,4 +1,5 @@
 """v3 step 4 (24 Sep 2026): what is happening up the road and in the mirrors."""
+
 from dataclasses import replace
 
 from seats.track_awareness import TrackAwareness
@@ -7,8 +8,14 @@ from test_racecraft import rival, CORNERS
 from test_seats import moment, race, kinds
 
 
-def look(seat, t, cars, my_lap_dist=1000.0, my_place=8, my_behind_leader=8.0, speed=250.0):
-    snapshot = race(t, me_changes={"place": my_place, "time_behind_leader": my_behind_leader}, opponents=cars)
+def look(
+    seat, t, cars, my_lap_dist=1000.0, my_place=8, my_behind_leader=8.0, speed=250.0
+):
+    snapshot = race(
+        t,
+        me_changes={"place": my_place, "time_behind_leader": my_behind_leader},
+        opponents=cars,
+    )
     m = replace(moment(t, snapshot), corners=CORNERS, session_type=10)
     m.frame.lap_dist = my_lap_dist
     m.frame.speed_kmh = speed
@@ -16,14 +23,19 @@ def look(seat, t, cars, my_lap_dist=1000.0, my_place=8, my_behind_leader=8.0, sp
 
 
 def car(car_id, lap_dist, speed=250.0, place=20, behind_leader=30.0, car_class="GT3"):
-    return replace(rival(place, behind_leader, car_id=car_id, car_class=car_class, steam_id=car_id),
-                   lap_dist=lap_dist, speed_kmh=speed)
+    return replace(
+        rival(
+            place, behind_leader, car_id=car_id, car_class=car_class, steam_id=car_id
+        ),
+        lap_dist=lap_dist,
+        speed_kmh=speed,
+    )
 
 
 def seat():
     s = TrackAwareness()
     s.lap_length = 5800.0
-    s.clock = TrackClock(5800.0)          # a known lap, as the session gives it
+    s.clock = TrackClock(5800.0)  # a known lap, as the session gives it
     return s
 
 
@@ -58,7 +70,9 @@ def test_a_car_braking_for_a_slow_corner_is_not_a_slow_car():
     s = seat()
     learn_normal(s, corner=(1400, 1600, 95.0))
     assert look(s, 1.0, [car(3, 1500.0, speed=90.0)], speed=290.0) == []
-    assert kinds(look(s, 2.0, [car(4, 1500.0, speed=30.0)], speed=290.0)) == ["SLOW_CAR_AHEAD"]
+    assert kinds(look(s, 2.0, [car(4, 1500.0, speed=30.0)], speed=290.0)) == [
+        "SLOW_CAR_AHEAD"
+    ]
 
 
 def test_a_slow_car_that_then_stops_is_one_call():
@@ -90,11 +104,13 @@ def test_three_wide_ahead_says_stay_out_of_it():
 def test_a_hypercar_closing_behind_gets_one_call():
     s = seat()
     said = []
-    for step in range(0, 101):                                     # 20 s
+    for step in range(0, 101):  # 20 s
         t = step * 0.2
-        hyper = car(9, 1700.0 + 83.3 * t, speed=300.0, car_class="Hypercar")   # 300 m back, 13.9 m/s quicker
+        hyper = car(
+            9, 1700.0 + 83.3 * t, speed=300.0, car_class="Hypercar"
+        )  # 300 m back, 13.9 m/s quicker
         said += look(s, t, [hyper], my_lap_dist=2000.0 + 69.4 * t, speed=250.0)
-    assert kinds(said) == ["FASTER_CLASS_BEHIND"]                  # once, not again for the same car
+    assert kinds(said) == ["FASTER_CLASS_BEHIND"]  # once, not again for the same car
     assert said[0].template.startswith("Hypercar behind, closing. On you in about ")
 
 
@@ -107,7 +123,9 @@ def test_two_cars_stopped_at_one_place_is_one_call():
     both = look(s, 1248.2, [car(3, 1300.0, speed=5.0), car(4, 1310.0, speed=3.0)])
     assert kinds(first) == ["CAR_STOPPED_AHEAD"]
     assert both == []
-    later = look(s, 1248.0 + 25.0, [car(5, 1305.0, speed=4.0)])        # a new stop there later
+    later = look(
+        s, 1248.0 + 25.0, [car(5, 1305.0, speed=4.0)]
+    )  # a new stop there later
     assert kinds(later) == ["CAR_STOPPED_AHEAD"]
 
 
@@ -134,14 +152,23 @@ def test_three_wide_needs_three_cars_across_the_track():
         cars = []
         for n, car_id in enumerate((3, 4, 5)):
             c = car(car_id, lap_start + 2.0 * n)
-            cars.append(replace(c, x=across[n], z=1200.0 + 2.0 * n + 50.0 * t))   # all heading +z at 50 m/s
+            cars.append(
+                replace(c, x=across[n], z=1200.0 + 2.0 * n + 50.0 * t)
+            )  # all heading +z at 50 m/s
         return cars
+
     s = seat()
-    look(s, 10.0, trio(10.0, (0.0, 2.0, 1.0), lap_start=3000.0))    # out of range: only their positions kept
-    assert look(s, 10.2, trio(10.2, (0.0, 2.0, 1.0))) == []                     # 2 m across: not three wide
+    look(
+        s, 10.0, trio(10.0, (0.0, 2.0, 1.0), lap_start=3000.0)
+    )  # out of range: only their positions kept
+    assert (
+        look(s, 10.2, trio(10.2, (0.0, 2.0, 1.0))) == []
+    )  # 2 m across: not three wide
     s2 = seat()
     look(s2, 10.0, trio(10.0, (0.0, 2.5, 5.0), lap_start=3000.0))
-    assert kinds(look(s2, 10.2, trio(10.2, (0.0, 2.5, 5.0)))) == ["THREE_WIDE_AHEAD"]   # 5 m across
+    assert kinds(look(s2, 10.2, trio(10.2, (0.0, 2.5, 5.0)))) == [
+        "THREE_WIDE_AHEAD"
+    ]  # 5 m across
 
 
 def test_a_faster_class_car_is_called_when_it_will_arrive_not_when_it_is_first_near():
@@ -150,15 +177,17 @@ def test_a_faster_class_car_is_called_when_it_will_arrive_not_when_it_is_first_n
     # Now the call comes about 15 s before it arrives, from how fast the gap is really shrinking
     s = seat()
     said = []
-    for step in range(0, 201):                                     # 40 s, 5 snapshots a second
+    for step in range(0, 201):  # 40 s, 5 snapshots a second
         t = step * 0.2
-        me_at = 2000.0 + 60.0 * t                                  # me at 60 m/s
-        lmp2 = car(9, 1850.0 + 63.0 * t, speed=63.0 * 3.6, car_class="LMP2")   # 150 m back, 3 m/s quicker
+        me_at = 2000.0 + 60.0 * t  # me at 60 m/s
+        lmp2 = car(
+            9, 1850.0 + 63.0 * t, speed=63.0 * 3.6, car_class="LMP2"
+        )  # 150 m back, 3 m/s quicker
         for call in look(s, t, [lmp2], my_lap_dist=me_at, speed=60.0 * 3.6):
             said.append((round(t, 1), call.kind, call.template))
     assert [kind for _, kind, _ in said] == ["FASTER_CLASS_BEHIND"]
     when, _, words = said[0]
-    assert 33.0 <= when <= 37.0                                    # it arrives at 50 s
+    assert 33.0 <= when <= 37.0  # it arrives at 50 s
     assert words.startswith("LMP2 behind, closing. On you in about 15 seconds.")
 
 
@@ -168,7 +197,9 @@ def test_a_faster_class_car_that_is_not_closing_is_not_called():
     said = []
     for step in range(0, 51):
         t = step * 0.2
-        lmp2 = car(9, 1900.0 + 60.0 * t, speed=60.0 * 3.6, car_class="LMP2")   # 100 m back, same speed
+        lmp2 = car(
+            9, 1900.0 + 60.0 * t, speed=60.0 * 3.6, car_class="LMP2"
+        )  # 100 m back, same speed
         said += look(s, t, [lmp2], my_lap_dist=2000.0 + 60.0 * t, speed=60.0 * 3.6)
     assert said == []
 
@@ -178,8 +209,10 @@ def test_two_hypercars_fighting_behind():
     said = []
     for step in range(0, 101):
         t = step * 0.2
-        fighters = [car(9, 1700.0 + 83.3 * t, speed=300.0, car_class="Hypercar"),
-                    car(10, 1680.0 + 83.3 * t, speed=300.0, car_class="Hypercar")]
+        fighters = [
+            car(9, 1700.0 + 83.3 * t, speed=300.0, car_class="Hypercar"),
+            car(10, 1680.0 + 83.3 * t, speed=300.0, car_class="Hypercar"),
+        ]
         said += look(s, t, fighters, my_lap_dist=2000.0 + 69.4 * t, speed=250.0)
     assert kinds(said) == ["FASTER_FIGHT_BEHIND"]
 
@@ -188,7 +221,7 @@ def test_a_slower_class_behind_is_not_called():
     assert look(seat(), 1.0, [car(9, 900.0, speed=300.0, car_class="GT3")]) == []
 
 
-MS = 250.0 / 3.6          # everyone at 250 km/h in these runs
+MS = 250.0 / 3.6  # everyone at 250 km/h in these runs
 
 
 def drive(s, seconds, cars_at, my_start=1000.0, my_place=8):
@@ -204,18 +237,22 @@ def drive(s, seconds, cars_at, my_start=1000.0, my_place=8):
 
 def group(*spec):
     """spec: (car id, place, seconds up the road from me)."""
-    return lambda mine: [car(cid, mine + secs * MS, place=place) for cid, place, secs in spec]
+    return lambda mine: [
+        car(cid, mine + secs * MS, place=place) for cid, place, secs in spec
+    ]
 
 
 def test_a_battle_ahead_is_an_opportunity_for_max_with_positions_not_names():
     s = seat()
     fight = group((7, 7, 2.0), (6, 6, 2.3))
-    assert drive(s, 8.0, fight) == []                                # not fighting long enough yet
+    assert drive(s, 8.0, fight) == []  # not fighting long enough yet
     calls = drive(s, 16.0, fight)
     assert kinds(calls) == ["BATTLE_AHEAD"]
-    assert calls[0].template.startswith("P6 and P7 are fighting, 2.0 seconds up the road.")
+    assert calls[0].template.startswith(
+        "P6 and P7 are fighting, 2.0 seconds up the road."
+    )
     assert calls[0].voice == "engineer"
-    assert not calls[0].immediate                                     # waits its turn in the talk budget
+    assert not calls[0].immediate  # waits its turn in the talk budget
 
 
 def test_a_train_ahead():
@@ -255,9 +292,15 @@ def test_a_car_that_jumped_to_the_garage_is_not_a_hazard():
     # live 27 Sep: a car crashed at 2,612 m, "returned to garage" and stood at 89 m among the garages,
     # not flagged in the pits: "Car stopped ahead, before Dunlop Chicane" with nothing on the track
     s = seat()
-    look(s, 1.0, [car(3, 2612.0, speed=0.0)], my_lap_dist=5000.0)             # stopped far up the road
-    assert look(s, 3.4, [car(3, 1000.0, speed=0.0)], my_lap_dist=700.0) == []   # then 1.6 km away: jumped
+    look(
+        s, 1.0, [car(3, 2612.0, speed=0.0)], my_lap_dist=5000.0
+    )  # stopped far up the road
+    assert (
+        look(s, 3.4, [car(3, 1000.0, speed=0.0)], my_lap_dist=700.0) == []
+    )  # then 1.6 km away: jumped
     slowed = seat()
     look(slowed, 1.0, [car(4, 950.0, speed=120.0)], my_lap_dist=500.0)
-    calls = look(slowed, 1.2, [car(4, 960.0, speed=5.0)], my_lap_dist=700.0)    # drove there and stopped
+    calls = look(
+        slowed, 1.2, [car(4, 960.0, speed=5.0)], my_lap_dist=700.0
+    )  # drove there and stopped
     assert kinds(calls) == ["CAR_STOPPED_AHEAD"]

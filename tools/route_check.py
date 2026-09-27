@@ -1,5 +1,6 @@
 """Offline: does every question in the bank go to the right lane (fixed answer or agent)?
 No model, no cost. Usage: route_check.py"""
+
 import collections
 import os
 import sys
@@ -26,7 +27,9 @@ def main():
         else:
             wrong.append((category, question, expected, got))
     for category in sorted(by_category):
-        print(f"  {category:10s} {right_by_category[category]:3d} / {by_category[category]:3d}")
+        print(
+            f"  {category:10s} {right_by_category[category]:3d} / {by_category[category]:3d}"
+        )
     total = len(QUESTIONS)
     print(f"routed right: {total - len(wrong)} / {total}")
     for category, question, expected, got in wrong:

@@ -12,6 +12,7 @@ No key, a timeout, or the monthly quota used up: render() returns None and the c
 the line with edge-tts, so the radio never goes silent. Output is 24 kHz 16-bit mono WAV, the
 phrase bank's format.
 """
+
 import os
 import time
 from xml.sax.saxutils import escape
@@ -19,7 +20,9 @@ from xml.sax.saxutils import escape
 ENGINEER = "en-US-DavisNeural"
 SPOTTER = "en-US-GuyNeural"
 TIMEOUT_S = 4.0
-FREE_TIER_PER_MINUTE = 20      # F0: 20 transactions per 60 s, not adjustable (Microsoft quotas page)
+FREE_TIER_PER_MINUTE = (
+    20  # F0: 20 transactions per 60 s, not adjustable (Microsoft quotas page)
+)
 OUTPUT = "riff-24khz-16bit-mono-pcm"
 
 # (voice role, mood) -> (style, style degree 0.01-2, speaking rate). Moods come from
@@ -36,10 +39,12 @@ STYLES = {
 
 
 def ssml(text, voice, style, degree, rate):
-    return ("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
-            "xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='en-US'>"
-            f"<voice name='{voice}'><mstts:express-as style='{style}' styledegree='{degree}'>"
-            f"<prosody rate='{rate}'>{escape(text)}</prosody></mstts:express-as></voice></speak>")
+    return (
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
+        "xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='en-US'>"
+        f"<voice name='{voice}'><mstts:express-as style='{style}' styledegree='{degree}'>"
+        f"<prosody rate='{rate}'>{escape(text)}</prosody></mstts:express-as></voice></speak>"
+    )
 
 
 class AzureVoice:
@@ -47,13 +52,16 @@ class AzureVoice:
         if key is None or region is None:
             try:
                 from dotenv import load_dotenv
-                load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
+                load_dotenv(
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+                )
             except ImportError:
                 pass
         self.key = key or os.environ.get("AZURE_SPEECH_KEY", "").strip()
         self.region = region or os.environ.get("AZURE_SPEECH_REGION", "").strip()
         self.timeout = timeout
-        self.post = post                  # tests hand in a stand-in for requests.post
+        self.post = post  # tests hand in a stand-in for requests.post
         self.failures = 0
         self.last_error = None
 
@@ -71,14 +79,20 @@ class AzureVoice:
         post = self.post
         if post is None:
             import requests
+
             post = requests.post
         try:
-            answer = post(f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/v1",
-                          data=ssml(text, voice, style, degree, rate).encode("utf8"),
-                          headers={"Ocp-Apim-Subscription-Key": self.key,
-                                   "Content-Type": "application/ssml+xml",
-                                   "X-Microsoft-OutputFormat": OUTPUT, "User-Agent": "apex"},
-                          timeout=timeout or self.timeout)
+            answer = post(
+                f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/v1",
+                data=ssml(text, voice, style, degree, rate).encode("utf8"),
+                headers={
+                    "Ocp-Apim-Subscription-Key": self.key,
+                    "Content-Type": "application/ssml+xml",
+                    "X-Microsoft-OutputFormat": OUTPUT,
+                    "User-Agent": "apex",
+                },
+                timeout=timeout or self.timeout,
+            )
         except Exception as error:
             self.failures += 1
             self.last_error = error.__class__.__name__

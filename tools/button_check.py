@@ -3,6 +3,7 @@ and says whether push-to-talk would count it. No mic, no speech-to-text: just th
 
     python tools/button_check.py [seconds] [--third-session]   (default 60; run it with LMU focused)
 """
+
 import os
 import sys
 import time
@@ -21,6 +22,7 @@ print(f"saved push-to-talk button: {saved}", flush=True)
 # practice does (25 Sep: only the first session of a run could hear the button)
 if "--third-session" in sys.argv:
     import gc
+
     for _ in range(2):
         earlier = Controller(saved)
         for _ in range(50):
@@ -42,19 +44,29 @@ while time.time() < end:
         if event.type == pygame.JOYDEVICEADDED:
             pad = pygame.joystick.Joystick(event.device_index)
             controller.pads[pad.get_instance_id()] = pad
-            print(f"controller connected: {pad.get_name()!r} (id {pad.get_instance_id()})", flush=True)
+            print(
+                f"controller connected: {pad.get_name()!r} (id {pad.get_instance_id()})",
+                flush=True,
+            )
         elif event.type == pygame.JOYDEVICEREMOVED:
             controller.pads.pop(event.instance_id, None)
             print(f"controller removed: id {event.instance_id}", flush=True)
         elif event.type in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
             pad = controller.pads.get(event.instance_id)
             name = pad.get_name() if pad else "?"
-            is_ptt = event.button == controller.button and controller.mine(event.instance_id)
+            is_ptt = event.button == controller.button and controller.mine(
+                event.instance_id
+            )
             if event.type == pygame.JOYBUTTONDOWN:
                 downs += 1
                 counted += is_ptt
             state = "down" if event.type == pygame.JOYBUTTONDOWN else "up  "
-            print(f"{time.strftime('%H:%M:%S')} button {event.button} {state} on {name!r}"
-                  f"{'  <- PUSH-TO-TALK, counted' if is_ptt else ''}", flush=True)
+            print(
+                f"{time.strftime('%H:%M:%S')} button {event.button} {state} on {name!r}"
+                f"{'  <- PUSH-TO-TALK, counted' if is_ptt else ''}",
+                flush=True,
+            )
     time.sleep(0.01)
-print(f"done: {downs} button presses seen, {counted} counted as push-to-talk", flush=True)
+print(
+    f"done: {downs} button presses seen, {counted} counted as push-to-talk", flush=True
+)

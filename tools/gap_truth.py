@@ -15,6 +15,7 @@ Checked: CLOSING_ALARM (behind), CLOSING_ON (ahead), GAP_REPORT (ahead and behin
 (behind), PASS_PRAISE's "next one" (ahead).
 
 Usage: gap_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)"""
+
 import bisect
 import gzip
 import json
@@ -29,12 +30,16 @@ os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES, snapshots
 
-SIDES = {"CLOSING_ALARM": [("gap_s", "behind")], "CLOSING_ON": [("gap_s", "ahead")],
-         "GAP_REPORT": [("gap_ahead_s", "ahead"), ("gap_behind_s", "behind")],
-         "GAP_GROWING": [("gap_s", "behind")], "PASS_PRAISE": [("gap_ahead_s", "ahead")]}
+SIDES = {
+    "CLOSING_ALARM": [("gap_s", "behind")],
+    "CLOSING_ON": [("gap_s", "ahead")],
+    "GAP_REPORT": [("gap_ahead_s", "ahead"), ("gap_behind_s", "behind")],
+    "GAP_GROWING": [("gap_s", "behind")],
+    "PASS_PRAISE": [("gap_ahead_s", "ahead")],
+}
 LOOK_M = 600.0
 BACK_S = 40.0
-FASTEST_MS = 120.0           # 432 km/h: a step faster than this is the scoring catching up
+FASTEST_MS = 120.0  # 432 km/h: a step faster than this is the scoring catching up
 
 
 def my_frames(tape):
@@ -48,7 +53,7 @@ def my_frames(tape):
                 if d.get("t") is None and (not rows or d["lap_dist"] != rows[-1][1]):
                     rows.append((d["elapsed_time"], d["lap_dist"]))
     except (EOFError, zlib.error, json.JSONDecodeError):
-        pass                            # a tape cut off mid-write
+        pass  # a tape cut off mid-write
     return rows
 
 
@@ -62,10 +67,10 @@ def crossing_time(series, point, before, length):
             continue
         step = (d1 - d0) % length
         if step > length / 2 or step == 0:
-            continue                    # a jump back, or standing still
+            continue  # a jump back, or standing still
         if (point - d0) % length <= step:
             if step / (t1 - t0) > FASTEST_MS:
-                found = None            # it crossed somewhere inside a jump: when is unknown
+                found = None  # it crossed somewhere inside a jump: when is unknown
             else:
                 found = t0 + ((point - d0) % length) / step * (t1 - t0)
     return found
@@ -103,11 +108,19 @@ def main():
                     if car.in_pits or car.car_class != snap.me.car_class:
                         continue
                     if (side == "ahead") != (car.place < snap.me.place):
-                        continue                # beside him on the road, the other side in the race
+                        continue  # beside him on the road, the other side in the race
                     rel = (car.lap_dist - me_d + length / 2) % length - length / 2
-                    if side == "ahead" and 0 < rel <= LOOK_M and (best is None or rel < best[0]):
+                    if (
+                        side == "ahead"
+                        and 0 < rel <= LOOK_M
+                        and (best is None or rel < best[0])
+                    ):
                         best = (rel, car)
-                    if side == "behind" and -LOOK_M <= rel < 0 and (best is None or rel > best[0]):
+                    if (
+                        side == "behind"
+                        and -LOOK_M <= rel < 0
+                        and (best is None or rel > best[0])
+                    ):
                         best = (rel, car)
                 if best is None:
                     continue
@@ -115,8 +128,12 @@ def main():
                 if side == "behind":
                     was_there = crossing_time(mine, car.lap_dist, when, length)
                 else:
-                    series = [(s.sim_time, o.lap_dist) for s in race_snapshots[max(0, i - 250):i + 1]
-                              for o in s.opponents if o.id == car.id]
+                    series = [
+                        (s.sim_time, o.lap_dist)
+                        for s in race_snapshots[max(0, i - 250) : i + 1]
+                        for o in s.opponents
+                        if o.id == car.id
+                    ]
                     was_there = crossing_time(series, me_d, when, length)
                 if was_there is None:
                     continue
@@ -125,8 +142,10 @@ def main():
                 tape_checked += 1
                 if abs(said - truth) > 0.3 + 0.15 * truth:
                     tape_wrong += 1
-                    wrong.append(f"{tape} {when:.1f}s {row[1]} {side}: said {said:.2f}, truth {truth:.2f} "
-                                 f"(P{car.place}, {abs(best[0]):.0f} m)")
+                    wrong.append(
+                        f"{tape} {when:.1f}s {row[1]} {side}: said {said:.2f}, truth {truth:.2f} "
+                        f"(P{car.place}, {abs(best[0]):.0f} m)"
+                    )
         print(f"{tape}: {tape_checked} gaps checked, {tape_checked - tape_wrong} right")
     print(f"{checked - len(wrong)}/{checked} gaps within 0.3 s + 15% of the tape")
     if not wrong:

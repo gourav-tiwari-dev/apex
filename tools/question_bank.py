@@ -6,12 +6,13 @@ new tools cover. Each entry: (category, route, question, tools).
     route  a fixed-lane intent (answers.py), or "agent"
     tools  for the agent: any one of these can answer it (checked on the live run)
 """
+
 CAR = ("car",)
 PIC = ("race_picture",)
 
 QUESTIONS = [
     # ---- gaps (fixed lane) -----------------------------------------------------------------
-    ("gaps", "GAP_AHEAD", "What's the gap?", ()),                                  # his
+    ("gaps", "GAP_AHEAD", "What's the gap?", ()),  # his
     ("gaps", "GAP_AHEAD", "What's the gap ahead?", ()),
     ("gaps", "GAP_AHEAD", "Gap in front?", ()),
     ("gaps", "GAP_AHEAD", "How far is the car in front?", ()),
@@ -20,7 +21,12 @@ QUESTIONS = [
     ("gaps", "GAP_BEHIND", "Gap behind", ()),
     ("gaps", "GAP_BEHIND", "How close is the car behind?", ()),
     ("gaps", "GAP_BEHIND", "Who's behind?", ()),
-    ("gaps", "RADIO_REQUEST", "Tell me the gaps every lap from now on", ("remind_me", "race_picture")),
+    (
+        "gaps",
+        "RADIO_REQUEST",
+        "Tell me the gaps every lap from now on",
+        ("remind_me", "race_picture"),
+    ),
     ("gaps", "agent", "Is the gap to the car ahead going up or down?", PIC),
     ("gaps", "agent", "Am I pulling away from the car behind?", PIC),
     ("gaps", "agent", "How much did I gain on the car ahead last lap?", PIC),
@@ -29,7 +35,7 @@ QUESTIONS = [
     ("gaps", "agent", "How far back is P10?", ("standings",)),
     ("gaps", "agent", "What's the gap to the car two places ahead?", ("standings",)),
     # ---- position and standings --------------------------------------------------------------
-    ("position", "POSITION", "What position are we?", ()),                          # his
+    ("position", "POSITION", "What position are we?", ()),  # his
     ("position", "POSITION", "What position am I?", ()),
     ("position", "POSITION", "Where am I?", ()),
     ("position", "POSITION", "What place?", ()),
@@ -37,16 +43,41 @@ QUESTIONS = [
     ("position", "LEADER", "Who's leading?", ("standings",)),
     ("position", "LEADER", "Who's leading my class?", ("standings",)),
     ("position", "agent", "How many cars are in my class?", ("standings",)),
-    ("position", "agent", "Is the car ahead in my class?", ("standings", "race_picture")),
-    ("position", "agent", "What class is the car behind?", ("standings", "race_picture")),
-    ("position", "agent", "What car is the car ahead driving?", ("driver", "standings")),
-    ("position", "agent", "How many places have I gained since the start?", ("standings", "race_events")),
+    (
+        "position",
+        "agent",
+        "Is the car ahead in my class?",
+        ("standings", "race_picture"),
+    ),
+    (
+        "position",
+        "agent",
+        "What class is the car behind?",
+        ("standings", "race_picture"),
+    ),
+    (
+        "position",
+        "agent",
+        "What car is the car ahead driving?",
+        ("driver", "standings"),
+    ),
+    (
+        "position",
+        "agent",
+        "How many places have I gained since the start?",
+        ("standings", "race_events"),
+    ),
     ("position", "agent", "Who's pitted so far?", ("standings",)),
     ("position", "agent", "Is anyone ahead of me about to pit?", ("standings",)),
     ("position", "agent", "Read me the top five", ("standings",)),
     ("position", "agent", "Am I getting lapped soon?", ("standings", "race_picture")),
     ("position", "agent", "Where would I be if the car ahead pits?", ("standings",)),
-    ("position", "agent", "Realistically which position can we get?", ("strategy", "race_picture")),
+    (
+        "position",
+        "agent",
+        "Realistically which position can we get?",
+        ("strategy", "race_picture"),
+    ),
     # ---- lap times and sectors -----------------------------------------------------------------
     ("laps", "LAP_TIME", "What was my last lap?", ()),
     ("laps", "LAP_TIME", "Last lap time", ()),
@@ -61,17 +92,22 @@ QUESTIONS = [
     ("laps", "agent", "Am I getting faster or slower each lap?", ("lap_history",)),
     ("laps", "agent", "What's the fastest lap in the race?", ("standings",)),
     ("laps", "FASTEST_LAP", "What's the fastest lap in my class?", ("standings",)),
-    ("laps", "agent", "How does my pace compare to the leader?", ("standings", "race_picture")),
+    (
+        "laps",
+        "agent",
+        "How does my pace compare to the leader?",
+        ("standings", "race_picture"),
+    ),
     ("laps", "agent", "How's my pace?", PIC + ("lap_history",)),
     ("laps", "agent", "How's my pace compared to the cars around me?", PIC),
     ("laps", "agent", "What lap time is the car behind doing?", PIC + ("driver",)),
     ("laps", "PACE_TO_CATCH", "What pace do I need?", ()),
-    ("laps", "agent", "What times do I need to do to catch the car ahead?", PIC),     # his
-    ("laps", "agent", "When will we catch the next car?", PIC),                        # his
+    ("laps", "agent", "What times do I need to do to catch the car ahead?", PIC),  # his
+    ("laps", "agent", "When will we catch the next car?", PIC),  # his
     # ---- fuel and energy -----------------------------------------------------------------------
-    ("fuel", "FUEL", "How's the fuel?", ()),                                          # his
-    ("fuel", "FUEL", "What about the fuel?", ()),                                     # his
-    ("fuel", "FUEL", "How's the fuel now?", ()),                                      # his
+    ("fuel", "FUEL", "How's the fuel?", ()),  # his
+    ("fuel", "FUEL", "What about the fuel?", ()),  # his
+    ("fuel", "FUEL", "How's the fuel now?", ()),  # his
     ("fuel", "FUEL", "Fuel?", ()),
     ("fuel", "FUEL", "Enough fuel?", ()),
     ("fuel", "FUEL", "How's the energy?", ()),
@@ -80,12 +116,27 @@ QUESTIONS = [
     ("fuel", "agent", "How much fuel do we need to the end?", CAR + ("strategy",)),
     ("fuel", "agent", "Do I need to save fuel or can I push?", ("strategy", "car")),
     ("fuel", "agent", "Is the virtual energy going to last?", CAR + ("strategy",)),
-    ("fuel", "agent", "Where should I lift and coast?", ("strategy", "knowledge", "corner")),
-    ("fuel", "agent", "Can I switch to a richer map for the last laps?", ("strategy", "car", "setup")),
-    ("fuel", "agent", "How much fuel would I save if I short shift?", ("knowledge", "strategy", "car")),
+    (
+        "fuel",
+        "agent",
+        "Where should I lift and coast?",
+        ("strategy", "knowledge", "corner"),
+    ),
+    (
+        "fuel",
+        "agent",
+        "Can I switch to a richer map for the last laps?",
+        ("strategy", "car", "setup"),
+    ),
+    (
+        "fuel",
+        "agent",
+        "How much fuel would I save if I short shift?",
+        ("knowledge", "strategy", "car"),
+    ),
     ("fuel", "BATTERY", "How's my battery?", CAR),
     # ---- tyres ---------------------------------------------------------------------------------
-    ("tyres", "TYRES", "How are the tires doing?", CAR),                               # his
+    ("tyres", "TYRES", "How are the tires doing?", CAR),  # his
     ("tyres", "TYRES", "What are my tyre temps?", CAR),
     ("tyres", "TYRES", "Tyre temperatures", CAR),
     ("tyres", "TYRE_WEAR", "How's my tyre wear?", CAR),
@@ -127,10 +178,15 @@ QUESTIONS = [
     ("session", "agent", "Am I getting blue flagged?", ("session",)),
     ("session", "LAPS_LEFT", "Is this the last lap?", ()),
     ("session", "agent", "How many laps is this race?", ("session",)),
-    ("session", "agent", "Is the track getting faster as it rubbers in?", ("session", "lap_history")),
+    (
+        "session",
+        "agent",
+        "Is the track getting faster as it rubbers in?",
+        ("session", "lap_history"),
+    ),
     # ---- strategy and the plan --------------------------------------------------------------------
-    ("strategy", "agent", "What's the strategy for this race?", ("strategy",)),        # his
-    ("strategy", "agent", "What's the strategy?", ("strategy",)),                      # his
+    ("strategy", "agent", "What's the strategy for this race?", ("strategy",)),  # his
+    ("strategy", "agent", "What's the strategy?", ("strategy",)),  # his
     ("strategy", "agent", "What's the plan?", ("strategy",)),
     ("strategy", "agent", "Explain the plan for the rest of the race", ("strategy",)),
     ("strategy", "agent", "Should I push or save?", ("strategy",)),
@@ -138,46 +194,116 @@ QUESTIONS = [
     ("strategy", "agent", "What's the priority now?", ("strategy",)),
     ("strategy", "agent", "Should I just bring it home?", ("strategy",)),
     ("strategy", "agent", "Can I get a podium?", ("strategy", "standings")),
-    ("strategy", "agent", "Is it worth attacking the car ahead or should I protect my position?", ("strategy",) + PIC),
+    (
+        "strategy",
+        "agent",
+        "Is it worth attacking the car ahead or should I protect my position?",
+        ("strategy",) + PIC,
+    ),
     ("strategy", "agent", "Should I pit?", ("strategy", "car")),
     ("strategy", "agent", "Where will I be after a stop?", ("standings", "strategy")),
-    ("strategy", "agent", "Walk me through what I need to do to finish top five", ("strategy", "standings")),
+    (
+        "strategy",
+        "agent",
+        "Walk me through what I need to do to finish top five",
+        ("strategy", "standings"),
+    ),
     ("strategy", "agent", "What would you do in my place?", ("strategy",)),
     ("strategy", "agent", "Why should I not attack now?", ("strategy",) + PIC),
     # ---- fights and racecraft ------------------------------------------------------------------------
-    ("fight", "agent", "The car behind is very aggressive, what do I do?", PIC + ("driver",)),  # his
-    ("fight", "agent", "Car ahead is defending, how do I get past?", PIC + ("driver",)),         # his
+    (
+        "fight",
+        "agent",
+        "The car behind is very aggressive, what do I do?",
+        PIC + ("driver",),
+    ),  # his
+    (
+        "fight",
+        "agent",
+        "Car ahead is defending, how do I get past?",
+        PIC + ("driver",),
+    ),  # his
     ("fight", "agent", "The car behind is diving at me, defend or let him go?", PIC),
     ("fight", "agent", "Should I defend?", PIC),
     ("fight", "agent", "Where should I attack?", ("driver", "track_ahead")),
     ("fight", "agent", "Where am I faster than the car ahead?", ("driver",)),
     ("fight", "agent", "Where is the car behind faster than me?", ("driver",)),
     ("fight", "agent", "Where will he attack me?", ("driver", "track_ahead")),
-    ("fight", "agent", "Can I pass him into the next corner?", ("track_ahead", "driver")),
-    ("fight", "agent", "The car ahead keeps braking early, how do I use that?", ("driver",)),
+    (
+        "fight",
+        "agent",
+        "Can I pass him into the next corner?",
+        ("track_ahead", "driver"),
+    ),
+    (
+        "fight",
+        "agent",
+        "The car ahead keeps braking early, how do I use that?",
+        ("driver",),
+    ),
     ("fight", "agent", "Should I let the faster car through?", PIC),
-    ("fight", "agent", "The car behind hit me, what now?", PIC + ("driver", "race_events")),
+    (
+        "fight",
+        "agent",
+        "The car behind hit me, what now?",
+        PIC + ("driver", "race_events"),
+    ),
     ("fight", "agent", "Is the car ahead dangerous?", ("driver",)),
     ("fight", "agent", "Has the car behind had any incidents?", ("driver",)),
     ("fight", "agent", "Can I catch the car ahead?", PIC),
     ("fight", "agent", "Will the car behind catch me before the flag?", PIC),
-    ("fight", "agent", "How do I defend into Mulsanne?", ("driver", "corner", "track_ahead")),
+    (
+        "fight",
+        "agent",
+        "How do I defend into Mulsanne?",
+        ("driver", "corner", "track_ahead"),
+    ),
     ("fight", "agent", "I'm stuck behind this car, what do I do?", PIC + ("driver",)),
-    ("fight", "agent", "Three cars are fighting ahead, should I get involved?", PIC + ("standings",)),
-    ("fight", "agent", "There's a hypercar coming, where do I let it by?", ("track_ahead", "knowledge") + PIC),
+    (
+        "fight",
+        "agent",
+        "Three cars are fighting ahead, should I get involved?",
+        PIC + ("standings",),
+    ),
+    (
+        "fight",
+        "agent",
+        "There's a hypercar coming, where do I let it by?",
+        ("track_ahead", "knowledge") + PIC,
+    ),
     ("fight", "agent", "Should I go for the switchback?", PIC + ("driver",)),
     ("fight", "agent", "Am I in the tow?", PIC + ("knowledge",)),
     ("fight", "agent", "How much does the tow help here?", ("knowledge",)),
-    ("fight", "agent", "The car ahead is slower in the corners but faster on the straights, what do I do?", ("driver",)),
+    (
+        "fight",
+        "agent",
+        "The car ahead is slower in the corners but faster on the straights, what do I do?",
+        ("driver",),
+    ),
     ("fight", "agent", "Is it the last lap, should I risk it?", PIC),
     ("fight", "agent", "He's two seconds faster, why fight?", PIC),
     ("fight", "agent", "Do I have the pace to hold P5?", PIC),
-    ("fight", "agent", "The car behind is weaving, what do I do?", PIC + ("knowledge",)),
-    ("fight", "agent", "Should I attack on the exit or on the brakes?", ("driver", "track_ahead")),
-    ("fight", "agent", "How many times have I tried to pass this car?", ("driver", "race_events")),
+    (
+        "fight",
+        "agent",
+        "The car behind is weaving, what do I do?",
+        PIC + ("knowledge",),
+    ),
+    (
+        "fight",
+        "agent",
+        "Should I attack on the exit or on the brakes?",
+        ("driver", "track_ahead"),
+    ),
+    (
+        "fight",
+        "agent",
+        "How many times have I tried to pass this car?",
+        ("driver", "race_events"),
+    ),
     # ---- where the time is, corners, technique -----------------------------------------------------------
     ("corners", "WHERE_LOSING", "Where am I losing time?", ()),
-    ("corners", "WHERE_LOSING", "Where am I losing pace?", ()),                            # his
+    ("corners", "WHERE_LOSING", "Where am I losing pace?", ()),  # his
     ("corners", "WHERE_LOSING", "Where can I gain time?", ()),
     ("corners", "WHERE_LOSING", "Where am I slow?", ()),
     ("corners", "agent", "How do I go faster through the Porsche Curves?", ("corner",)),
@@ -185,32 +311,87 @@ QUESTIONS = [
     ("corners", "agent", "Where's my braking point for Mulsanne Corner?", ("corner",)),
     ("corners", "agent", "Am I braking too early at Indianapolis?", ("corner",)),
     ("corners", "agent", "How do I take the Ford Chicanes?", ("corner",)),
-    ("corners", "agent", "I lost it at Porsche Curves.", ("corner", "race_events")),           # his
+    (
+        "corners",
+        "agent",
+        "I lost it at Porsche Curves.",
+        ("corner", "race_events"),
+    ),  # his
     ("corners", "agent", "Why am I slow in the Esses?", ("corner",)),
-    ("corners", "agent", "What's the fastest car doing differently at Tertre Rouge?", ("corner",)),
+    (
+        "corners",
+        "agent",
+        "What's the fastest car doing differently at Tertre Rouge?",
+        ("corner",),
+    ),
     ("corners", "agent", "Which corner should I focus on?", ("corner", "strategy")),
     ("corners", "agent", "How much time am I losing at Dunlop Chicane?", ("corner",)),
     ("corners", "agent", "Can I carry more speed through Karting?", ("corner",)),
-    ("corners", "agent", "Am I using too much kerb at the Mulsanne chicanes?", ("corner", "knowledge")),
+    (
+        "corners",
+        "agent",
+        "Am I using too much kerb at the Mulsanne chicanes?",
+        ("corner", "knowledge"),
+    ),
     ("corners", "agent", "Where do I brake later?", ("corner", "strategy")),
     ("corners", "agent", "Read me the corner names", ("track_ahead",)),
     ("corners", "agent", "What's the next corner?", ("track_ahead",)),
     ("corners", "agent", "How do I get a better exit out of Arnage?", ("corner",)),
-    ("corners", "agent", "Where do I lose time to the car ahead?", ("driver", "corner")),
+    (
+        "corners",
+        "agent",
+        "Where do I lose time to the car ahead?",
+        ("driver", "corner"),
+    ),
     ("corners", "agent", "How fast am I through the Porsche Curves?", ("corner",)),
-    ("corners", "agent", "What speed does the fastest car carry through Indianapolis?", ("corner",)),
+    (
+        "corners",
+        "agent",
+        "What speed does the fastest car carry through Indianapolis?",
+        ("corner",),
+    ),
     # ---- balance and handling ------------------------------------------------------------------------
-    ("balance", "agent", "I am getting oversteer at Indianapolis.", ("corner",)),          # his (India)
-    ("balance", "agent", "I am getting oversteer out of Ford Chicanes.", ("corner",)),     # his (4 chickens)
-    ("balance", "agent", "The rear is snapping on entry, what do I do?", ("corner", "knowledge", "setup")),
+    (
+        "balance",
+        "agent",
+        "I am getting oversteer at Indianapolis.",
+        ("corner",),
+    ),  # his (India)
+    (
+        "balance",
+        "agent",
+        "I am getting oversteer out of Ford Chicanes.",
+        ("corner",),
+    ),  # his (4 chickens)
+    (
+        "balance",
+        "agent",
+        "The rear is snapping on entry, what do I do?",
+        ("corner", "knowledge", "setup"),
+    ),
     ("balance", "agent", "The car won't turn in at Arnage", ("corner", "knowledge")),
-    ("balance", "agent", "I'm getting understeer everywhere", ("corner", "knowledge", "setup")),
+    (
+        "balance",
+        "agent",
+        "I'm getting understeer everywhere",
+        ("corner", "knowledge", "setup"),
+    ),
     ("balance", "agent", "Why does the car push mid corner?", ("corner", "knowledge")),
-    ("balance", "agent", "I'm getting wheelspin out of the slow corners", ("setup", "knowledge", "race_events")),
+    (
+        "balance",
+        "agent",
+        "I'm getting wheelspin out of the slow corners",
+        ("setup", "knowledge", "race_events"),
+    ),
     ("balance", "agent", "How is the car balance?", ("corner",)),
     ("balance", "agent", "Is the car loose on exit anywhere?", ("corner",)),
     ("balance", "agent", "Should I trail brake more?", ("corner", "knowledge")),
-    ("balance", "agent", "The car is nervous under braking", ("setup", "knowledge", "corner")),
+    (
+        "balance",
+        "agent",
+        "The car is nervous under braking",
+        ("setup", "knowledge", "corner"),
+    ),
     # ---- rules, flags, penalties, ratings --------------------------------------------------------------
     ("rules", "agent", "Can I overtake under yellow?", ("knowledge",)),
     ("rules", "agent", "What's the penalty for track limits?", ("knowledge", "car")),
@@ -221,12 +402,22 @@ QUESTIONS = [
     ("rules", "agent", "What's a drive through?", ("knowledge",)),
     ("rules", "agent", "What do I do with a blue flag?", ("knowledge",)),
     ("rules", "agent", "How does safety rating work?", ("knowledge",)),
-    ("rules", "agent", "Does contact cost me safety rating if it's not my fault?", ("knowledge",)),
+    (
+        "rules",
+        "agent",
+        "Does contact cost me safety rating if it's not my fault?",
+        ("knowledge",),
+    ),
     ("rules", "agent", "What's the pit lane speed limit?", ("knowledge",)),
     ("rules", "agent", "What happens under full course yellow?", ("knowledge",)),
     ("rules", "agent", "What does the black flag mean?", ("knowledge",)),
     ("rules", "agent", "How does driver rank work?", ("knowledge",)),
-    ("rules", "agent", "If I cut the chicane do I have to give the place back?", ("knowledge",)),
+    (
+        "rules",
+        "agent",
+        "If I cut the chicane do I have to give the place back?",
+        ("knowledge",),
+    ),
     ("rules", "agent", "What happens if I jump the start?", ("knowledge",)),
     ("rules", "FLAGS", "Is the safety car out?", ("session",)),
     ("rules", "agent", "What can you see and what can't you?", ("knowledge",)),
@@ -242,13 +433,18 @@ QUESTIONS = [
     ("events", "agent", "What happened on lap 1?", ("race_events",)),
     ("events", "agent", "How did my passes go this race?", ("race_events",)),
     ("events", "agent", "Why did I lose the place?", ("race_events",) + PIC),
-    ("events", "agent", "Where do I keep making mistakes?", ("race_events", "my_habits")),
+    (
+        "events",
+        "agent",
+        "Where do I keep making mistakes?",
+        ("race_events", "my_habits"),
+    ),
     ("events", "agent", "Have I been clean this race?", ("race_events",)),
     ("events", "agent", "How many lock-ups have I had?", ("race_events",)),
     ("events", "agent", "What the fuck was that?", ("race_events",)),
     ("events", "agent", "Did I get a track limit on that lap?", CAR + ("race_events",)),
     # ---- setup and in-car settings ---------------------------------------------------------------------
-    ("setup", "agent", "How's the tune?", ("setup",)),                                   # his
+    ("setup", "agent", "How's the tune?", ("setup",)),  # his
     ("setup", "agent", "Should I change the brake bias?", ("setup",)),
     ("setup", "SETTINGS", "What's my brake bias?", ("setup", "car")),
     ("setup", "SETTINGS", "What TC am I on?", ("setup", "car")),
@@ -256,11 +452,21 @@ QUESTIONS = [
     ("setup", "agent", "What ABS setting do I have?", ("setup", "car")),
     ("setup", "SETTINGS", "Which motor map am I on?", ("setup", "car")),
     ("setup", "agent", "Can I change the setup in this race?", ("setup", "knowledge")),
-    ("setup", "agent", "Should I move the bias forward for Mulsanne?", ("setup", "corner")),
+    (
+        "setup",
+        "agent",
+        "Should I move the bias forward for Mulsanne?",
+        ("setup", "corner"),
+    ),
     ("setup", "agent", "What would you change on the car?", ("setup",)),
     ("setup", "agent", "Is the car set up for this track?", ("setup",)),
     # ---- past races ----------------------------------------------------------------------------------
-    ("history", "agent", "How did I do last time at Le Mans?", ("database", "my_habits")),
+    (
+        "history",
+        "agent",
+        "How did I do last time at Le Mans?",
+        ("database", "my_habits"),
+    ),
     ("history", "agent", "What's my best result here?", ("database",)),
     ("history", "agent", "How many races have I done?", ("database",)),
     ("history", "agent", "What are my bad habits?", ("my_habits",)),
@@ -268,17 +474,57 @@ QUESTIONS = [
     ("history", "agent", "Have I raced the car ahead before?", ("driver",)),
     ("history", "agent", "How do I usually do on lap one?", ("my_habits",)),
     ("history", "agent", "Am I improving race to race?", ("database", "my_habits")),
-    ("history", "agent", "What was my finishing position in my last race?", ("database",)),
+    (
+        "history",
+        "agent",
+        "What was my finishing position in my last race?",
+        ("database",),
+    ),
     ("history", "agent", "How much has the radio cost this race?", ("database",)),
     ("history", "agent", "How often do my passes work?", ("my_habits", "database")),
     # ---- sums --------------------------------------------------------------------------------------------
-    ("maths", "agent", "If I go half a second a lap faster, when do I catch the car ahead?", ("calculator",) + PIC),
-    ("maths", "agent", "How many laps until the car behind catches me?", PIC + ("calculator",)),
-    ("maths", "agent", "How much time do I lose if I lift and coast every lap?", ("calculator", "knowledge", "strategy")),
-    ("maths", "agent", "How many seconds is 3 tenths a lap over the rest of the race?", ("calculator",) + PIC),
-    ("maths", "agent", "What average lap do I need to finish ahead of the car in front?", PIC + ("calculator",)),
-    ("maths", "agent", "How much fuel for 5 more laps?", CAR + ("calculator", "lap_history")),
-    ("maths", "agent", "If I pit now how many places do I lose?", ("standings", "calculator")),
+    (
+        "maths",
+        "agent",
+        "If I go half a second a lap faster, when do I catch the car ahead?",
+        ("calculator",) + PIC,
+    ),
+    (
+        "maths",
+        "agent",
+        "How many laps until the car behind catches me?",
+        PIC + ("calculator",),
+    ),
+    (
+        "maths",
+        "agent",
+        "How much time do I lose if I lift and coast every lap?",
+        ("calculator", "knowledge", "strategy"),
+    ),
+    (
+        "maths",
+        "agent",
+        "How many seconds is 3 tenths a lap over the rest of the race?",
+        ("calculator",) + PIC,
+    ),
+    (
+        "maths",
+        "agent",
+        "What average lap do I need to finish ahead of the car in front?",
+        PIC + ("calculator",),
+    ),
+    (
+        "maths",
+        "agent",
+        "How much fuel for 5 more laps?",
+        CAR + ("calculator", "lap_history"),
+    ),
+    (
+        "maths",
+        "agent",
+        "If I pit now how many places do I lose?",
+        ("standings", "calculator"),
+    ),
     ("maths", "agent", "How far behind the leader am I in laps?", ("standings",)),
     # ---- the radio itself ----------------------------------------------------------------------------
     ("radio", "QUIET", "Be quiet for 2 laps", ()),
@@ -297,8 +543,8 @@ QUESTIONS = [
     ("radio", "RADIO_REQUEST", "Only talk to me on the straights", ()),
     ("radio", "RADIO_REQUEST", "Stop telling me about the car behind", ()),
     # ---- the rest ----------------------------------------------------------------------------------------
-    ("other", "agent", "F***, I lost it.", ("race_events",)),                                  # his
-    ("other", "agent", "What the fuck, what is?", ()),                                          # his, a mishearing
+    ("other", "agent", "F***, I lost it.", ("race_events",)),  # his
+    ("other", "agent", "What the fuck, what is?", ()),  # his, a mishearing
     ("other", "agent", "Good lap?", ("lap_history",)),
     ("other", "agent", "Was that a good move?", ("race_events",)),
     ("other", "agent", "Am I doing ok?", ("strategy",) + PIC),

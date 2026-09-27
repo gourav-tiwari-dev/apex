@@ -3,6 +3,7 @@ yaw-rate rule, so a change to the thresholds shows its false alarms at once.
 
     python tools/spin_check.py [tape ...]
 """
+
 import glob
 import gzip
 import json
@@ -42,7 +43,9 @@ for tape in tapes:
                 for detector in (spin, slide):
                     event = detector.update(frame)
                     if event is not None:
-                        found.append(f"{event.sim_time:7.1f} {event.kind:12s} {event.conclusion}")
+                        found.append(
+                            f"{event.sim_time:7.1f} {event.kind:12s} {event.conclusion}"
+                        )
                 fast = abs(frame.yaw_rate) > 1.7
                 if fast and not old_armed:
                     old_spins += 1

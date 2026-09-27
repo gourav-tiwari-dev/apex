@@ -13,6 +13,7 @@ A stable train counts as settled: close cars are fine, cars swapping places are 
 The chaos starts at lights out, and again at a restart (full-course yellow back to green).
 When it settles, the engineer says ONE summary line, in code's own words.
 """
+
 from radio import Call, ENGINEER
 from race_state import same_class_neighbours, YELLOW_FLAG, said_place, class_place
 from seats.spotter import sides_taken, GREEN
@@ -31,8 +32,18 @@ RACE_SESSIONS = (10, 11, 12, 13)
 FULL_COURSE_YELLOW = 6
 SUMMARY_TTL_S = 20.0
 
-PLACE_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
-               8: "eight", 9: "nine", 10: "ten"}
+PLACE_WORDS = {
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+}
 
 
 def places_moved(start, now):
@@ -67,14 +78,14 @@ def yellow_anywhere(session):
 
 class RaceSettle:
     def __init__(self):
-        self.settled = True          # practice, qualifying, or Apex started mid-race
+        self.settled = True  # practice, qualifying, or Apex started mid-race
         self.last_phase = None
         self.calm_since = None
         self.last_neighbourhood = None
         self.place_at_start = None
         self.class_place_at_start = None
-        self.chaos_lap = None        # the lap the chaos began on (lights out or a restart)
-        self.chaos_since = None      # when it began
+        self.chaos_lap = None  # the lap the chaos began on (lights out or a restart)
+        self.chaos_since = None  # when it began
 
     def is_race(self, moment):
         if moment.session_type is not None:
@@ -86,9 +97,13 @@ class RaceSettle:
         if race is None or race.me is None:
             return []
         phase = race.session.game_phase
-        went_green = phase == GREEN and self.last_phase is not None and self.last_phase != GREEN
+        went_green = (
+            phase == GREEN and self.last_phase is not None and self.last_phase != GREEN
+        )
         # 24 Sep: Apex was restarted mid lap 1 (P24) and would have counted it as settled
-        joined_on_lap_1 = self.last_phase is None and phase == GREEN and race.me.laps == 0
+        joined_on_lap_1 = (
+            self.last_phase is None and phase == GREEN and race.me.laps == 0
+        )
         if (went_green or joined_on_lap_1) and self.is_race(moment):
             # lights out, or a restart after a full-course yellow: chaos until proven calm
             self.settled = False
@@ -98,21 +113,26 @@ class RaceSettle:
             self.chaos_since = moment.now
             if self.place_at_start is None or self.last_phase != FULL_COURSE_YELLOW:
                 self.place_at_start = race.me.place
-                self.class_place_at_start = class_place(race, race.me.place, race.me.car_class)
+                self.class_place_at_start = class_place(
+                    race, race.me.place, race.me.car_class
+                )
         self.last_phase = phase
         if self.settled:
             return []
 
         now = moment.now
-        brawl_too_long = (moment.lap_count - self.chaos_lap >= SETTLE_WITHIN_LAPS
-                          or (self.chaos_since is not None and now - self.chaos_since >= CHAOS_MAX_S))
+        brawl_too_long = moment.lap_count - self.chaos_lap >= SETTLE_WITHIN_LAPS or (
+            self.chaos_since is not None and now - self.chaos_since >= CHAOS_MAX_S
+        )
         if not self.calm(moment):
             self.calm_since = None
             if not brawl_too_long:
                 return []
         elif self.calm_since is None:
             self.calm_since = now
-        calm_long_enough = self.calm_since is not None and now - self.calm_since >= SETTLE_S
+        calm_long_enough = (
+            self.calm_since is not None and now - self.calm_since >= SETTLE_S
+        )
         if not calm_long_enough and not brawl_too_long:
             return []
         self.settled = True
@@ -127,7 +147,10 @@ class RaceSettle:
             return False
         if moment.new_race:
             around = neighbourhood(race)
-            changed = self.last_neighbourhood is not None and around != self.last_neighbourhood
+            changed = (
+                self.last_neighbourhood is not None
+                and around != self.last_neighbourhood
+            )
             self.last_neighbourhood = around
             if changed:
                 return False
@@ -138,16 +161,38 @@ class RaceSettle:
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
         now_in_class = class_place(race, me.place, me.car_class)
         start_in_class = self.class_place_at_start or now_in_class
-        words = [f"Settled. {said_place(race)}, {places_moved(start_in_class, now_in_class)}."]
+        words = [
+            f"Settled. {said_place(race)}, {places_moved(start_in_class, now_in_class)}."
+        ]
         # only a gap worth hearing (live 25 Sep, online: "Car ahead 148.4. Car behind -213.6.")
-        if ahead is not None and gap_ahead is not None and 0 <= gap_ahead <= SAY_GAP_UP_TO_S:
+        if (
+            ahead is not None
+            and gap_ahead is not None
+            and 0 <= gap_ahead <= SAY_GAP_UP_TO_S
+        ):
             words.append(f"Car ahead {gap_ahead:.1f}.")
-        if behind is not None and gap_behind is not None and 0 <= gap_behind <= SAY_GAP_UP_TO_S:
+        if (
+            behind is not None
+            and gap_behind is not None
+            and 0 <= gap_behind <= SAY_GAP_UP_TO_S
+        ):
             words.append(f"Car behind {gap_behind:.1f}.")
         if len(words) == 1:
             words.append("Nobody close. Race the track.")
         text = " ".join(words)
-        return Call(seat="race_engineer", kind="SETTLED", sim_time=now, priority=ENGINEER,
-                    ttl=SUMMARY_TTL_S, conclusion=text, template=text, phrase=False,
-                    facts={"place": me.place, "start_place": self.place_at_start,
-                           "gap_ahead": gap_ahead, "gap_behind": gap_behind})
+        return Call(
+            seat="race_engineer",
+            kind="SETTLED",
+            sim_time=now,
+            priority=ENGINEER,
+            ttl=SUMMARY_TTL_S,
+            conclusion=text,
+            template=text,
+            phrase=False,
+            facts={
+                "place": me.place,
+                "start_place": self.place_at_start,
+                "gap_ahead": gap_ahead,
+                "gap_behind": gap_behind,
+            },
+        )

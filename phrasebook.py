@@ -18,6 +18,7 @@ Three books, one per voice:
     python build_voice_bank.py --phrases            spotter + engineer (needs internet)
     python build_voice_bank.py --phrases --clone    Max (needs the cloned voice, GPU free)
 """
+
 import hashlib
 import io
 import json
@@ -29,25 +30,32 @@ import numpy as np
 
 PHRASE_FOLDER = os.path.join("voice_bank", "phrases")
 BOOKS = ("spotter", "engineer", "clone")
-JOIN_PAUSE_S = 0.12          # between two sentences, like a breath on the radio
+JOIN_PAUSE_S = 0.12  # between two sentences, like a breath on the radio
 # live 25 Sep: "the engineer is barely audible, I don't hear half the sentence; the spotter is
 # loud and clear". Every line is now levelled to the same loudness (RMS), with a soft limiter so
 # it never cracks (0.25 cracked on 24 Sep with the clone).
 TARGET_RMS = 0.14
-LIMIT = 0.92                 # the loudest a sample may ever be, as a share of full scale
-EDGE_PAD_S = 0.08            # kept either side of a trimmed sentence (soft "s"/"c" starts)
-QUIET = 0.01                 # below this share of full scale is silence, for trimming
+LIMIT = 0.92  # the loudest a sample may ever be, as a share of full scale
+EDGE_PAD_S = 0.08  # kept either side of a trimmed sentence (soft "s"/"c" starts)
+QUIET = 0.01  # below this share of full scale is silence, for trimming
 
 
 # ---- which sentences ----------------------------------------------------------------------
 def gap_words(low_s, high_s):
     """Every way tenths_words() can say a gap between these two, in tenths."""
     from seats.performance import tenths_words
-    return sorted({tenths_words(tenths / 10) for tenths in range(round(low_s * 10), round(high_s * 10) + 1)})
+
+    return sorted(
+        {
+            tenths_words(tenths / 10)
+            for tenths in range(round(low_s * 10), round(high_s * 10) + 1)
+        }
+    )
 
 
 def corner_names():
     from track_map import MAPS_FOLDER, MONZA_CORNERS
+
     names = {corner["name"] for corner in MONZA_CORNERS}
     if os.path.isdir(MAPS_FOLDER):
         for file in sorted(os.listdir(MAPS_FOLDER)):
@@ -68,14 +76,27 @@ def units(kinds=None):
     """book -> every unit (one or more whole sentences) to pre-render. The spotter's is a set;
     the engineer's maps each unit to the mood Max says it in. The engineer units are rendered
     twice: in the standard voice and in Max's."""
-    from seats.racecraft import BRILLIANT, SOLID, MOVE_WORDS, ALARM_MAX_GAP_S, FIGHT_COST_S
+    from seats.racecraft import (
+        BRILLIANT,
+        SOLID,
+        MOVE_WORDS,
+        ALARM_MAX_GAP_S,
+        FIGHT_COST_S,
+    )
     from seats.track_awareness import FASTER_CLASS_ARRIVES_S
+
     corners = corner_names()
     places = corners + [f"before {name}" for name in corners]
 
-    spotter = {"Three wide ahead. Stay out of it, let them fight.",
-               "Hold your line, let it by on the exit.", "Stay predictable, hold your line."}
-    spotter |= {f"Car behind, {gap}, closing fast." for gap in gap_words(0.1, ALARM_MAX_GAP_S + 0.5)}
+    spotter = {
+        "Three wide ahead. Stay out of it, let them fight.",
+        "Hold your line, let it by on the exit.",
+        "Stay predictable, hold your line.",
+    }
+    spotter |= {
+        f"Car behind, {gap}, closing fast."
+        for gap in gap_words(0.1, ALARM_MAX_GAP_S + 0.5)
+    }
     spotter |= reputation_sentences()
     for what in ("Slow car", "Car stopped"):
         spotter.add(f"{what} ahead.")
@@ -84,34 +105,56 @@ def units(kinds=None):
         spotter.add(f"{spoken} behind, closing.")
         spotter.add(f"{spoken} right behind you.")
         spotter.add(f"Two {spoken}s fighting behind.")
-    spotter |= {f"On you in about {n} seconds." for n in range(1, int(FASTER_CLASS_ARRIVES_S) + 1)}
+    spotter |= {
+        f"On you in about {n} seconds."
+        for n in range(1, int(FASTER_CLASS_ARRIVES_S) + 1)
+    }
 
     # Max's sentences, by the kind of call that says them: each is rendered in THAT call's
     # mood (voice.mood_of), the mood a live render of the whole line would get, so a joined
     # praise line does not switch from fired to dry halfway through
     by_kind = {
         "PASS_PRAISE": {f"Next one, {gap}." for gap in gap_words(0.1, 9.9)}
-                       | {text for pair in BRILLIANT + SOLID for text in pair} | set(MOVE_WORDS.values()),
-        "STICK_IT": {"Stick it. They're in your tow."} | {f"Cover the inside into {name}." for name in corners},
+        | {text for pair in BRILLIANT + SOLID for text in pair}
+        | set(MOVE_WORDS.values()),
+        "STICK_IT": {"Stick it. They're in your tow."}
+        | {f"Cover the inside into {name}." for name in corners},
         "CLOSING_ON": {"Closing fast on the car ahead."}
-                      | {f"{gap[0].upper()}{gap[1:]}." for gap in gap_words(0.1, ALARM_MAX_GAP_S + 0.5)},
-        "DEFEND_HELD": {"Mega defending, mate. They've got fucking nothing.", "Mega defending, mate. They've got nothing."},
-        "PASSED": {"Stay in the tow."} | {f"Get it back into {name}." for name in corners},
-        "PASS_RETAKEN": {"They're back past. Go again."} | {f"You're quicker out of {name}." for name in corners},
-        "PLACE_GIFT": {f"P{n}." for n in range(1, 41)} | {f"P{n} in class." for n in range(1, 41)} | {"Car ahead's pitting.", "Car ahead's out.", "Car ahead's in trouble."},
+        | {
+            f"{gap[0].upper()}{gap[1:]}."
+            for gap in gap_words(0.1, ALARM_MAX_GAP_S + 0.5)
+        },
+        "DEFEND_HELD": {
+            "Mega defending, mate. They've got fucking nothing.",
+            "Mega defending, mate. They've got nothing.",
+        },
+        "PASSED": {"Stay in the tow."}
+        | {f"Get it back into {name}." for name in corners},
+        "PASS_RETAKEN": {"They're back past. Go again."}
+        | {f"You're quicker out of {name}." for name in corners},
+        "PLACE_GIFT": {f"P{n}." for n in range(1, 41)}
+        | {f"P{n} in class." for n in range(1, 41)}
+        | {"Car ahead's pitting.", "Car ahead's out.", "Car ahead's in trouble."},
         "FIGHT_COST": {"Car behind is coming.", "Commit or settle."}
-                      | {f"This fight's costing you {gap} a lap." for gap in gap_words(FIGHT_COST_S, 6.0)}
-                      | {f"Go at {name} this lap or settle in." for name in corners},
-        "REPUTATION": reputation_sentences(),       # dry: said after a plan, a fact not a cheer
+        | {
+            f"This fight's costing you {gap} a lap."
+            for gap in gap_words(FIGHT_COST_S, 6.0)
+        }
+        | {f"Go at {name} this lap or settle in." for name in corners},
+        "REPUTATION": reputation_sentences(),  # dry: said after a plan, a fact not a cheer
     }
     from voice import mood_of
+
     engineer = {}
     for kind, texts in by_kind.items():
         for text in texts:
             engineer.setdefault(text, mood_of(kind))
     if kinds is not None:
-        engineer = {text: mood for text, mood in engineer.items()
-                    if any(text in by_kind.get(kind, ()) for kind in kinds)}
+        engineer = {
+            text: mood
+            for text, mood in engineer.items()
+            if any(text in by_kind.get(kind, ()) for kind in kinds)
+        }
     return {"spotter": spotter, "engineer": engineer}
 
 
@@ -131,7 +174,7 @@ def trimmed(samples, rate):
     if loud.size == 0:
         return samples
     pad = int(EDGE_PAD_S * rate)
-    return samples[max(0, loud[0] - pad):loud[-1] + pad + 1]
+    return samples[max(0, loud[0] - pad) : loud[-1] + pad + 1]
 
 
 def levelled(samples):
@@ -151,10 +194,13 @@ def decode_mp3(mp3_bytes):
     """edge-tts makes MP3; decode it (pygame, the mixer Apex already runs) to mono samples."""
     import io
     import pygame
+
     if not pygame.mixer.get_init():
         pygame.mixer.init(frequency=24000, size=-16, channels=1)
     rate, _, channels = pygame.mixer.get_init()
-    raw = np.frombuffer(pygame.mixer.Sound(file=io.BytesIO(mp3_bytes)).get_raw(), dtype=np.int16)
+    raw = np.frombuffer(
+        pygame.mixer.Sound(file=io.BytesIO(mp3_bytes)).get_raw(), dtype=np.int16
+    )
     return raw.reshape(-1, channels).mean(axis=1).astype(np.int16), rate
 
 
@@ -166,7 +212,7 @@ def radio_ready(audio):
         else:
             samples, rate = decode_mp3(audio)
     except Exception:
-        return audio                  # never lose a line over levelling it
+        return audio  # never lose a line over levelling it
     if samples is None:
         return audio
     return to_wav(levelled(samples), rate)
@@ -186,7 +232,9 @@ def read_wav(data):
     with wave.open(io.BytesIO(data)) as w:
         if w.getnchannels() != 1 or w.getsampwidth() != 2:
             return None, None
-        return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16), w.getframerate()
+        return np.frombuffer(
+            w.readframes(w.getnframes()), dtype=np.int16
+        ), w.getframerate()
 
 
 class Phrasebook:
@@ -195,7 +243,7 @@ class Phrasebook:
     def __init__(self, book, folder=PHRASE_FOLDER):
         self.book = book
         self.folder = os.path.join(folder, book)
-        self.pieces = {}            # sentence(s) -> samples
+        self.pieces = {}  # sentence(s) -> samples
         self.rate = None
         index = os.path.join(self.folder, "index.json")
         if not os.path.exists(index):

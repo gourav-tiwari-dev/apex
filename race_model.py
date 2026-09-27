@@ -18,19 +18,20 @@ What the field study of his four race tapes (tools/field_study.py) decided:
 It holds one TrackClock (every car's trail, mine included) and the segment times of every car
 (normal speed per 100 m of track: slow or stopped cars). Seats and the coach only read it.
 """
+
 import math
 import collections
 import statistics
 
 from gaps import TrackClock
 
-SEGMENT_M = 100.0              # track split for normal speeds (~136 at Le Mans)
-REFERENCE_PASSES = 40          # latest passes per segment that make the normal speed
+SEGMENT_M = 100.0  # track split for normal speeds (~136 at Le Mans)
+REFERENCE_PASSES = 40  # latest passes per segment that make the normal speed
 MIN_REFERENCE = 6
-STRETCHES = 8                  # a lap of road trend = the median of 8 stretches
-SURE_LAPS = 2                  # two laps of trend: the direction was right ~80% on his tapes
-BATTLE_S = 1.0                 # same-point gap under this: a fight
-BATTLE_FOR_S = 8.0             # ... held this long: a battle (racecraft's 8 s confirmation)
+STRETCHES = 8  # a lap of road trend = the median of 8 stretches
+SURE_LAPS = 2  # two laps of trend: the direction was right ~80% on his tapes
+BATTLE_S = 1.0  # same-point gap under this: a fight
+BATTLE_FOR_S = 8.0  # ... held this long: a battle (racecraft's 8 s confirmation)
 TRAIN_S = 1.0
 ME = "me"
 
@@ -40,11 +41,12 @@ class RaceModel:
         self.clock = TrackClock(lap_length)
         self.race = None
         self.now = None
-        self.seg = {}                         # car key -> (segment index, time entered)
+        self.seg = {}  # car key -> (segment index, time entered)
         self.normal_times = collections.defaultdict(
-            lambda: collections.deque(maxlen=REFERENCE_PASSES))    # (class, segment) -> seconds
-        self.close_since = {}                 # (front key, back key) -> since when within BATTLE_S
-        self.pit_events = []                  # (time, car key, "in" / "out")
+            lambda: collections.deque(maxlen=REFERENCE_PASSES)
+        )  # (class, segment) -> seconds
+        self.close_since = {}  # (front key, back key) -> since when within BATTLE_S
+        self.pit_events = []  # (time, car key, "in" / "out")
         self.was_in_pits = {}
         self.predictions = []
 
@@ -73,7 +75,11 @@ class RaceModel:
 
     def see_me(self, lap_dist, now):
         self.clock.see_me(lap_dist, now)
-        if self.race is not None and self.clock.mine.distance and not self.race.me.in_pits:
+        if (
+            self.race is not None
+            and self.clock.mine.distance
+            and not self.race.me.in_pits
+        ):
             self.segment(ME, self.race.me.car_class, self.clock.mine)
 
     def segment(self, key, car_class, trail):
@@ -81,7 +87,10 @@ class RaceModel:
         index = int(d // SEGMENT_M)
         last = self.seg.get(key)
         if last is not None and index == last[0] + 1:
-            entered, left = trail.time_at(last[0] * SEGMENT_M), trail.time_at(index * SEGMENT_M)
+            entered, left = (
+                trail.time_at(last[0] * SEGMENT_M),
+                trail.time_at(index * SEGMENT_M),
+            )
             if entered is not None and left is not None and left > entered:
                 within = int(((last[0] * SEGMENT_M) % self.lap_length) // SEGMENT_M)
                 self.normal_times[(car_class, within)].append(left - entered)
@@ -105,7 +114,9 @@ class RaceModel:
 
     def normal_speed(self, car_class, lap_dist):
         """km/h cars of this class normally do at this point of the lap, or None."""
-        times = self.normal_times.get((car_class, int((lap_dist % self.lap_length) // SEGMENT_M)))
+        times = self.normal_times.get(
+            (car_class, int((lap_dist % self.lap_length) // SEGMENT_M))
+        )
         if not times or len(times) < MIN_REFERENCE:
             return None
         return SEGMENT_M / statistics.median(times) * 3.6
@@ -141,13 +152,20 @@ class RaceModel:
             changes = []
             for i in range(STRETCHES * laps):
                 end = d - i * L / STRETCHES
-                a, b = self.gap_at(front, back, end), self.gap_at(front, back, end - L / STRETCHES)
+                a, b = (
+                    self.gap_at(front, back, end),
+                    self.gap_at(front, back, end - L / STRETCHES),
+                )
                 if a is None or b is None:
                     break
                 changes.append(b - a)
             if len(changes) == STRETCHES * laps:
                 per_lap = round(statistics.median(changes) * STRETCHES, 2)
-                return {"closing_per_lap": per_lap, "laps": laps, "sure": laps >= SURE_LAPS}
+                return {
+                    "closing_per_lap": per_lap,
+                    "laps": laps,
+                    "sure": laps >= SURE_LAPS,
+                }
         return None
 
     def quicker(self, a, b):
@@ -157,7 +175,7 @@ class RaceModel:
         if da is None or db is None:
             return None
         if da >= db:
-            t = self.trend(a, b)                       # a ahead: b catching means b quicker
+            t = self.trend(a, b)  # a ahead: b catching means b quicker
             return None if t is None else (-t["closing_per_lap"], t["sure"])
         t = self.trend(b, a)
         return None if t is None else (t["closing_per_lap"], t["sure"])
@@ -190,7 +208,13 @@ class RaceModel:
         g = self.gap(target, chaser)
         t = self.trend(target, chaser)
         lap = self.road_lap(chaser)
-        if g is None or t is None or not t["sure"] or t["closing_per_lap"] <= 0.05 or not lap:
+        if (
+            g is None
+            or t is None
+            or not t["sure"]
+            or t["closing_per_lap"] <= 0.05
+            or not lap
+        ):
             return None
         laps = max(g - until, 0.0) / t["closing_per_lap"]
         return round(laps * lap, 0), round(laps, 1)
@@ -253,7 +277,11 @@ class RaceModel:
     def battles(self, now=None):
         """Pairs within a second of each other for BATTLE_FOR_S or longer: [(front, back, gap)]."""
         now = self.now if now is None else now
-        return [(f, b, self.gap(f, b)) for (f, b), since in self.close_since.items() if now - since >= BATTLE_FOR_S]
+        return [
+            (f, b, self.gap(f, b))
+            for (f, b), since in self.close_since.items()
+            if now - since >= BATTLE_FOR_S
+        ]
 
     def pitting_near(self, key=ME, within_places=3):
         """Cars that entered the pit lane in the last two minutes and were near him in the order."""
@@ -263,8 +291,12 @@ class RaceModel:
         near = []
         for when, car_key, what in self.pit_events:
             car = self.car(car_key)
-            if what == "in" and car is not None and car.car_class == me.car_class \
-                    and abs(car.place - me.place) <= within_places:
+            if (
+                what == "in"
+                and car is not None
+                and car.car_class == me.car_class
+                and abs(car.place - me.place) <= within_places
+            ):
                 near.append((when, car_key))
         return near
 
@@ -281,4 +313,12 @@ class RaceModel:
 
     # ---- forecasts, scored against what happened ------------------------------------------------
     def predict(self, kind, subject, value, **context):
-        self.predictions.append({"kind": kind, "subject": subject, "value": value, "at": self.now, **context})
+        self.predictions.append(
+            {
+                "kind": kind,
+                "subject": subject,
+                "value": value,
+                "at": self.now,
+                **context,
+            }
+        )

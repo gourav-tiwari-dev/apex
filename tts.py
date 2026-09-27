@@ -29,6 +29,7 @@ def speak(text: str):
         audio = asyncio.run(asyncio.wait_for(_tts_to_memory(text), 6.0))
     except Exception:
         import offline_voice
+
         wav = offline_voice.render(text)
         if wav is None:
             print(f"  (no voice available) {text}")

@@ -10,6 +10,7 @@ Two kinds of record go onto the tape next to the 60 Hz car frames:
 Opponents are matched to their telemetry by mID, never by array position: the telemetry
 array is ordered differently from the scoring array (measured 19 Aug 2026).
 """
+
 import math
 from dataclasses import dataclass, field
 
@@ -28,7 +29,7 @@ def signed_char(raw):
 
 
 def speed_kmh_of(velocity):
-    return math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2) * 3.6
+    return math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2) * 3.6
 
 
 def kelvin_to_celsius(kelvin):
@@ -44,24 +45,26 @@ YELLOW_FLAG = 1
 @dataclass
 class Session:
     track: str
-    session: int            # 0 testday, 1-4 practice, 5-8 qualifying, 9 warmup, 10-13 race
-    game_phase: int         # 0 before, 3 formation, 4 lights, 5 green, 6 yellow/safety car, 7 stopped, 8 over
-    time_remaining: float   # seconds left in the session
+    session: int  # 0 testday, 1-4 practice, 5-8 qualifying, 9 warmup, 10-13 race
+    game_phase: int  # 0 before, 3 formation, 4 lights, 5 green, 6 yellow/safety car, 7 stopped, 8 over
+    time_remaining: float  # seconds left in the session
     end_time: float
     max_laps: int
     yellow_flag_state: int
     sector_flags: list
     start_light: int
     red_lights: int
-    raining: float          # 0.0 - 1.0
-    ambient_temp: float     # Celsius
-    track_temp: float       # Celsius
-    wetness: float          # average wetness on the racing line, 0.0 - 1.0
-    grip_level: int         # 0 green .. 4 saturated rubber
+    raining: float  # 0.0 - 1.0
+    ambient_temp: float  # Celsius
+    track_temp: float  # Celsius
+    wetness: float  # average wetness on the racing line, 0.0 - 1.0
+    grip_level: int  # 0 green .. 4 saturated rubber
     fixed_setup: bool
     limit_steps_per_penalty: int
     in_realtime: bool
-    lap_length: float | None = None   # the track's length (mLapDist); tapes before 25 Sep have none
+    lap_length: float | None = (
+        None  # the track's length (mLapDist); tapes before 25 Sep have none
+    )
 
 
 @dataclass
@@ -76,33 +79,33 @@ class Me:
     laps_behind_leader: int
     best_lap: float
     last_lap: float
-    sector: int             # 0 = sector 3, 1 = sector 1, 2 = sector 2 (the game's own numbering)
+    sector: int  # 0 = sector 3, 1 = sector 1, 2 = sector 2 (the game's own numbering)
     cur_sector1: float
-    cur_sector2: float      # sector 1 + sector 2
+    cur_sector2: float  # sector 1 + sector 2
     pitstops: int
     penalties: int
     in_pits: bool
-    pit_state: int          # 0 none, 1 request, 2 entering, 3 stopped, 4 exiting
-    finish_status: int      # 0 none, 1 finished, 2 dnf, 3 dq
-    flag: int               # 0 green, 6 blue
+    pit_state: int  # 0 none, 1 request, 2 entering, 3 stopped, 4 exiting
+    finish_status: int  # 0 none, 1 finished, 2 dnf, 3 dq
+    flag: int  # 0 green, 6 blue
     under_yellow: bool
     count_lap_flag: int
-    fuel: float             # litres
+    fuel: float  # litres
     fuel_capacity: float
-    virtual_energy: float   # fraction
-    battery: float          # fraction
+    virtual_energy: float  # fraction
+    battery: float  # fraction
     lift_and_coast: int
     track_limit_steps: int
     gap_car_ahead: float
     gap_car_behind: float
     gap_place_ahead: float
     gap_place_behind: float
-    tyre_temps: list        # 4 wheels x (left, centre, right), Celsius
-    tyre_pressures: list    # 4 wheels, kPa
-    tyre_wear: list         # 4 wheels, fraction of maximum
-    brake_temps: list       # 4 wheels, Celsius
+    tyre_temps: list  # 4 wheels x (left, centre, right), Celsius
+    tyre_pressures: list  # 4 wheels, kPa
+    tyre_wear: list  # 4 wheels, fraction of maximum
+    brake_temps: list  # 4 wheels, Celsius
     compound: str
-    dents: list             # 8 places around the car, 0 none / 1 some / 2 more
+    dents: list  # 8 places around the car, 0 none / 1 some / 2 more
     detached: bool
     overheating: bool
     brake_bias_rear: float
@@ -133,7 +136,7 @@ class Opponent:
     pit_state: int
     pitstops: int
     finish_status: int
-    control: int            # 0 local player, 1 AI, 2 remote human
+    control: int  # 0 local player, 1 AI, 2 remote human
     flag: int
     x: float | None = None
     y: float | None = None
@@ -146,14 +149,16 @@ class Opponent:
     fuel: float | None = None
     last_impact_time: float | None = None
     last_impact_magnitude: float | None = None
-    car_model: str | None = None     # "BMW M4 LMGT3"; tapes before 24 Sep 2026 have none
+    car_model: str | None = None  # "BMW M4 LMGT3"; tapes before 24 Sep 2026 have none
     # race model (25 Sep 2026): what else LMU gives per car. Tapes before it have none (None).
-    sector: int | None = None        # 1, 2, or 0 for sector 3 (the game's numbering)
+    sector: int | None = None  # 1, 2, or 0 for sector 3 (the game's numbering)
     last_sector1: float | None = None
     last_sector2: float | None = None  # sector 1 + 2, as the game gives it
     best_sector1: float | None = None
     best_sector2: float | None = None
-    path_lateral: float | None = None  # metres from the centre of the racing path, + = left
+    path_lateral: float | None = (
+        None  # metres from the centre of the racing path, + = left
+    )
     track_edge: float | None = None
     estimated_lap: float | None = None
     time_into_lap: float | None = None
@@ -369,9 +374,13 @@ def same_class_neighbours(race, model=None):
     for opponent in race.opponents:
         if opponent.car_class != me.car_class or not same_lap(me, opponent, model):
             continue
-        if opponent.place < me.place and (ahead is None or opponent.place > ahead.place):
+        if opponent.place < me.place and (
+            ahead is None or opponent.place > ahead.place
+        ):
             ahead = opponent
-        if opponent.place > me.place and (behind is None or opponent.place < behind.place):
+        if opponent.place > me.place and (
+            behind is None or opponent.place < behind.place
+        ):
             behind = opponent
     gap_ahead = None
     gap_behind = None
@@ -438,7 +447,7 @@ def rolling_lap(model, key):
         return None
     clock = getattr(model, "clock", None)
     if clock is not None and not getattr(clock, "fixed_length", True):
-        return None                # a guessed, growing track length warps the trail (old tapes)
+        return None  # a guessed, growing track length warps the trail (old tapes)
     try:
         lap = model.road_lap(key)
     except Exception:
@@ -452,7 +461,7 @@ def road_time_to_line(model, key):
         return None
     clock = getattr(model, "clock", None)
     if clock is not None and not getattr(clock, "fixed_length", True):
-        return None                # a guessed, growing track length warps the trail (old tapes)
+        return None  # a guessed, growing track length warps the trail (old tapes)
     try:
         seconds = model.road_time_to_line(key)
     except Exception:
@@ -465,7 +474,11 @@ def time_to_line(leader, leader_lap, lap_length, model, key):
     when the race model has it: Le Mans ends in the slow Ford chicanes, 5% of the distance and
     ~10% of the time. Live 27 Sep, 684 m from the line: 12 s by distance, 25 s on the road, and
     "laps to go" was a lap out for minutes at a time (and the fuel with it)."""
-    done = (leader.lap_dist / lap_length) if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None else 0.0
+    done = (
+        (leader.lap_dist / lap_length)
+        if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None
+        else 0.0
+    )
     by_distance = (1.0 - min(max(done, 0.0), 1.0)) * leader_lap
     on_road = road_time_to_line(model, key)
     if on_road is not None and abs(on_road - by_distance) < 0.5 * leader_lap:
@@ -484,31 +497,60 @@ def laps_to_go(race, lap_time, model=None):
     session = race.session
     if 0 < session.max_laps < 1000:
         return max(0, session.max_laps - me.laps)
-    leader = me if me.place == 1 else next((o for o in race.opponents if o.place == 1), None)
+    leader = (
+        me if me.place == 1 else next((o for o in race.opponents if o.place == 1), None)
+    )
     if leader is None:
         # the leader is not in the data: my own lap time and my gap to the leader
         if lap_time is None or lap_time <= 0:
             return None
-        return math.ceil((session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time)
+        return math.ceil(
+            (session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time
+        )
     # the leader's pace: the rolling lap on the road first. Live 25 Sep, lap 2: the game posted -1
     # for the leader's laps and his own lap 1 (4:23, a standing start) made the race a lap short
     # only once the leader's last lap of road is all racing: 5% into lap 2, so the window starts
     # after the launch (live 25 Sep, lap 1: the window still held formation-lap road and fuel said
     # "fine, push" at 0.3 laps spare; at 15% the lap-1 line fell back to his 4:23 standing start)
     length = track_length(race, model)
-    clean = leader.laps >= 2 or (leader.laps == 1 and length > 1000 and leader.lap_dist > 0.05 * length)
+    clean = leader.laps >= 2 or (
+        leader.laps == 1 and length > 1000 and leader.lap_dist > 0.05 * length
+    )
     rolling = rolling_lap(model, "me" if leader is me else leader.id) if clean else None
-    posted = [t for t in ((leader.last_lap, leader.best_lap) if leader is not me else (me.last_lap, me.best_lap)) if t and t > 0]
-    if rolling is not None and posted and abs(rolling - min(posted)) > 0.2 * min(posted):
-        rolling = None             # a rolling lap 20% off anything the game posted is a broken trail
-    candidates = ((rolling, lap_time, me.last_lap, me.best_lap) if leader is me
-                  else (rolling, leader.last_lap, leader.best_lap, lap_time))
+    posted = [
+        t
+        for t in (
+            (leader.last_lap, leader.best_lap)
+            if leader is not me
+            else (me.last_lap, me.best_lap)
+        )
+        if t and t > 0
+    ]
+    if (
+        rolling is not None
+        and posted
+        and abs(rolling - min(posted)) > 0.2 * min(posted)
+    ):
+        rolling = (
+            None  # a rolling lap 20% off anything the game posted is a broken trail
+        )
+    candidates = (
+        (rolling, lap_time, me.last_lap, me.best_lap)
+        if leader is me
+        else (rolling, leader.last_lap, leader.best_lap, lap_time)
+    )
     leader_lap = next((t for t in candidates if t is not None and t > 0), None)
     if leader_lap is None:
         return None
     lap_length = track_length(race, model)
-    to_line = time_to_line(leader, leader_lap, lap_length, model, "me" if leader is me else leader.id)
-    more = 0 if session.time_remaining <= to_line else math.ceil((session.time_remaining - to_line) / leader_lap)
+    to_line = time_to_line(
+        leader, leader_lap, lap_length, model, "me" if leader is me else leader.id
+    )
+    more = (
+        0
+        if session.time_remaining <= to_line
+        else math.ceil((session.time_remaining - to_line) / leader_lap)
+    )
     leader_finishes_on = leader.laps + 1 + more
     if getattr(leader, "finish_status", 0) == 1:
         # the leader has taken the flag: the race is those laps (live 25 Sep: on his last lap
@@ -528,7 +570,9 @@ def leader_margin(race, model=None):
     leader = next((o for o in race.opponents if o.place == 1), None)
     if leader is None:
         return None
-    leader_lap = next((t for t in (leader.last_lap, leader.best_lap) if t and t > 0), None)
+    leader_lap = next(
+        (t for t in (leader.last_lap, leader.best_lap) if t and t > 0), None
+    )
     lap_length = track_length(race, model)
     if leader_lap is None or lap_length < 1000:
         return None
@@ -543,7 +587,7 @@ def read_race_snapshot(data):
 
     me = None
     opponents = []
-    for scoring in data.scoring.vehScoringInfo[:info.mNumVehicles]:
+    for scoring in data.scoring.vehScoringInfo[: info.mNumVehicles]:
         if scoring.mIsPlayer:
             me = read_me(scoring, my_car)
         else:
@@ -565,7 +609,7 @@ def read_near_cars(data, my_pos):
     info = data.scoring.scoringInfo
     cars_by_id = telemetry_by_id(data)
     near = []
-    for scoring in data.scoring.vehScoringInfo[:info.mNumVehicles]:
+    for scoring in data.scoring.vehScoringInfo[: info.mNumVehicles]:
         if scoring.mIsPlayer:
             continue
         car = cars_by_id.get(scoring.mID)
@@ -576,16 +620,18 @@ def read_near_cars(data, my_pos):
         dz = car.mPos.z - my_pos[2]
         if math.sqrt(dx * dx + dy * dy + dz * dz) > NEAR_RADIUS_M:
             continue
-        near.append(NearCar(
-            id=scoring.mID,
-            x=round(car.mPos.x, 3),
-            y=round(car.mPos.y, 3),
-            z=round(car.mPos.z, 3),
-            speed_kmh=round(speed_kmh_of(car.mLocalVel), 2),
-            brake=round(car.mUnfilteredBrake, 4),
-            throttle=round(car.mUnfilteredThrottle, 4),
-            steering=round(car.mUnfilteredSteering, 4),
-        ))
+        near.append(
+            NearCar(
+                id=scoring.mID,
+                x=round(car.mPos.x, 3),
+                y=round(car.mPos.y, 3),
+                z=round(car.mPos.z, 3),
+                speed_kmh=round(speed_kmh_of(car.mLocalVel), 2),
+                brake=round(car.mUnfilteredBrake, 4),
+                throttle=round(car.mUnfilteredThrottle, 4),
+                steering=round(car.mUnfilteredSteering, 4),
+            )
+        )
     if not near:
         return None
     return NearCars(sim_time=round(my_car_time(data), 3), cars=near)

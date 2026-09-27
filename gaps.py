@@ -21,17 +21,18 @@ How:
         the shape of the lap (where the chaser gains, where it loses), and the first point
         where the prediction reaches ON_YOU_S is where it will be on him
 """
+
 import bisect
 import statistics
 
-POINT_EVERY_M = 5.0            # a trail point every 5 m is ~0.07 s at 250 km/h: plenty
-KEEP_LAPS = 2.2                # trails older than this are dropped
+POINT_EVERY_M = 5.0  # a trail point every 5 m is ~0.07 s at 250 km/h: plenty
+KEEP_LAPS = 2.2  # trails older than this are dropped
 CLOSING_WINDOW_S = 10.0
 MIN_CLOSING_SAMPLES = 10
-ON_YOU_S = 0.3                 # "on you": close enough to attack at the next braking zone
+ON_YOU_S = 0.3  # "on you": close enough to attack at the next braking zone
 LOOK_AHEAD_LAPS = 2
-PROFILE_STEP_M = 50.0          # the gap to each car is kept every 50 m of track
-PACE_STRETCHES = 8             # pace = the median of 8 stretches of the last lap
+PROFILE_STEP_M = 50.0  # the gap to each car is kept every 50 m of track
+PACE_STRETCHES = 8  # pace = the median of 8 stretches of the last lap
 
 
 class Trail:
@@ -44,7 +45,7 @@ class Trail:
     def add(self, distance, time):
         if self.distance and distance < self.distance[-1] + POINT_EVERY_M:
             if distance < self.distance[-1] - 1000.0:
-                self.distance = []        # a reset (pits, a teleport, a new session)
+                self.distance = []  # a reset (pits, a teleport, a new session)
                 self.time = []
             else:
                 return
@@ -53,7 +54,11 @@ class Trail:
 
     def time_at(self, distance):
         """When this car was at that distance, or None if the trail does not cover it."""
-        if not self.distance or distance < self.distance[0] or distance > self.distance[-1]:
+        if (
+            not self.distance
+            or distance < self.distance[0]
+            or distance > self.distance[-1]
+        ):
             return None
         i = bisect.bisect_left(self.distance, distance)
         if self.distance[i] == distance or i == 0:
@@ -91,7 +96,7 @@ class Trail:
             del self.time[:cut]
 
 
-LENGTH_GREW_M = 5.0           # a learned lap length growing by more than this resets the trails
+LENGTH_GREW_M = 5.0  # a learned lap length growing by more than this resets the trails
 
 
 class TrackClock:
@@ -105,12 +110,12 @@ class TrackClock:
         # shortfall (replay of 24 Sep, joined mid-race: 8,168 m growing to 8,809 against 13,621, and
         # "Car behind, 1.5 seconds, closing fast" with the car 5.1 s back, 27 Sep). No trails till then
         self.length_known = lap_length is not None
-        self.last_seen = {}            # car id -> its lap distance last snapshot, to see it cross the line
+        self.last_seen = {}  # car id -> its lap distance last snapshot, to see it cross the line
         self.mine = Trail()
-        self.theirs = {}               # car id -> Trail
-        self.history = {}              # car id -> [(sim time, gap)] for the closing rate
-        self.profile = {}              # car id -> {50 m step of distance raced: gap there}
-        self.my_laps = None            # laps I have completed, counted by my own lap wraps
+        self.theirs = {}  # car id -> Trail
+        self.history = {}  # car id -> [(sim time, gap)] for the closing rate
+        self.profile = {}  # car id -> {50 m step of distance raced: gap there}
+        self.my_laps = None  # laps I have completed, counted by my own lap wraps
         self.last_my_lap_dist = None
 
     # ---- feeding it ------------------------------------------------------------------------
@@ -125,13 +130,22 @@ class TrackClock:
         if not self.fixed_length:
             for opponent in race.opponents:
                 if self.lap_length is None or opponent.lap_dist > self.lap_length:
-                    grew = self.lap_length is not None and opponent.lap_dist - self.lap_length > LENGTH_GREW_M
+                    grew = (
+                        self.lap_length is not None
+                        and opponent.lap_dist - self.lap_length > LENGTH_GREW_M
+                    )
                     self.lap_length = opponent.lap_dist
                     if grew and self.length_known:
-                        self.forget_trails()        # built on the shorter length: they no longer match
+                        self.forget_trails()  # built on the shorter length: they no longer match
                 before = self.last_seen.get(opponent.id)
-                if before is not None and self.lap_length and opponent.lap_dist < before - self.lap_length / 2:
-                    self.length_known = True        # it crossed the line: the lap has been seen whole
+                if (
+                    before is not None
+                    and self.lap_length
+                    and opponent.lap_dist < before - self.lap_length / 2
+                ):
+                    self.length_known = (
+                        True  # it crossed the line: the lap has been seen whole
+                    )
                 self.last_seen[opponent.id] = opponent.lap_dist
         if self.my_laps is None:
             self.my_laps = race.me.laps
@@ -143,7 +157,12 @@ class TrackClock:
             if opponent.in_pits:
                 continue
             trail = self.theirs.setdefault(opponent.id, Trail())
-            trail.add(self.repaired(trail, opponent.laps * self.lap_length + opponent.lap_dist), now)
+            trail.add(
+                self.repaired(
+                    trail, opponent.laps * self.lap_length + opponent.lap_dist
+                ),
+                now,
+            )
 
     def follow_game_laps(self, game_laps):
         """My lap count is the game's, like every other car's. Counting my own line crossings put me a
@@ -156,7 +175,7 @@ class TrackClock:
         shift = (game_laps - self.my_laps) * self.lap_length
         self.my_laps = game_laps
         self.mine.distance = [d + shift for d in self.mine.distance]
-        self.history.clear()           # gaps measured against the old count
+        self.history.clear()  # gaps measured against the old count
         self.profile.clear()
 
     def repaired(self, trail, distance):
@@ -174,8 +193,11 @@ class TrackClock:
         if self.my_laps is None or self.lap_length is None:
             self.last_my_lap_dist = lap_dist
             return
-        if self.last_my_lap_dist is not None and lap_dist < self.last_my_lap_dist - self.lap_length / 2:
-            self.my_laps += 1               # I crossed the line
+        if (
+            self.last_my_lap_dist is not None
+            and lap_dist < self.last_my_lap_dist - self.lap_length / 2
+        ):
+            self.my_laps += 1  # I crossed the line
             self.length_known = True
         self.last_my_lap_dist = lap_dist
         if lap_dist > self.lap_length and not self.fixed_length:
@@ -184,7 +206,7 @@ class TrackClock:
             if grew and self.length_known:
                 self.forget_trails()
         if not self.length_known:
-            return                          # no trail on a lap length that is still a guess
+            return  # no trail on a lap length that is still a guess
         distance = self.my_laps * self.lap_length + lap_dist
         self.mine.add(distance, now)
         keep_from = distance - KEEP_LAPS * self.lap_length
@@ -254,7 +276,12 @@ class TrackClock:
         lap earlier. Lap times, invalid laps and start laps do not come into it (live 25 Sep: an
         invalid lap 2 made the coach compare his start lap and say "17 s a lap quicker")."""
         trail = self.theirs.get(car_id)
-        if trail is None or not trail.distance or not self.mine.distance or not self.lap_length:
+        if (
+            trail is None
+            or not trail.distance
+            or not self.mine.distance
+            or not self.lap_length
+        ):
             return None
         # the lap in 8 stretches, and the MEDIAN stretch: one incident (his off, their spin, the
         # start) is one stretch, not the pace. Live 25 Sep, one whole lap said "9.2 s quicker".
@@ -263,7 +290,10 @@ class TrackClock:
         shrinks = []
         for i in range(PACE_STRETCHES):
             end = point - i * stretch
-            at_end, at_start = self.gap_at(car_id, end), self.gap_at(car_id, end - stretch)
+            at_end, at_start = (
+                self.gap_at(car_id, end),
+                self.gap_at(car_id, end - stretch),
+            )
             if at_end is not None and at_start is not None:
                 shrinks.append(at_start - at_end)
         if len(shrinks) < PACE_STRETCHES - 1:
@@ -281,7 +311,11 @@ class TrackClock:
 
     def closest_lately(self, car_id, now):
         """The smallest same-point gap to this car over the last CLOSING_WINDOW_S, or None."""
-        recent = [gap for t, gap in self.history.get(car_id, []) if now - t <= CLOSING_WINDOW_S]
+        recent = [
+            gap
+            for t, gap in self.history.get(car_id, [])
+            if now - t <= CLOSING_WINDOW_S
+        ]
         if not recent:
             return None
         return min(recent)
@@ -292,8 +326,15 @@ class TrackClock:
         same-point gap does (the car went into the pits): old ones are not a rate for now. Replay of
         25 Sep night (27 Sep): a rate 12 s old and the game's gap to a car in the pit lane made
         "Closing fast on the car ahead. 1.5 seconds.", then "Car ahead's pitting." 4 s later."""
-        samples = [(t, gap) for t, gap in self.history.get(car_id, []) if now - t <= CLOSING_WINDOW_S]
-        if len(samples) < MIN_CLOSING_SAMPLES or samples[-1][0] - samples[0][0] < CLOSING_WINDOW_S / 2:
+        samples = [
+            (t, gap)
+            for t, gap in self.history.get(car_id, [])
+            if now - t <= CLOSING_WINDOW_S
+        ]
+        if (
+            len(samples) < MIN_CLOSING_SAMPLES
+            or samples[-1][0] - samples[0][0] < CLOSING_WINDOW_S / 2
+        ):
             return None
         count = len(samples)
         mean_t = sum(t for t, _ in samples) / count
@@ -332,7 +373,7 @@ class TrackClock:
         last_lap_here = profile.get(step - lap_steps)
         if last_lap_here is None:
             return None
-        per_lap = last_lap_here - gap                  # how much it closed in one lap, here
+        per_lap = last_lap_here - gap  # how much it closed in one lap, here
         if per_lap <= 0:
             return None
         for ahead in range(1, lap_steps):

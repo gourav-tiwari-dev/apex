@@ -6,6 +6,7 @@ replayed (no model, no speaker) and compared with it.
 
 Usage: fuel_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)
 Done-check: every spoken fuel verdict matches the true one, and every number is within 0.15 laps."""
+
 import json
 import os
 import statistics
@@ -36,7 +37,7 @@ def truth(tape):
         if snap.session.game_phase == GREEN_PHASE:
             green = True
         if not green:
-            continue                                 # the formation lap, and a fuel set at the start
+            continue  # the formation lap, and a fuel set at the start
         # after the green flag, whatever the phase: at the flag the session is already "over"
         if last_fuel is not None and me.fuel > last_fuel + 0.5:
             refuelled = True
@@ -45,7 +46,7 @@ def truth(tape):
             at_line[me.laps] = (me.fuel, me.virtual_energy)
         if me.finish_status == 1:
             finished = (me.fuel, me.virtual_energy)
-            break                                    # back in the pits the game fills the car up
+            break  # back in the pits the game fills the car up
     if finished is None or refuelled or len(at_line) < 3:
         return None
     laps = sorted(at_line)
@@ -80,23 +81,33 @@ def main():
             laps_left = facts.get("laps_left") or 0
             signed_spare = facts.get("spare_laps", 0)
             if said_verdict in ("save", "box", "short"):
-                signed_spare = -signed_spare         # facts carry the size, the verdict the sign
+                signed_spare = (
+                    -signed_spare
+                )  # facts carry the size, the verdict the sign
             true_verdict = verdict_of(round(real_spare, 1), laps_left)
             if said_verdict == "saving":
-                true_verdict = said_verdict          # his own saving: judged by the number only
+                true_verdict = said_verdict  # his own saving: judged by the number only
             off = abs(signed_spare - real_spare)
             # a truth this close to the "fine" line makes fine or tight a coin flip (the spare is
             # measured to ~0.06 laps): judged by the number alone. 27 Sep, lobby tape 1415 s: said
             # 0.2, true 0.26, the line at 0.21 for 1.6 laps to go
-            borderline = (said_verdict in ("fine", "tight")
-                          and abs(real_spare - fine_margin(laps_left)) <= NUMBER_OFF_LAPS)
+            borderline = (
+                said_verdict in ("fine", "tight")
+                and abs(real_spare - fine_margin(laps_left)) <= NUMBER_OFF_LAPS
+            )
             mark = "ok"
-            if (said_verdict != true_verdict and not borderline) or off > NUMBER_OFF_LAPS:
+            if (
+                said_verdict != true_verdict and not borderline
+            ) or off > NUMBER_OFF_LAPS:
                 mark = "WRONG"
-                failures.append(f"{tape} {sim_time:.0f}s said {said_verdict} {signed_spare}, "
-                                f"true {true_verdict} {real_spare:.2f}")
-            print(f"   {sim_time:7.1f}s  said {said_verdict:7s} {signed_spare:+.1f}  true {true_verdict:7s} "
-                  f"{real_spare:+.2f}  {mark}  {line[:70]!r}")
+                failures.append(
+                    f"{tape} {sim_time:.0f}s said {said_verdict} {signed_spare}, "
+                    f"true {true_verdict} {real_spare:.2f}"
+                )
+            print(
+                f"   {sim_time:7.1f}s  said {said_verdict:7s} {signed_spare:+.1f}  true {true_verdict:7s} "
+                f"{real_spare:+.2f}  {mark}  {line[:70]!r}"
+            )
     print("PASS" if not failures else "FAIL:\n  " + "\n  ".join(failures))
     return 0 if not failures else 1
 

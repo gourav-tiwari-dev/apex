@@ -1,6 +1,8 @@
 """How good is the closing alarm? For each setting, replay the tapes and check every alarm:
 did that car actually get within 0.35 s within 2 minutes, and at the predicted corner?"""
+
 import io, contextlib, os, sys
+
 os.chdir(r"C:\Users\gourav\Downloads\apex_telemetry")
 sys.path.insert(0, os.getcwd())
 import gaps
@@ -30,12 +32,31 @@ def run(min_per_lap, max_gap):
                 if r is None or r.me is None:
                     continue
                 corner = corner_at(corners, f.lap_dist) if corners else None
-                m = Moment(frame=f, race=r, new_race=src.new_race, near=src.near, lap_count=r.me.laps + 1,
-                           lap_wrapped=False, corner=corner, track=None, session_type=10, corners=corners)
+                m = Moment(
+                    frame=f,
+                    race=r,
+                    new_race=src.new_race,
+                    near=src.near,
+                    lap_count=r.me.laps + 1,
+                    lap_wrapped=False,
+                    corner=corner,
+                    track=None,
+                    session_type=10,
+                    corners=corners,
+                )
                 for c in seat.update(m):
                     if c.kind in ("CLOSING_ALARM", "CLOSING_ON"):
                         car = seat.behind if c.kind == "CLOSING_ALARM" else seat.ahead
-                        watch.append([c.kind, car.id, f.elapsed_time, c.facts.get("catch_corner"), None, None])
+                        watch.append(
+                            [
+                                c.kind,
+                                car.id,
+                                f.elapsed_time,
+                                c.facts.get("catch_corner"),
+                                None,
+                                None,
+                            ]
+                        )
                 if not src.new_race:
                     continue
                 for w in watch:
@@ -64,7 +85,11 @@ def run(min_per_lap, max_gap):
 for min_per_lap in (0.2, 0.4):
     for max_gap in (1.5, 2.0):
         n, caught, exact, results = run(min_per_lap, max_gap)
-        print(f"closing >= {min_per_lap} s/lap, gap <= {max_gap}: alarms {n:2d}  came true {caught:2d}  right corner {exact:2d}")
+        print(
+            f"closing >= {min_per_lap} s/lap, gap <= {max_gap}: alarms {n:2d}  came true {caught:2d}  right corner {exact:2d}"
+        )
         for w in results:
-            actual = f"{w[5][1]:.0f} s later, at {w[5][0]}" if w[4] == "caught" else "never"
+            actual = (
+                f"{w[5][1]:.0f} s later, at {w[5][0]}" if w[4] == "caught" else "never"
+            )
             print(f"     {w[0]:14s} predicted {str(w[3]):20s} | actual {actual}")

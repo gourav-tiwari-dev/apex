@@ -46,7 +46,7 @@ def test_opponents_are_matched_by_id_not_by_position():
     assert snapshot.me.fuel == 42.5
     drivers = [o.driver for o in snapshot.opponents]
     assert drivers == ["Ann", "Bob"]
-    assert snapshot.opponents[0].x == 500.0   # Ann's own telemetry row, not row 0
+    assert snapshot.opponents[0].x == 500.0  # Ann's own telemetry row, not row 0
     assert snapshot.opponents[1].x == 10.0
     assert snapshot.session.track == "Monza"
 
@@ -92,7 +92,9 @@ def test_v2_tape_replays_race_lines_on_the_right_frame(tmp_path):
     source = ReplaySource(None, tape)
     seen = []
     for frame in source:
-        seen.append((frame.elapsed_time, source.new_race, source.near is not None, source.race))
+        seen.append(
+            (frame.elapsed_time, source.new_race, source.near is not None, source.race)
+        )
 
     assert len(seen) == 2
     assert seen[0][:3] == (frame_a.elapsed_time, True, True)

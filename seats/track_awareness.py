@@ -16,6 +16,7 @@ Two kinds of call, two voices:
 
 Names are never said: positions ("P7 and P8") and classes ("Hypercar") only.
 """
+
 import collections
 import math
 import statistics
@@ -27,45 +28,60 @@ from seats.performance import tenths_words
 GREEN = 5
 RACE_SESSIONS = range(10, 14)
 
-LOOK_AHEAD_M = 600.0          # hazards this far up the road are worth a call (~8 s at 270 km/h)
+LOOK_AHEAD_M = 600.0  # hazards this far up the road are worth a call (~8 s at 270 km/h)
 THREE_WIDE_LOOK_M = 400.0
-ALONGSIDE_M = 6.0             # two cars this close in lap distance are side by side
+ALONGSIDE_M = 6.0  # two cars this close in lap distance are side by side
 # and three abreast needs the outside cars this far apart across the track (two car widths). Replay
 # of 24 Sep: 4 of 22 "three wide" were 2.8-3.9 m across, two alongside and one tucked in behind (27 Sep)
 THREE_WIDE_ACROSS_M = 4.0
-SLOW_SHARE = 0.5              # a car at half the NORMAL speed for where it is is a hazard
+SLOW_SHARE = 0.5  # a car at half the NORMAL speed for where it is is a hazard
 STOPPED_KMH = 20.0
-TELEPORT_M = 300.0            # a car that moved this far between two snapshots did not drive there
-NORMAL_BIN_M = 50.0           # normal speed is learned for every 50 m of track
-NORMAL_SAMPLES = 40           # the latest passes kept per 50 m
-NORMAL_MIN_SAMPLES = 8        # fewer passes than this: only a stopped car is called
-HAZARD_TTL_S = 8.0            # 3 s let all 3 LMP2 warnings expire unspoken live on 25 Sep
-HAZARD_REARM_S = 20.0         # the same hazard is not called again for this long
+TELEPORT_M = (
+    300.0  # a car that moved this far between two snapshots did not drive there
+)
+NORMAL_BIN_M = 50.0  # normal speed is learned for every 50 m of track
+NORMAL_SAMPLES = 40  # the latest passes kept per 50 m
+NORMAL_MIN_SAMPLES = 8  # fewer passes than this: only a stopped car is called
+HAZARD_TTL_S = 8.0  # 3 s let all 3 LMP2 warnings expire unspoken live on 25 Sep
+HAZARD_REARM_S = 20.0  # the same hazard is not called again for this long
 
-BATTLE_GAP_S = 0.5            # two cars this close for FIGHT_FOR_S are fighting
-FIGHT_FOR_S = 10.0            # a battle or train must hold together this long before it is called
-TRAIN_GAP_S = 1.0             # three or more cars each within this = a train
-TRAIN_MAX_CARS = 5            # past this it is "5-plus cars": nobody counts a whole field
-ALREADY_IN_IT_S = 1.0         # closer than this he is part of the fight: racecraft coaches it
-OPPORTUNITY_REACH_S = 3.0     # he is this close to the back of it
+BATTLE_GAP_S = 0.5  # two cars this close for FIGHT_FOR_S are fighting
+FIGHT_FOR_S = 10.0  # a battle or train must hold together this long before it is called
+TRAIN_GAP_S = 1.0  # three or more cars each within this = a train
+TRAIN_MAX_CARS = 5  # past this it is "5-plus cars": nobody counts a whole field
+ALREADY_IN_IT_S = 1.0  # closer than this he is part of the fight: racecraft coaches it
+OPPORTUNITY_REACH_S = 3.0  # he is this close to the back of it
 OPPORTUNITY_TTL_S = 15.0
 OPPORTUNITY_REARM_S = 120.0
-GROUP_REARM_S = 300.0         # the same group (by its last car) is not called again for this long
+GROUP_REARM_S = (
+    300.0  # the same group (by its last car) is not called again for this long
+)
 
 # A faster class is called about 15 s before it will be on him, from how fast the gap is really
 # shrinking. Replay of the 58-car race (27 Sep): "LMP2 behind, 2.5 seconds" came 39-50 s before each
 # LMP2 got to him (at 2.5 s it closed ~0.05 s a second), so it sounded like nothing came. His mark:
 # "LMP do not detected". Their posted laps were no use: those LMP2s had slow last laps (trouble)
-FASTER_CLASS_WATCH_S = 3.0    # a faster class this close behind is watched
-FASTER_CLASS_ARRIVES_S = 15.0 # called when it will be on him within this
-RIGHT_BEHIND_S = 0.8          # this close it is called whatever it is doing
-CLOSING_HISTORY_S = 20.0      # the gap's shrink rate is read over this long, at least 8 s: an LMP2
-                              # gains on the straights, not in the corners, and 8 s on a straight
-                              # said "15 s" to cars 32 and 51 s away (58-car race, 27 Sep)
+FASTER_CLASS_WATCH_S = 3.0  # a faster class this close behind is watched
+FASTER_CLASS_ARRIVES_S = 15.0  # called when it will be on him within this
+RIGHT_BEHIND_S = 0.8  # this close it is called whatever it is doing
+CLOSING_HISTORY_S = (
+    20.0  # the gap's shrink rate is read over this long, at least 8 s: an LMP2
+)
+# gains on the straights, not in the corners, and 8 s on a straight
+# said "15 s" to cars 32 and 51 s away (58-car race, 27 Sep)
 MIN_CLOSING_HISTORY_S = 8.0
-MIN_CLOSING = 0.01            # seconds of gap a second: slower than this is not closing
+MIN_CLOSING = 0.01  # seconds of gap a second: slower than this is not closing
 # LMU's classes, fastest first (WEC 2024-25: Hypercar, LMP2, LMGT3)
-CLASS_SPEED = {"hypercar": 3, "lmh": 3, "lmdh": 3, "lmp2": 2, "lmp3": 1, "gte": 1, "lmgt3": 0, "gt3": 0}
+CLASS_SPEED = {
+    "hypercar": 3,
+    "lmh": 3,
+    "lmdh": 3,
+    "lmp2": 2,
+    "lmp3": 1,
+    "gte": 1,
+    "lmgt3": 0,
+    "gt3": 0,
+}
 
 
 def class_rank(car_class):
@@ -92,8 +108,8 @@ class NormalSpeed:
     Indianapolis was "Slow car ahead" (23 calls in 15 minutes)."""
 
     def __init__(self):
-        self.passes = {}               # 50 m bin -> latest speeds seen there
-        self.last_bin = {}             # car id -> the bin its last sample went into
+        self.passes = {}  # 50 m bin -> latest speeds seen there
+        self.last_bin = {}  # car id -> the bin its last sample went into
 
     def see(self, car_id, lap_dist, speed_kmh):
         # one sample per car per pass, so a car parked in a bin cannot become its "normal"
@@ -101,7 +117,9 @@ class NormalSpeed:
         if self.last_bin.get(car_id) == where:
             return
         self.last_bin[car_id] = where
-        self.passes.setdefault(where, collections.deque(maxlen=NORMAL_SAMPLES)).append(speed_kmh)
+        self.passes.setdefault(where, collections.deque(maxlen=NORMAL_SAMPLES)).append(
+            speed_kmh
+        )
 
     def at(self, lap_dist):
         speeds = self.passes.get(int(lap_dist // NORMAL_BIN_M))
@@ -113,16 +131,20 @@ class NormalSpeed:
 class TrackAwareness:
     def __init__(self):
         self.lap_length = None
-        self.said_at = {}              # hazard / opportunity key -> when it was last called
-        self.class_gaps = {}           # faster-class car id -> [(time, gap behind me)], the last 8 s
-        self.positions = {}            # car id -> (x, z) at the last snapshot, for their direction
+        self.said_at = {}  # hazard / opportunity key -> when it was last called
+        self.class_gaps = {}  # faster-class car id -> [(time, gap behind me)], the last 8 s
+        self.positions = {}  # car id -> (x, z) at the last snapshot, for their direction
         self.normal = NormalSpeed()
         self.model = None
-        self.clock = TrackClock()      # same-point gaps between the cars ahead
-        self.group_since = None        # (id of the car ahead, since when its group has held together)
+        self.clock = TrackClock()  # same-point gaps between the cars ahead
+        self.group_since = (
+            None  # (id of the car ahead, since when its group has held together)
+        )
         self.last_group_call = None
-        self.last_seen_at = {}         # car id -> its lap distance at the last snapshot
-        self.parked = set()            # cars that jumped to where they stand: in the garage, not on track
+        self.last_seen_at = {}  # car id -> its lap distance at the last snapshot
+        self.parked = (
+            set()
+        )  # cars that jumped to where they stand: in the garage, not on track
 
     def fresh(self, key, now, rearm):
         last = self.said_at.get(key)
@@ -139,27 +161,49 @@ class TrackAwareness:
         return distance
 
     def hazard(self, kind, text, now, facts):
-        return Call(seat="spotter", kind=kind, sim_time=now, priority=SPOTTER, ttl=HAZARD_TTL_S,
-                    conclusion=text, template=text, facts=facts, immediate=True, voice="spotter")
+        return Call(
+            seat="spotter",
+            kind=kind,
+            sim_time=now,
+            priority=SPOTTER,
+            ttl=HAZARD_TTL_S,
+            conclusion=text,
+            template=text,
+            facts=facts,
+            immediate=True,
+            voice="spotter",
+        )
 
     def opportunity(self, kind, text, now, facts):
         # not immediate: a group up the road is coaching, so it waits its turn in the talk
         # budget. As immediate it skipped the budget and TRAIN_AHEAD went out 57 times.
-        return Call(seat="racecraft", kind=kind, sim_time=now, priority=RACECRAFT, ttl=OPPORTUNITY_TTL_S,
-                    conclusion=text, template=text, facts=facts)
+        return Call(
+            seat="racecraft",
+            kind=kind,
+            sim_time=now,
+            priority=RACECRAFT,
+            ttl=OPPORTUNITY_TTL_S,
+            conclusion=text,
+            template=text,
+            facts=facts,
+        )
 
     def update(self, moment):
         race = moment.race
         shared = moment.model is not None
         self.model = moment.model
         if shared:
-            self.clock = moment.model.clock          # the one clock the whole team reads
+            self.clock = moment.model.clock  # the one clock the whole team reads
         if race is not None and race.me is not None and moment.new_race:
             if not shared:
                 self.clock.see_race(race, moment.now)
             for car in race.opponents:
                 self.watch_parked(car)
-                if not car.in_pits and car.speed_kmh is not None and car.id not in self.parked:
+                if (
+                    not car.in_pits
+                    and car.speed_kmh is not None
+                    and car.id not in self.parked
+                ):
                     self.normal.see(car.id, car.lap_dist, car.speed_kmh)
         if not shared:
             self.clock.see_me(moment.frame.lap_dist, moment.now)
@@ -179,7 +223,9 @@ class TrackAwareness:
         calls = []
         calls += self.slow_or_stopped_ahead(race, moment, corners, now)
         calls += self.three_wide_ahead(race, moment, now)
-        calls += self.faster_class_behind(race, moment.frame.lap_dist, moment.frame.speed_kmh, now)
+        calls += self.faster_class_behind(
+            race, moment.frame.lap_dist, moment.frame.speed_kmh, now
+        )
         calls += self.fights_ahead(race, now)
         return calls
 
@@ -193,15 +239,22 @@ class TrackAwareness:
         if before is None or not self.lap_length:
             return
         moved = abs(car.lap_dist - before)
-        moved = min(moved, abs(self.lap_length - moved))     # over the line is a short move
+        moved = min(
+            moved, abs(self.lap_length - moved)
+        )  # over the line is a short move
         if moved > TELEPORT_M:
             self.parked.add(car.id)
-        elif car.id in self.parked and car.speed_kmh is not None and car.speed_kmh >= STOPPED_KMH:
+        elif (
+            car.id in self.parked
+            and car.speed_kmh is not None
+            and car.speed_kmh >= STOPPED_KMH
+        ):
             self.parked.discard(car.id)
 
     # ---- hazards ---------------------------------------------------------------------------
     def slow_or_stopped_ahead(self, race, moment, corners, now):
         from live_telemetry import corner_at
+
         my_speed = moment.frame.speed_kmh
         if my_speed < 60:
             return []
@@ -233,8 +286,14 @@ class TrackAwareness:
             return []
         what = "Car stopped" if stopped else "Slow car"
         text = f"{what} ahead, {where}." if where else f"{what} ahead."
-        return [self.hazard("CAR_STOPPED_AHEAD" if stopped else "SLOW_CAR_AHEAD", text, now,
-                            {"metres": round(ahead), "corner": where})]
+        return [
+            self.hazard(
+                "CAR_STOPPED_AHEAD" if stopped else "SLOW_CAR_AHEAD",
+                text,
+                now,
+                {"metres": round(ahead), "corner": where},
+            )
+        ]
 
     def place_on_track(self, lap_dist, corners, corner_at):
         """ "T1 Rettifilo" inside a corner, "before Arnage" on the straight leading to one."""
@@ -269,14 +328,20 @@ class TrackAwareness:
         for i in range(len(cars) - 2):
             first, third = cars[i], cars[i + 2]
             if third[0] - first[0] <= ALONGSIDE_M:
-                across = self.across_the_track([c for _, c in cars[i:i + 3]], before)
+                across = self.across_the_track([c for _, c in cars[i : i + 3]], before)
                 if across is not None and across < THREE_WIDE_ACROSS_M:
-                    continue                   # two alongside and one behind
+                    continue  # two alongside and one behind
                 # once in 20 s, not once per trio: replay of 24 Sep, 22 calls in one race (18 really
                 # three wide), 5 of them in 12 s as one pack jostled into new trios (27 Sep)
                 if self.fresh(("three_wide",), now, HAZARD_REARM_S):
-                    return [self.hazard("THREE_WIDE_AHEAD", "Three wide ahead. Stay out of it, let them fight.",
-                                        now, {"metres": round(first[0])})]
+                    return [
+                        self.hazard(
+                            "THREE_WIDE_AHEAD",
+                            "Three wide ahead. Stay out of it, let them fight.",
+                            now,
+                            {"metres": round(first[0])},
+                        )
+                    ]
                 return []
         return []
 
@@ -303,7 +368,7 @@ class TrackAwareness:
         me = race.me
         mine = class_rank(me.car_class)
         coming = []
-        watched = []                  # every faster car within the watch, closing or not
+        watched = []  # every faster car within the watch, closing or not
         for car in race.opponents:
             if car.in_pits or class_rank(car.car_class) <= mine:
                 continue
@@ -316,7 +381,9 @@ class TrackAwareness:
             arrives = self.arrives_in(car, gap, now)
             watched.append((gap, car))
             soon = arrives is not None and arrives <= FASTER_CLASS_ARRIVES_S
-            stuck_behind = arrives is None and gap <= RIGHT_BEHIND_S     # right there, not getting by
+            stuck_behind = (
+                arrives is None and gap <= RIGHT_BEHIND_S
+            )  # right there, not getting by
             if soon or stuck_behind:
                 coming.append((gap, arrives, car))
         if not coming:
@@ -333,15 +400,21 @@ class TrackAwareness:
             key = ("faster_fight", tuple(sorted((car.id, partner.id))))
             if self.fresh(key, now, OPPORTUNITY_REARM_S):
                 text = f"Two {spoken_class(car.car_class)}s fighting behind. Stay predictable, hold your line."
-                return [self.hazard("FASTER_FIGHT_BEHIND", text, now, {"gap_s": round(gap, 1)})]
+                return [
+                    self.hazard(
+                        "FASTER_FIGHT_BEHIND", text, now, {"gap_s": round(gap, 1)}
+                    )
+                ]
             return []
         if not self.fresh(("faster", car.id), now, OPPORTUNITY_REARM_S):
             return []
         if arrives is None:
             text = f"{spoken_class(car.car_class)} right behind you. Hold your line, let it by on the exit."
         else:
-            text = (f"{spoken_class(car.car_class)} behind, closing. On you in about {round(arrives)} seconds. "
-                    "Hold your line, let it by on the exit.")
+            text = (
+                f"{spoken_class(car.car_class)} behind, closing. On you in about {round(arrives)} seconds. "
+                "Hold your line, let it by on the exit."
+            )
         facts = {"gap_s": round(gap, 1)}
         if arrives is not None:
             facts["arrives_in_s"] = round(arrives)
@@ -397,10 +470,16 @@ class TrackAwareness:
         it "new" (the first version keyed on every car in it and called it 57 times)."""
         me = race.me
         from race_state import same_lap
-        rivals = [car for car in race.opponents
-                  if car.car_class == me.car_class and same_lap(me, car, self.model)
-                  and not car.in_pits and car.place < me.place]
-        rivals.sort(key=lambda car: car.place, reverse=True)          # nearest first
+
+        rivals = [
+            car
+            for car in race.opponents
+            if car.car_class == me.car_class
+            and same_lap(me, car, self.model)
+            and not car.in_pits
+            and car.place < me.place
+        ]
+        rivals.sort(key=lambda car: car.place, reverse=True)  # nearest first
         if not rivals or rivals[0].place != me.place - 1:
             self.group_since = None
             return []
@@ -427,19 +506,32 @@ class TrackAwareness:
             self.group_since = (nearest.id, now)
         if now - self.group_since[1] < FIGHT_FOR_S:
             return []
-        if self.last_group_call is not None and now - self.last_group_call < OPPORTUNITY_REARM_S:
+        if (
+            self.last_group_call is not None
+            and now - self.last_group_call < OPPORTUNITY_REARM_S
+        ):
             return []
         if not self.fresh(("group", nearest.id), now, GROUP_REARM_S):
             return []
         self.last_group_call = now
         if is_battle:
-            text = (f"P{chain[1].place} and P{chain[0].place} are fighting, {tenths_words(reach)} up the road. "
-                    f"They're slowing each other down. Close up and let them fight.")
-            return [self.opportunity("BATTLE_AHEAD", text, now, {"gap_s": round(reach, 1)})]
-        if len(chain) == TRAIN_MAX_CARS:           # it may go on further up: no end position
+            text = (
+                f"P{chain[1].place} and P{chain[0].place} are fighting, {tenths_words(reach)} up the road. "
+                f"They're slowing each other down. Close up and let them fight."
+            )
+            return [
+                self.opportunity("BATTLE_AHEAD", text, now, {"gap_s": round(reach, 1)})
+            ]
+        if len(chain) == TRAIN_MAX_CARS:  # it may go on further up: no end position
             who = f"at least {len(chain)} cars from P{chain[0].place} up"
         else:
             who = f"{len(chain)} cars, P{chain[-1].place} to P{chain[0].place}"
-        text = (f"Train ahead, {who}, {tenths_words(reach)} up the road. "
-                f"They're holding each other up. Close in and pick them off.")
-        return [self.opportunity("TRAIN_AHEAD", text, now, {"cars": len(chain), "gap_s": round(reach, 1)})]
+        text = (
+            f"Train ahead, {who}, {tenths_words(reach)} up the road. "
+            f"They're holding each other up. Close in and pick them off."
+        )
+        return [
+            self.opportunity(
+                "TRAIN_AHEAD", text, now, {"cars": len(chain), "gap_s": round(reach, 1)}
+            )
+        ]

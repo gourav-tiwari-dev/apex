@@ -22,24 +22,33 @@ What real racecraft says (Driver61, drivingfast.net, Coach Dave, Fanatec's defen
 the pass is set up a corner early, exits beat dives, attack where the other car is weak,
 defend only where it can get you, one move, and a fight slows both cars down.
 """
+
 import statistics
 
 from radio import Call, RACECRAFT, ENGINEER, SPOTTER
-from seats.spotter import side_and_overlap, sides_taken, CAR_LENGTH_M, LANE_MIN_M, LANE_MAX_M
+from seats.spotter import (
+    side_and_overlap,
+    sides_taken,
+    CAR_LENGTH_M,
+    LANE_MIN_M,
+    LANE_MAX_M,
+)
 from seats.performance import tenths_words
 from race_state import same_lap, identity, same_class_neighbours, said_place
 from gaps import TrackClock, ON_YOU_S
 
-FIGHT_GAP_S = 1.0             # a same-class car within a second ahead is a fight
-DEFEND_GAP_S = 0.8            # and this close behind
-FIGHT_CONFIRM_S = 8.0         # ...for this long: a car brushing past is not a fight
-EDGE_WORTH_USING_KMH = 3.0    # min-speed advantage that makes a corner yours
+FIGHT_GAP_S = 1.0  # a same-class car within a second ahead is a fight
+DEFEND_GAP_S = 0.8  # and this close behind
+FIGHT_CONFIRM_S = 8.0  # ...for this long: a car brushing past is not a fight
+EDGE_WORTH_USING_KMH = 3.0  # min-speed advantage that makes a corner yours
 GAIN_WORTH_USING_S = 0.15
-INCIDENT_KMH = 40.0           # slower than this on track: he's spun or crashed
-INCIDENT_QUIET_S = 20.0     # ...or, on the road, seconds I gain through it (race model, 25 Sep)
-CLOSE_GAP_S = 0.4             # this close into a corner where he is faster = about to lunge
-WARN_BEFORE_M = 300.0         # "not here" must come before the braking zone, not in it
-ATTEMPT_WINDOW_S = 6.0        # how long a pass attempt has to resolve
+INCIDENT_KMH = 40.0  # slower than this on track: he's spun or crashed
+INCIDENT_QUIET_S = (
+    20.0  # ...or, on the road, seconds I gain through it (race model, 25 Sep)
+)
+CLOSE_GAP_S = 0.4  # this close into a corner where he is faster = about to lunge
+WARN_BEFORE_M = 300.0  # "not here" must come before the braking zone, not in it
+ATTEMPT_WINDOW_S = 6.0  # how long a pass attempt has to resolve
 PLAN_TTL_S = 20.0
 # replaying the 23 Sep race with the radio fixed gave 21 plans in 27 minutes: one a minute is
 # as much as a driver can use
@@ -54,8 +63,10 @@ RESET_TTL_S = 15.0
 # and 30 s; alarms at 1.95 s were noise and at 0.32 s too late, so 1.5 s down to 0.5 s
 ALARM_MAX_GAP_S = 1.5
 ALARM_MIN_GAP_S = 0.5
-ALARM_MIN_RATE = 0.02         # s of gap gone per s, over the last 10 s: 5 of 8 came true
-ALARM_MIN_PACE_S = 0.5        # s a lap closing on the lap-level pace, once there is a lap of it
+ALARM_MIN_RATE = 0.02  # s of gap gone per s, over the last 10 s: 5 of 8 came true
+ALARM_MIN_PACE_S = (
+    0.5  # s a lap closing on the lap-level pace, once there is a lap of it
+)
 ALARM_REARM_GAP_S = 2.0
 ALARM_TTL_S = 4.0
 
@@ -64,39 +75,53 @@ ALARM_TTL_S = 4.0
 # end of each straight, within 0.5 s of the car ahead he gains +1.1 to +3.8 km/h over clean air,
 # from 0.5 to 1.0 s about nothing. A weak tow, as LMU players say, and only inside 0.5 s.
 TOW_S = 0.5
-CLEAR_GAP_S = 1.0             # out of the tow and out of reach
-PASS_DONE_GAP_S = 0.5         # after a braking zone, this far back = the pass is done
-STICK_WARN_M = 200.0          # "cover the inside" needs this much road before the corner
-SWITCHBACK_WINDOW_S = 15.0    # passed back within this = a switchback
+CLEAR_GAP_S = 1.0  # out of the tow and out of reach
+PASS_DONE_GAP_S = 0.5  # after a braking zone, this far back = the pass is done
+STICK_WARN_M = 200.0  # "cover the inside" needs this much road before the corner
+SWITCHBACK_WINDOW_S = 15.0  # passed back within this = a switchback
 # replaying 24 Sep: side by side for a lap, the order flipped back and forth and gave
 # "stick it / they're back / stick it". A pass counts once it holds this long, nobody alongside
 PASS_CONFIRM_S = 1.0
-EXIT_RECENT_S = 6.0           # a pass this soon after leaving a corner was won on the exit
-DOUBLE_PASS_S = 3.0           # two passes this close together = two for one
-GIFT_IMPACT_S = 5.0           # a car that hit something this recently was not beaten, it crashed
-INCIDENT_MERGE_S = 5.0        # hits closer than this are one incident (LMU logs several per crash)
+EXIT_RECENT_S = 6.0  # a pass this soon after leaving a corner was won on the exit
+DOUBLE_PASS_S = 3.0  # two passes this close together = two for one
+GIFT_IMPACT_S = 5.0  # a car that hit something this recently was not beaten, it crashed
+INCIDENT_MERGE_S = (
+    5.0  # hits closer than this are one incident (LMU logs several per crash)
+)
 PRAISE_TTL_S = 8.0
 
 # defending that held: on the gearbox this long, then gone
 PRESSURE_GAP_S = 0.6
 PRESSURE_FOR_S = 60.0
 FELL_AWAY_GAP_S = 1.5
-PRESSURE_LAPSE_S = 30.0       # off the gearbox this long without falling away: the fight faded, no praise
+PRESSURE_LAPSE_S = (
+    30.0  # off the gearbox this long without falling away: the fight faded, no praise
+)
 
 # the price of a fight
-FIGHT_COST_S = 1.0            # this much slower than his best, a lap in a fight
+FIGHT_COST_S = 1.0  # this much slower than his best, a lap in a fight
 THIRD_CAR_GAP_S = 3.0
 
-REPUTATION_INCIDENTS = 2      # this many incidents today = a car to give room to
+REPUTATION_INCIDENTS = 2  # this many incidents today = a car to give room to
 
-BRILLIANT = [("WHAT A FUCKING MOVE! Get in there!", "WHAT A MOVE! Get in there!"),
-             ("Mega, mate. Absolutely fucking mega.", "Mega, mate. Absolutely mega."),
-             ("Oh, get in there! Fucking lovely!", "Oh, get in there! Lovely!")]
-SOLID = [("Simply lovely, mate.", "Simply lovely, mate."),
-         ("Lovely. That's how you fucking do it.", "Lovely. That's how you do it."),
-         ("Good job. Clean as you like.", "Good job. Clean as you like.")]
-MOVE_WORDS = {"late_brake": "Late on the brakes.", "switchback": "Switchback!", "double": "Two for one!",
-              "corner": "Brave through there.", "exit": "Better exit did it.", "tow": "Great tow."}
+BRILLIANT = [
+    ("WHAT A FUCKING MOVE! Get in there!", "WHAT A MOVE! Get in there!"),
+    ("Mega, mate. Absolutely fucking mega.", "Mega, mate. Absolutely mega."),
+    ("Oh, get in there! Fucking lovely!", "Oh, get in there! Lovely!"),
+]
+SOLID = [
+    ("Simply lovely, mate.", "Simply lovely, mate."),
+    ("Lovely. That's how you fucking do it.", "Lovely. That's how you do it."),
+    ("Good job. Clean as you like.", "Good job. Clean as you like."),
+]
+MOVE_WORDS = {
+    "late_brake": "Late on the brakes.",
+    "switchback": "Switchback!",
+    "double": "Two for one!",
+    "corner": "Brave through there.",
+    "exit": "Better exit did it.",
+    "tow": "Great tow.",
+}
 BRILLIANT_MOVES = ("late_brake", "switchback", "double", "corner")
 
 
@@ -110,9 +135,9 @@ class Reputation:
     """What this race says about each car: incidents (any impact, walls too) and hits on him."""
 
     def __init__(self):
-        self.incidents = {}            # car id -> count this race
-        self.last_impact = {}          # car id -> the game's last impact time for that car
-        self.hits_on_me = {}           # identity -> contacts with him this race
+        self.incidents = {}  # car id -> count this race
+        self.last_impact = {}  # car id -> the game's last impact time for that car
+        self.hits_on_me = {}  # identity -> contacts with him this race
 
     def see_race(self, race):
         for opponent in race.opponents:
@@ -121,7 +146,9 @@ class Reputation:
                 continue
             last = self.last_impact.get(opponent.id)
             if last is None:
-                self.incidents.setdefault(opponent.id, 0)   # an impact from before we watched
+                self.incidents.setdefault(
+                    opponent.id, 0
+                )  # an impact from before we watched
             elif impact > last + INCIDENT_MERGE_S:
                 self.incidents[opponent.id] = self.incidents.get(opponent.id, 0) + 1
             if last is None or impact > last:
@@ -129,7 +156,11 @@ class Reputation:
 
     def hit_recently(self, car_id, now):
         impact = self.last_impact.get(car_id)
-        return impact is not None and 0 <= now - impact <= GIFT_IMPACT_S and self.incidents.get(car_id, 0) > 0
+        return (
+            impact is not None
+            and 0 <= now - impact <= GIFT_IMPACT_S
+            and self.incidents.get(car_id, 0) > 0
+        )
 
     def words(self, car):
         hits = self.hits_on_me.get(identity(car), 0)
@@ -145,44 +176,44 @@ class Reputation:
 
 class Racecraft:
     def __init__(self, performance, rivals=None, clean=False):
-        self.performance = performance     # shares my corner speeds and theirs
-        self.rivals = rivals or {}         # steam_id -> team-memory dossier line
+        self.performance = performance  # shares my corner speeds and theirs
+        self.rivals = rivals or {}  # steam_id -> team-memory dossier line
         self.clean = clean
         self.clock = TrackClock()
-        self.model = None             # the race model, when the live loop shares it
-        self.quiet_until = None       # silent after a spin, until this time
+        self.model = None  # the race model, when the live loop shares it
+        self.quiet_until = None  # silent after a spin, until this time
         self.corners = []
-        self.gap_points = {}               # "ahead" / "behind" -> where the latest gap was measured
+        self.gap_points = {}  # "ahead" / "behind" -> where the latest gap was measured
         self.reputation = Reputation()
-        self.plans_said = set()            # (steam_id, "attack" / "defend", has data)
-        self.warned = set()                # (steam_id, corner, lap)
+        self.plans_said = set()  # (steam_id, "attack" / "defend", has data)
+        self.warned = set()  # (steam_id, corner, lap)
         self.ahead = None
         self.gap_ahead = None
         self.behind = None
         self.gap_behind = None
-        self.fight_since = {}              # car id -> when the fight began
+        self.fight_since = {}  # car id -> when the fight began
         self.last_place = None
         self.last_plan_time = None
         self.last_lost_place_time = None
-        self.alarmed = set()               # car ids already alarmed on this approach
-        self.closing_called = set()        # car ids already called as "closing on it"
-        self.last_order = None             # car id -> True if it was ahead of me
-        self.cars = {}                     # car id -> the latest Opponent
-        self.open_passes = {}              # car id -> the pass I made on it, not yet held
-        self.passed_me_at = {}             # car id -> when it last passed me
+        self.alarmed = set()  # car ids already alarmed on this approach
+        self.closing_called = set()  # car ids already called as "closing on it"
+        self.last_order = None  # car id -> True if it was ahead of me
+        self.cars = {}  # car id -> the latest Opponent
+        self.open_passes = {}  # car id -> the pass I made on it, not yet held
+        self.passed_me_at = {}  # car id -> when it last passed me
         self.last_earned_pass_at = None
-        self.pressure_since = {}           # car id -> when it got on my gearbox
-        self.pressure_last = {}            # car id -> the last time it was on my gearbox
+        self.pressure_since = {}  # car id -> when it got on my gearbox
+        self.pressure_last = {}  # car id -> the last time it was on my gearbox
         self.held_said = set()
         self.praise_turn = 0
         self.last_corner = None
-        self.last_corner_exit = None       # when I last came out of a corner
-        self.flips = {}                    # car id -> (who passed whom, when, the move) not yet confirmed
+        self.last_corner_exit = None  # when I last came out of a corner
+        self.flips = {}  # car id -> (who passed whom, when, the move) not yet confirmed
         self.fight_cost_said = set()
         self.my_best_lap = None
-        self.offs = []                     # sim times of my recent off-tracks
-        self.attempts = []                 # finished: (steam_id, driver, corner, lap, outcome)
-        self.open_attempt = None           # [steam_id, driver, corner, lap, started, place_then]
+        self.offs = []  # sim times of my recent off-tracks
+        self.attempts = []  # finished: (steam_id, driver, corner, lap, outcome)
+        self.open_attempt = None  # [steam_id, driver, corner, lap, started, place_then]
 
     # ---- where each of us is faster --------------------------------------------------------
     def edges_against(self, steam_id):
@@ -257,7 +288,9 @@ class Racecraft:
         else:
             pass_at = self.corner_after(best, corners)
             facts.update({"strong_corner": best, "pass_corner": pass_at})
-            conclusion = f"Faster out of {best}: pass the car ahead into {pass_at}, not before."
+            conclusion = (
+                f"Faster out of {best}: pass the car ahead into {pass_at}, not before."
+            )
             template = f"You're faster out of {best}. Pass into {pass_at}. Not before."
         reputation = self.reputation.words(opponent)
         if reputation is not None:
@@ -266,16 +299,26 @@ class Racecraft:
             template += f" {reputation} Pass it on the exit, not the brakes."
         if history:
             conclusion += f" History: {history}."
-        return Call(seat="racecraft", kind="ATTACK_PLAN", sim_time=now, priority=RACECRAFT,
-                    ttl=PLAN_TTL_S, conclusion=conclusion, facts=facts, template=template,
-                    evidence={"rival": identity(opponent)})
+        return Call(
+            seat="racecraft",
+            kind="ATTACK_PLAN",
+            sim_time=now,
+            priority=RACECRAFT,
+            ttl=PLAN_TTL_S,
+            conclusion=conclusion,
+            facts=facts,
+            template=template,
+            evidence={"rival": identity(opponent)},
+        )
 
     def defend_plan(self, opponent, gap, corners, now):
         edges = self.edges_against(identity(opponent))
         facts = {"driver": opponent.driver}
         danger = None
         for corner, edge in edges.items():
-            if -edge >= EDGE_WORTH_USING_KMH and (danger is None or edge < edges[danger]):
+            if -edge >= EDGE_WORTH_USING_KMH and (
+                danger is None or edge < edges[danger]
+            ):
                 danger = corner
         if danger is None:
             conclusion = "The car behind has nothing on you. Clean lines, no weaving."
@@ -289,21 +332,56 @@ class Racecraft:
         if reputation is not None:
             facts["reputation"] = reputation
             template += f" {reputation} Leave it room."
-        return Call(seat="racecraft", kind="DEFEND_PLAN", sim_time=now, priority=RACECRAFT,
-                    ttl=PLAN_TTL_S, conclusion=conclusion, facts=facts, template=template,
-                    evidence={"rival": identity(opponent)})
+        return Call(
+            seat="racecraft",
+            kind="DEFEND_PLAN",
+            sim_time=now,
+            priority=RACECRAFT,
+            ttl=PLAN_TTL_S,
+            conclusion=conclusion,
+            facts=facts,
+            template=template,
+            evidence={"rival": identity(opponent)},
+        )
 
     def plan_allowed(self, now):
         return self.last_plan_time is None or now - self.last_plan_time >= PLAN_GAP_S
 
     def reset(self, kind, conclusion, facts, template, now):
-        return Call(seat="racecraft", kind=kind, sim_time=now, priority=ENGINEER, ttl=RESET_TTL_S,
-                    conclusion=conclusion, facts=facts, template=template)
+        return Call(
+            seat="racecraft",
+            kind=kind,
+            sim_time=now,
+            priority=ENGINEER,
+            ttl=RESET_TTL_S,
+            conclusion=conclusion,
+            facts=facts,
+            template=template,
+        )
 
-    def instant(self, kind, text, now, facts=None, seat="racecraft", priority=RACECRAFT, ttl=PRAISE_TTL_S,
-                voice="engineer"):
-        return Call(seat=seat, kind=kind, sim_time=now, priority=priority, ttl=ttl, conclusion=text,
-                    template=text, facts=facts or {}, immediate=True, voice=voice)
+    def instant(
+        self,
+        kind,
+        text,
+        now,
+        facts=None,
+        seat="racecraft",
+        priority=RACECRAFT,
+        ttl=PRAISE_TTL_S,
+        voice="engineer",
+    ):
+        return Call(
+            seat=seat,
+            kind=kind,
+            sim_time=now,
+            priority=priority,
+            ttl=ttl,
+            conclusion=text,
+            template=text,
+            facts=facts or {},
+            immediate=True,
+            voice=voice,
+        )
 
     # ---- gaps ------------------------------------------------------------------------------
     def real_gap(self, car, side, now, game_gap):
@@ -315,7 +393,9 @@ class Racecraft:
         else:
             gap = self.clock.gap_behind(car.id, now)
         if gap is None:
-            self.gap_points[side] = None       # the game's estimate: no same-point gap to build on
+            self.gap_points[side] = (
+                None  # the game's estimate: no same-point gap to build on
+            )
             return game_gap
         if side == "ahead":
             point = self.clock.my_distance()
@@ -359,7 +439,10 @@ class Racecraft:
             return []
         # after a spin, or crawling: no racecraft (live 25 Sep, spun at Indianapolis, it kept saying
         # "mega defending" and "stay in the tow")
-        if any(event.kind == "SPIN" for event in moment.events) or moment.frame.speed_kmh < INCIDENT_KMH:
+        if (
+            any(event.kind == "SPIN" for event in moment.events)
+            or moment.frame.speed_kmh < INCIDENT_KMH
+        ):
             self.quiet_until = now + INCIDENT_QUIET_S
         if self.quiet_until is not None and now < self.quiet_until:
             return []
@@ -372,19 +455,34 @@ class Racecraft:
             if event.kind == "CONTACT":
                 who = event.other_car
                 if who is not None:
-                    self.reputation.hits_on_me[who] = self.reputation.hits_on_me.get(who, 0) + 1
-                calls.append(self.reset("CONTACT_RESET",
-                                        f"Contact at {event.corner}. Calm him down. No blame, no driving instruction. Next lap, reset.",
-                                        {"corner": event.corner}, "Reset. Next lap.", now))
+                    self.reputation.hits_on_me[who] = (
+                        self.reputation.hits_on_me.get(who, 0) + 1
+                    )
+                calls.append(
+                    self.reset(
+                        "CONTACT_RESET",
+                        f"Contact at {event.corner}. Calm him down. No blame, no driving instruction. Next lap, reset.",
+                        {"corner": event.corner},
+                        "Reset. Next lap.",
+                        now,
+                    )
+                )
                 if self.open_attempt is not None:
                     self.finish_attempt("contact")
                 for pass_ in self.open_passes.values():
-                    pass_["contact"] = True          # a pass with contact is not praised
+                    pass_["contact"] = True  # a pass with contact is not praised
             if event.kind in ("OFF_TRACK", "SPIN"):
                 self.offs = [t for t in self.offs if now - t < 240.0] + [now]
                 if len(self.offs) == 2:
-                    calls.append(self.reset("TWO_OFFS", "Two offs in a short time. Calm him down: two tidy laps, nothing else.",
-                                            {}, "Two offs. Two tidy laps now.", now))
+                    calls.append(
+                        self.reset(
+                            "TWO_OFFS",
+                            "Two offs in a short time. Calm him down: two tidy laps, nothing else.",
+                            {},
+                            "Two offs. Two tidy laps now.",
+                            now,
+                        )
+                    )
 
         # a braking zone survived = a corner left after the one the pass was made in
         if self.last_corner is not None and moment.corner != self.last_corner:
@@ -397,7 +495,9 @@ class Racecraft:
 
         if moment.new_race:
             self.cars = {opponent.id: opponent for opponent in race.opponents}
-            self.ahead, game_gap_ahead, self.behind, game_gap_behind = same_class_neighbours(race, self.model)
+            self.ahead, game_gap_ahead, self.behind, game_gap_behind = (
+                same_class_neighbours(race, self.model)
+            )
             self.gap_ahead = self.real_gap(self.ahead, "ahead", now, game_gap_ahead)
             self.gap_behind = self.real_gap(self.behind, "behind", now, game_gap_behind)
             calls += self.plans(corners, now)
@@ -458,9 +558,9 @@ class Racecraft:
                 continue
             point = self.gap_points.get(side)
             if point is None:
-                continue                # the game's gap: the rate is fitted on same-point gaps only
+                continue  # the game's gap: the rate is fitted on same-point gaps only
             if car.in_pits or car.pit_state != 0:
-                continue                # a car pitting is not a car closing (PITS_AHEAD says it)
+                continue  # a car pitting is not a car closing (PITS_AHEAD says it)
             # a car that was already on him (or just passed) and is dropping back is not closing: the
             # 10 s rate still leans on the older, closer gaps. Replays of 23 and 25 Sep (27 Sep):
             # "Closing fast on the car ahead" 2 s after that car passed him, and at 0.19 -> 0.51 s
@@ -473,7 +573,9 @@ class Racecraft:
             # car 2.3 s a lap slower); on the lap pace 5 of 22, with the same 9 of 10 arrivals warned.
             # Crew Chief likewise trends the gap over sectors, and iRacedeck against one lap ago
             rate = self.clock.closing_rate(car.id, now)
-            quicker = self.clock.pace_vs_me(car.id)          # s a lap that car is quicker than me
+            quicker = self.clock.pace_vs_me(
+                car.id
+            )  # s a lap that car is quicker than me
             if quicker is not None:
                 per_lap = quicker if side == "behind" else -quicker
                 if per_lap < ALARM_MIN_PACE_S:
@@ -489,17 +591,31 @@ class Racecraft:
                 facts["predicted_catch_s"] = round((gap - ON_YOU_S) / rate, 1)
             found = self.clock.catch_point(car.id, point, gap)
             if found is not None and corners:
-                facts["predicted_corner_lap_model"] = self.clock.corner_at_or_after(found[0], corners)
+                facts["predicted_corner_lap_model"] = self.clock.corner_at_or_after(
+                    found[0], corners
+                )
                 facts["closing_per_lap_s"] = round(found[1], 2)
             if side == "behind":
                 words = f"Car behind, {tenths_words(gap)}, closing fast."
                 reputation = self.reputation.words(car)
                 if reputation is not None:
                     words += f" {reputation}"
-                calls.append(self.instant("CLOSING_ALARM", words, now, facts, seat="spotter",
-                                          priority=SPOTTER, ttl=ALARM_TTL_S, voice="spotter"))
+                calls.append(
+                    self.instant(
+                        "CLOSING_ALARM",
+                        words,
+                        now,
+                        facts,
+                        seat="spotter",
+                        priority=SPOTTER,
+                        ttl=ALARM_TTL_S,
+                        voice="spotter",
+                    )
+                )
             else:
-                words = f"Closing fast on the car ahead. {tenths_words(gap).capitalize()}."
+                words = (
+                    f"Closing fast on the car ahead. {tenths_words(gap).capitalize()}."
+                )
                 calls.append(self.instant("CLOSING_ON", words, now, facts))
         return calls
 
@@ -509,7 +625,9 @@ class Racecraft:
         me = race.me
         order = {}
         for opponent in race.opponents:
-            if opponent.car_class != me.car_class or not same_lap(me, opponent, self.model):
+            if opponent.car_class != me.car_class or not same_lap(
+                me, opponent, self.model
+            ):
                 continue
             if abs(opponent.place - me.place) <= 3:
                 order[opponent.id] = opponent.place < me.place
@@ -523,9 +641,13 @@ class Racecraft:
                 if car_id not in order or was_ahead == order[car_id]:
                     continue
                 if car_id in self.flips:
-                    del self.flips[car_id]           # flipped straight back: still side by side
+                    del self.flips[car_id]  # flipped straight back: still side by side
                 elif was_ahead:
-                    self.flips[car_id] = ("i_passed", now, self.move_of(moment, car_id, now))
+                    self.flips[car_id] = (
+                        "i_passed",
+                        now,
+                        self.move_of(moment, car_id, now),
+                    )
                 else:
                     self.flips[car_id] = ("passed_me", now, None)
         self.last_order = order
@@ -547,14 +669,20 @@ class Racecraft:
         passed_me = self.passed_me_at.get(car_id)
         if passed_me is not None and now - passed_me <= SWITCHBACK_WINDOW_S:
             return "switchback"
-        if self.last_earned_pass_at is not None and now - self.last_earned_pass_at <= DOUBLE_PASS_S:
+        if (
+            self.last_earned_pass_at is not None
+            and now - self.last_earned_pass_at <= DOUBLE_PASS_S
+        ):
             return "double"
         if moment.frame.brake > 0.2:
             return "late_brake"
         if moment.corner is not None:
             return "corner"
-        if self.last_corner_exit is not None and now - self.last_corner_exit <= EXIT_RECENT_S:
-            return "exit"                    # just out of a corner and already past: the exit won it
+        if (
+            self.last_corner_exit is not None
+            and now - self.last_corner_exit <= EXIT_RECENT_S
+        ):
+            return "exit"  # just out of a corner and already past: the exit won it
         return "tow"
 
     def touched(self, car, moment):
@@ -569,29 +697,48 @@ class Racecraft:
             gift = "Car ahead's pitting."
         elif car.finish_status not in (0, 1):
             gift = "Car ahead's out."
-        elif self.reputation.hit_recently(car.id, now) and not self.touched(car, moment):
+        elif self.reputation.hit_recently(car.id, now) and not self.touched(
+            car, moment
+        ):
             gift = "Car ahead's in trouble."
         if gift is not None:
-            return [self.instant("PLACE_GIFT", f"{said_place(race)}. {gift}", now, {"place": race.me.place},
-                                 seat="race_engineer", priority=ENGINEER)]
+            return [
+                self.instant(
+                    "PLACE_GIFT",
+                    f"{said_place(race)}. {gift}",
+                    now,
+                    {"place": race.me.place},
+                    seat="race_engineer",
+                    priority=ENGINEER,
+                )
+            ]
         self.last_earned_pass_at = now
-        self.open_passes[car.id] = {"move": move, "at": now, "corner": moment.corner, "left_pass_corner": False,
-                                    "braking_zones_held": 0, "stick_said": False, "contact": False}
+        self.open_passes[car.id] = {
+            "move": move,
+            "at": now,
+            "corner": moment.corner,
+            "left_pass_corner": False,
+            "braking_zones_held": 0,
+            "stick_said": False,
+            "contact": False,
+        }
         self.passed_me_at.pop(car.id, None)
         return []
 
     def passed_me(self, car, moment, corners, now):
         self.passed_me_at[car.id] = now
         if car.id in self.open_passes:
-            del self.open_passes[car.id]          # taken back before it was held
+            del self.open_passes[car.id]  # taken back before it was held
             strong = self.strong_corner_against(car)
             words = "They're back past. Go again."
             if strong is not None:
                 words += f" You're quicker out of {strong}."
             return [self.instant("PASS_RETAKEN", words, now, {"strong_corner": strong})]
         # lap 1 is the start shuffle; after it, one composure call a minute at most
-        settled = moment.lap_count >= 2 and (self.last_lost_place_time is None
-                                             or now - self.last_lost_place_time >= LOST_PLACE_GAP_S)
+        settled = moment.lap_count >= 2 and (
+            self.last_lost_place_time is None
+            or now - self.last_lost_place_time >= LOST_PLACE_GAP_S
+        )
         if not settled:
             return []
         self.last_lost_place_time = now
@@ -599,10 +746,23 @@ class Racecraft:
         gap = self.clock.gap_ahead(car.id, now)
         if gap is not None and gap <= TOW_S and nearest is not None:
             # still in its tow: the switchback, right now
-            return [self.instant("PASSED", f"Stay in the tow. Get it back into {nearest[0]}.", now,
-                                 {"corner": nearest[0]})]
-        return [self.reset("PASSED", "Lost the place. Calm him down: stay within 1 second, the plan still works, no lunge to get it straight back.",
-                           {"stay_within_s": 1}, "Lost it. Stay close. No lunge.", now)]
+            return [
+                self.instant(
+                    "PASSED",
+                    f"Stay in the tow. Get it back into {nearest[0]}.",
+                    now,
+                    {"corner": nearest[0]},
+                )
+            ]
+        return [
+            self.reset(
+                "PASSED",
+                "Lost the place. Calm him down: stay within 1 second, the plan still works, no lunge to get it straight back.",
+                {"stay_within_s": 1},
+                "Lost it. Stay close. No lunge.",
+                now,
+            )
+        ]
 
     def follow_passes(self, moment, corners, now):
         calls = []
@@ -613,18 +773,32 @@ class Racecraft:
             gap = self.clock.gap_behind(car_id, now)
             if gap is None and self.behind is not None and self.behind.id == car_id:
                 gap = self.gap_behind
-            if not pass_["stick_said"] and gap is not None and gap <= TOW_S and moment.corner is None and not stick_now:
+            if (
+                not pass_["stick_said"]
+                and gap is not None
+                and gap <= TOW_S
+                and moment.corner is None
+                and not stick_now
+            ):
                 nearest = self.next_corner(moment.frame.lap_dist, corners)
                 if nearest is not None and nearest[1] >= STICK_WARN_M:
                     pass_["stick_said"] = True
-                    stick_now = True               # two cars passed at once: one "stick it"
-                    calls.append(self.instant("STICK_IT", f"Stick it. They're in your tow. Cover the inside into {nearest[0]}.",
-                                              now, {"corner": nearest[0]}))
+                    stick_now = True  # two cars passed at once: one "stick it"
+                    calls.append(
+                        self.instant(
+                            "STICK_IT",
+                            f"Stick it. They're in your tow. Cover the inside into {nearest[0]}.",
+                            now,
+                            {"corner": nearest[0]},
+                        )
+                    )
             # live 25 Sep: praise came for a car still 0.1-0.4 s behind for 45 s ("I did not make
             # the overtake completely") and for a place being swapped back ("wrong call"). A pass
             # is done when the car is at least half a second back after a braking zone, or clear.
-            held = gap is not None and ((pass_["braking_zones_held"] >= 1 and gap >= PASS_DONE_GAP_S)
-                                        or gap >= CLEAR_GAP_S)
+            held = gap is not None and (
+                (pass_["braking_zones_held"] >= 1 and gap >= PASS_DONE_GAP_S)
+                or gap >= CLEAR_GAP_S
+            )
             if not held:
                 continue
             del self.open_passes[car_id]
@@ -633,10 +807,12 @@ class Racecraft:
             self.pressure_since.pop(car_id, None)
             self.pressure_last.pop(car_id, None)
             if pass_["contact"]:
-                continue                          # contact: the reset covers it, no praise
+                continue  # contact: the reset covers it, no praise
             held_moves.append(pass_["move"])
         if len(held_moves) > 1:
-            calls.append(self.praise("double", now))      # two cars at once: one line, not two
+            calls.append(
+                self.praise("double", now)
+            )  # two cars at once: one line, not two
         elif held_moves:
             calls.append(self.praise(held_moves[0], now))
         return calls
@@ -650,7 +826,9 @@ class Racecraft:
         words = f"{hype} {MOVE_WORDS[move]}"
         if self.ahead is not None and self.gap_ahead is not None:
             words += f" Next one, {tenths_words(self.gap_ahead)}."
-        return self.instant("PASS_PRAISE", words, now, {"move": move, "gap_ahead_s": self.gap_ahead})
+        return self.instant(
+            "PASS_PRAISE", words, now, {"move": move, "gap_ahead_s": self.gap_ahead}
+        )
 
     def defending_held(self, now):
         """A car on his gearbox for PRESSURE_FOR_S that then fell away: the defence held. Live 27 Sep
@@ -668,7 +846,7 @@ class Racecraft:
             return []
         last = self.pressure_last[car.id]
         if now - last > PRESSURE_LAPSE_S:
-            del self.pressure_since[car.id]          # it drifted back without a fight
+            del self.pressure_since[car.id]  # it drifted back without a fight
             del self.pressure_last[car.id]
             return []
         if gap < FELL_AWAY_GAP_S:
@@ -678,18 +856,34 @@ class Racecraft:
         if last - since < PRESSURE_FOR_S or car.id in self.held_said:
             return []
         self.held_said.add(car.id)
-        return [self.instant("DEFEND_HELD", self.pick(("Mega defending, mate. They've got fucking nothing.",
-                                                       "Mega defending, mate. They've got nothing.")), now)]
+        return [
+            self.instant(
+                "DEFEND_HELD",
+                self.pick(
+                    (
+                        "Mega defending, mate. They've got fucking nothing.",
+                        "Mega defending, mate. They've got nothing.",
+                    )
+                ),
+                now,
+            )
+        ]
 
     def fight_cost(self, race, now):
         """A fight costing a second a lap while another car closes in behind: decide."""
         me = race.me
-        if me.best_lap > 0 and (self.my_best_lap is None or me.best_lap < self.my_best_lap):
+        if me.best_lap > 0 and (
+            self.my_best_lap is None or me.best_lap < self.my_best_lap
+        ):
             self.my_best_lap = me.best_lap
         if self.ahead is None or self.my_best_lap is None or me.last_lap <= 0:
             return []
         since = self.fight_since.get(self.ahead.id)
-        if since is None or now - since < me.last_lap * 0.9 or self.ahead.id in self.fight_cost_said:
+        if (
+            since is None
+            or now - since < me.last_lap * 0.9
+            or self.ahead.id in self.fight_cost_said
+        ):
             return []
         lost = me.last_lap - self.my_best_lap
         if lost < FIGHT_COST_S:
@@ -700,7 +894,12 @@ class Racecraft:
                 continue
             gap = self.clock.gap_behind(opponent.id, now)
             rate = self.clock.closing_rate(opponent.id, now)
-            if gap is not None and gap <= THIRD_CAR_GAP_S and rate is not None and rate > 0:
+            if (
+                gap is not None
+                and gap <= THIRD_CAR_GAP_S
+                and rate is not None
+                and rate > 0
+            ):
                 coming = opponent
         if coming is None:
             return []
@@ -716,7 +915,12 @@ class Racecraft:
     def not_here_warning(self, moment, corners, now):
         """Closing fast on the car ahead into a corner where he is at least as quick: the
         hasty lunge. Warned BEFORE the braking zone, from the voice bank."""
-        if self.ahead is None or self.gap_ahead is None or self.gap_ahead > CLOSE_GAP_S or not corners:
+        if (
+            self.ahead is None
+            or self.gap_ahead is None
+            or self.gap_ahead > CLOSE_GAP_S
+            or not corners
+        ):
             return None
         distance = moment.frame.lap_dist
         upcoming = None
@@ -728,14 +932,22 @@ class Racecraft:
             return None
         edge = self.edges_against(identity(self.ahead)).get(upcoming)
         if edge is None or edge >= EDGE_WORTH_USING_KMH:
-            return None                      # no data, or this IS his corner to attack
-        key = (upcoming, moment.lap_count)     # once per corner per lap, whoever is ahead
+            return None  # no data, or this IS his corner to attack
+        key = (upcoming, moment.lap_count)  # once per corner per lap, whoever is ahead
         if key in self.warned:
             return None
         self.warned.add(key)
-        return Call(seat="racecraft", kind="NOT_HERE", sim_time=now, priority=SPOTTER, ttl=2.0,
-                    conclusion="Not here. Wait for it.", template="Not here. Wait for it.", urgent=True,
-                    facts={"corner": upcoming})
+        return Call(
+            seat="racecraft",
+            kind="NOT_HERE",
+            sim_time=now,
+            priority=SPOTTER,
+            ttl=2.0,
+            conclusion="Not here. Wait for it.",
+            template="Not here. Wait for it.",
+            urgent=True,
+            facts={"corner": upcoming},
+        )
 
     # ---- pass attempts, for team memory ----------------------------------------------------
     def watch_for_attempt(self, moment, now):
@@ -743,15 +955,29 @@ class Racecraft:
         if self.open_attempt is not None or self.ahead is None or moment.corner is None:
             return
         frame = moment.frame
-        if moment.near is None or frame.pos is None or frame.ori is None or frame.brake < 0.2:
+        if (
+            moment.near is None
+            or frame.pos is None
+            or frame.ori is None
+            or frame.brake < 0.2
+        ):
             return
         for car in moment.near.cars:
             if car.id != self.ahead.id:
                 continue
             lateral, longitudinal = side_and_overlap(frame.pos, frame.ori, car)
-            if abs(longitudinal) < CAR_LENGTH_M and LANE_MIN_M <= abs(lateral) <= LANE_MAX_M:
-                self.open_attempt = [identity(self.ahead), self.ahead.driver, moment.corner,
-                                     moment.lap_count, now, self.last_place]
+            if (
+                abs(longitudinal) < CAR_LENGTH_M
+                and LANE_MIN_M <= abs(lateral) <= LANE_MAX_M
+            ):
+                self.open_attempt = [
+                    identity(self.ahead),
+                    self.ahead.driver,
+                    moment.corner,
+                    moment.lap_count,
+                    now,
+                    self.last_place,
+                ]
 
     def resolve_attempt(self, me, now):
         if self.open_attempt is None:

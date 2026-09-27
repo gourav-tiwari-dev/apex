@@ -9,6 +9,7 @@ within 6 s? On the online warning-lobby race (25 Sep 22:34) 4 yellows had no slo
 (no car left the lobby either): the game's yellow, cause not visible. Those are listed UNVERIFIED.
 
 Usage: flag_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)"""
+
 import os
 import sys
 
@@ -65,6 +66,7 @@ def slow_car_in(snap, yellow_slots):
 def his_speed_at(tape, when):
     """His speed (car frames) at a moment, from the tape."""
     import gzip, json, zlib
+
     speed = None
     try:
         with gzip.open(tape, "rt") as f:
@@ -99,11 +101,15 @@ def main():
             here = FLAG_SLOT.get(at_the_call.me.sector)
             next_one = FLAG_SLOT.get(NEXT_SECTOR.get(at_the_call.me.sector))
             if here not in yellow_slots and next_one not in yellow_slots:
-                mistakes.append(f"{tape} {when:.1f}s: no yellow flag (value 1) in his sector or the next "
-                                f"(flags {at_the_call.session.sector_flags})")
+                mistakes.append(
+                    f"{tape} {when:.1f}s: no yellow flag (value 1) in his sector or the next "
+                    f"(flags {at_the_call.session.sector_flags})"
+                )
             speed = his_speed_at(tape, when)
             if speed is not None and speed < HIS_OWN_INCIDENT_KMH:
-                mistakes.append(f"{tape} {when:.1f}s: said while he was at {speed:.0f} km/h (his own incident)")
+                mistakes.append(
+                    f"{tape} {when:.1f}s: said while he was at {speed:.0f} km/h (his own incident)"
+                )
             real = False
             for snap in near:
                 if slow_car_in(snap, yellow_slots):
@@ -115,7 +121,9 @@ def main():
                 unverified.append(f"{tape} {when:.1f}s")
         print(f"{tape}: {len(said)} yellows said, {backed} with a slow car behind them")
     backed_share = (total - len(unverified)) / total if total else 1.0
-    print(f"{total} yellows said on {len(tapes)} tapes, {backed_share:.0%} with a slow car behind them")
+    print(
+        f"{total} yellows said on {len(tapes)} tapes, {backed_share:.0%} with a slow car behind them"
+    )
     if unverified:
         print("UNVERIFIED (the game's yellow, no slow car in the data):")
         for line in unverified:

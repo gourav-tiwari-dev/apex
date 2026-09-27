@@ -7,11 +7,12 @@ the clock (one more lap or not). Lap times are the game's (so a deleted lap does
 No traffic or clean-air calls: in LMU qualifying he is alone on track (his fact, 25 Sep). The
 other drivers are only on the timing sheet, so a "car ahead" there is a ghost.
 """
+
 from radio import Call, ENGINEER
 
 QUALI_SESSIONS = range(5, 9)
 GREEN = 5
-FLAG_OUT = 8                   # clock ran out: the lap he is on still counts, and is often the one
+FLAG_OUT = 8  # clock ran out: the lap he is on still counts, and is often the one
 TTL_S = 12.0
 
 
@@ -24,8 +25,16 @@ def lap_text(seconds):
 
 
 def call(kind, words, now, facts):
-    return Call(seat="race_engineer", kind=kind, sim_time=now, priority=ENGINEER, ttl=TTL_S,
-                conclusion=words, template=words, facts=facts)
+    return Call(
+        seat="race_engineer",
+        kind=kind,
+        sim_time=now,
+        priority=ENGINEER,
+        ttl=TTL_S,
+        conclusion=words,
+        template=words,
+        facts=facts,
+    )
 
 
 class QualifyingEngineer:
@@ -64,7 +73,11 @@ class QualifyingEngineer:
             words += f" {round(lap - best, 1)} off your best."
             facts["off_best_s"] = round(lap - best, 1)
         if best is not None:
-            rivals = [o.best_lap for o in race.opponents if o.car_class == me.car_class and o.best_lap > 0]
+            rivals = [
+                o.best_lap
+                for o in race.opponents
+                if o.car_class == me.car_class and o.best_lap > 0
+            ]
             position = 1 + sum(1 for t in rivals if t < best)
             words += f" P{position} in class"
             facts["class_position"] = position
@@ -81,15 +94,32 @@ class QualifyingEngineer:
         clock runs out still counts. Before he has a time, the class's best lap stands in."""
         left = race.session.time_remaining
         me = race.me
-        rivals = [o.best_lap for o in race.opponents if o.car_class == me.car_class and o.best_lap > 0]
+        rivals = [
+            o.best_lap
+            for o in race.opponents
+            if o.car_class == me.car_class and o.best_lap > 0
+        ]
         lap = self.my_best or (min(rivals) if rivals else None)
         if lap is None or left <= 0 or self.last_lap_said or me.in_pits:
             return []
         if left < lap:
             self.last_lap_said = True
-            return [call("QUALI_CLOCK", "Clock runs out on this lap. It's the last one, make it count.", now,
-                         {"time_left_s": round(left)})]
+            return [
+                call(
+                    "QUALI_CLOCK",
+                    "Clock runs out on this lap. It's the last one, make it count.",
+                    now,
+                    {"time_left_s": round(left)},
+                )
+            ]
         if left < 2 * lap:
             self.last_lap_said = True
-            return [call("QUALI_CLOCK", "Time for one more flying lap after this one.", now, {"time_left_s": round(left)})]
+            return [
+                call(
+                    "QUALI_CLOCK",
+                    "Time for one more flying lap after this one.",
+                    now,
+                    {"time_left_s": round(left)},
+                )
+            ]
         return []

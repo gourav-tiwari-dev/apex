@@ -9,6 +9,7 @@ DEAD      always zero / empty: the game never filled it in, so no seat may rely 
 One recording can't prove a field is dead if nothing happened to change it
 (no pit stop -> pit fields stay 0). Those need a session where it happens.
 """
+
 import gzip
 import json
 import sys
@@ -95,8 +96,15 @@ def main(tape_path):
             if first_time is None:
                 first_time = row["elapsed_time"]
             last_time = row["elapsed_time"]
-            for name in ("steering", "steering_filtered", "pos", "ori", "delta_best",
-                         "last_impact_time", "last_impact_magnitude"):
+            for name in (
+                "steering",
+                "steering_filtered",
+                "pos",
+                "ori",
+                "delta_best",
+                "last_impact_time",
+                "last_impact_magnitude",
+            ):
                 add(car_fields, name, row.get(name))
 
     if car_frames == 0:
@@ -104,18 +112,30 @@ def main(tape_path):
         return
     duration = last_time - first_time
     print(f"tape: {tape_path}")
-    print(f"car frames: {car_frames} over {duration:.1f} s  ({car_frames / max(duration, 0.001):.1f} per second)")
+    print(
+        f"car frames: {car_frames} over {duration:.1f} s  ({car_frames / max(duration, 0.001):.1f} per second)"
+    )
     if duration <= 0:
-        print("BUFFER FROZEN: the sim clock never moved. Was the game paused or in a menu?")
+        print(
+            "BUFFER FROZEN: the sim clock never moved. Was the game paused or in a menu?"
+        )
     if race_lines == 0:
-        print("No race snapshots: this is a v1 tape (or the game was not in a session).")
+        print(
+            "No race snapshots: this is a v1 tape (or the game was not in a session)."
+        )
         return
     race_span = last_race_time - first_race_time
-    print(f"race snapshots: {race_lines}  ({race_lines / max(race_span, 0.001):.1f} per second)")
-    print(f"opponents per snapshot: min {min(opponents_per_snapshot)}  max {max(opponents_per_snapshot)}")
+    print(
+        f"race snapshots: {race_lines}  ({race_lines / max(race_span, 0.001):.1f} per second)"
+    )
+    print(
+        f"opponents per snapshot: min {min(opponents_per_snapshot)}  max {max(opponents_per_snapshot)}"
+    )
     print(f"opponent rows with no telemetry: {opponents_without_telemetry}")
     if near_lines:
-        print(f"near-car lines: {near_lines}  (average {near_cars_total / near_lines:.1f} cars when someone was near)")
+        print(
+            f"near-car lines: {near_lines}  (average {near_cars_total / near_lines:.1f} cars when someone was near)"
+        )
     else:
         print("near-car lines: 0  (nobody came within the spotter radius)")
 

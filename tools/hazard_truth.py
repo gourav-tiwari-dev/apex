@@ -7,6 +7,7 @@ for a place already called in the 10 s before (two cars of one crash were two ca
 
 Usage: hazard_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)
 Exit code 0 = every call had its car."""
+
 import gzip
 import json
 import os
@@ -36,7 +37,7 @@ def my_lap_dists(tape):
                 if d.get("t") is None:
                     rows.append((d["elapsed_time"], d["lap_dist"]))
     except (EOFError, zlib.error, json.JSONDecodeError):
-        pass                            # a tape cut off mid-write
+        pass  # a tape cut off mid-write
     return rows
 
 
@@ -65,16 +66,27 @@ def main():
         last_at_place = {}
         for when, kind, facts in calls:
             place = facts.get("corner")
-            if place is not None and place in last_at_place and when - last_at_place[place] < SAME_PLACE_S:
+            if (
+                place is not None
+                and place in last_at_place
+                and when - last_at_place[place] < SAME_PLACE_S
+            ):
                 repeats += 1
             last_at_place[place] = when
             snap = min(race_snapshots, key=lambda s: abs(s.sim_time - when))
-            length = snap.session.lap_length or max([o.lap_dist for o in snap.opponents] + [0.0])
+            length = snap.session.lap_length or max(
+                [o.lap_dist for o in snap.opponents] + [0.0]
+            )
             my_lap_dist = lap_dist_at(mine, when)
             limit = STOPPED_TRUTH_KMH if kind == "CAR_STOPPED_AHEAD" else SLOW_TRUTH_KMH
             slowest = None
             for car in snap.opponents:
-                if car.in_pits or car.speed_kmh is None or my_lap_dist is None or not length:
+                if (
+                    car.in_pits
+                    or car.speed_kmh is None
+                    or my_lap_dist is None
+                    or not length
+                ):
                     continue
                 ahead = (car.lap_dist - my_lap_dist) % length
                 if abs(ahead - facts.get("metres", 0)) <= NEAR_M:
@@ -83,11 +95,17 @@ def main():
             if slowest is not None and slowest < limit:
                 backed += 1
             else:
-                shown = "no car there" if slowest is None else f"slowest there {slowest:.0f} km/h"
+                shown = (
+                    "no car there"
+                    if slowest is None
+                    else f"slowest there {slowest:.0f} km/h"
+                )
                 wrong.append(f"{tape} {when:.1f}s {kind} {place}: {shown}")
         total_calls += len(calls)
         total_repeats += repeats
-        print(f"{tape}: {len(calls)} calls, {backed} with the car there, {repeats} for a place called in the 10 s before")
+        print(
+            f"{tape}: {len(calls)} calls, {backed} with the car there, {repeats} for a place called in the 10 s before"
+        )
     print(f"{total_calls} calls, {total_repeats} repeats for the same place")
     if not wrong:
         print("PASS")

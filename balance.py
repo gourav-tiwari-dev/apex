@@ -20,13 +20,14 @@ balance 1.00 = his normal for that speed and phase, 0.70 = rotating 30 % less (u
 GUESSED thresholds, to be confirmed against his feel: understeer below 0.75, oversteer above
 1.30 or countersteer on 2 % of the cornering samples, on the median of at least 3 laps.
 """
+
 import statistics
 
 BAND_KMH = 20
 TURNING_MIN_KMH = 40.0
-TURNING_MIN_STEER = 0.03       # below this the stick is centred: no balance to read
-TURNING_MIN_LAT = 2.0          # m/s2: actually cornering
-PHASE_SPLIT_KMH = 5.0          # within this of the slowest point is the middle
+TURNING_MIN_STEER = 0.03  # below this the stick is centred: no balance to read
+TURNING_MIN_LAT = 2.0  # m/s2: actually cornering
+PHASE_SPLIT_KMH = 5.0  # within this of the slowest point is the middle
 UNDERSTEER_BELOW = 0.75
 OVERSTEER_ABOVE = 1.30
 COUNTERSTEER_SHARE = 0.02
@@ -36,20 +37,39 @@ PHASES = ("entry", "mid", "exit")
 
 # the standard driver fix, per phase (the words a coach would use)
 FIX = {
-    ("entry", "understeer"): "Understeer on entry. Brake a touch earlier and straighter, trail it in, less steering.",
-    ("mid", "understeer"): "Understeer in the middle. Less steering, be patient, let it turn before the throttle.",
-    ("exit", "understeer"): "Understeer on exit. Wait on the throttle, squeeze it on as you unwind.",
-    ("entry", "oversteer"): "Rear's loose on entry. Come off the brake smoother, less trail.",
+    (
+        "entry",
+        "understeer",
+    ): "Understeer on entry. Brake a touch earlier and straighter, trail it in, less steering.",
+    (
+        "mid",
+        "understeer",
+    ): "Understeer in the middle. Less steering, be patient, let it turn before the throttle.",
+    (
+        "exit",
+        "understeer",
+    ): "Understeer on exit. Wait on the throttle, squeeze it on as you unwind.",
+    (
+        "entry",
+        "oversteer",
+    ): "Rear's loose on entry. Come off the brake smoother, less trail.",
     ("mid", "oversteer"): "Rear's loose in the middle. Smooth hands, no sudden lift.",
-    ("exit", "oversteer"): "Oversteer on exit. Straighten the wheel first, then the throttle, smoother.",
+    (
+        "exit",
+        "oversteer",
+    ): "Oversteer on exit. Straighten the wheel first, then the throttle, smoother.",
 }
 
 
 def turning(frame):
     # yaw exactly 0 means no yaw was recorded (LMU's own telemetry files): it would read as
     # the car never rotating, which is not understeer, it is no data
-    return (frame.speed_kmh > TURNING_MIN_KMH and abs(frame.steering_filtered) > TURNING_MIN_STEER
-            and abs(frame.accel_lat) > TURNING_MIN_LAT and frame.yaw_rate != 0.0)
+    return (
+        frame.speed_kmh > TURNING_MIN_KMH
+        and abs(frame.steering_filtered) > TURNING_MIN_STEER
+        and abs(frame.accel_lat) > TURNING_MIN_LAT
+        and frame.yaw_rate != 0.0
+    )
 
 
 def rotation_per_steer(frame):
@@ -66,11 +86,11 @@ class BalanceMeter:
     it stays silent on them."""
 
     def __init__(self):
-        self.samples = {}      # (band, phase) -> rotation per steer, every lap so far
-        self.passes = {}       # corner -> list of {"entry": [..], "mid": [..], "exit": [..], "countersteer": share}
+        self.samples = {}  # (band, phase) -> rotation per steer, every lap so far
+        self.passes = {}  # corner -> list of {"entry": [..], "mid": [..], "exit": [..], "countersteer": share}
         self.corner = None
         self.frames = []
-        self.normals = None    # (band, phase) -> median, rebuilt after each corner pass
+        self.normals = None  # (band, phase) -> median, rebuilt after each corner pass
 
     def update(self, frame, corner):
         if frame.steering_filtered is None or frame.yaw_rate is None:
@@ -103,7 +123,7 @@ class BalanceMeter:
                 cornering += 1
                 if (frame.steering_filtered > 0) != (frame.yaw_rate > 0):
                     against += 1
-                    continue              # countersteer is counted, not averaged in
+                    continue  # countersteer is counted, not averaged in
             if frame.speed_kmh <= low:
                 phase = "mid"
             elif index < slowest:
@@ -114,7 +134,10 @@ class BalanceMeter:
             raw[phase].append((band_of(frame.speed_kmh), value))
             self.samples.setdefault((band_of(frame.speed_kmh), phase), []).append(value)
         self.normals = None
-        one_pass = {"raw": raw, "countersteer": against / cornering if cornering else 0.0}
+        one_pass = {
+            "raw": raw,
+            "countersteer": against / cornering if cornering else 0.0,
+        }
         self.passes.setdefault(corner, []).append(one_pass)
         return corner
 
@@ -144,11 +167,23 @@ class BalanceMeter:
         passes = self.passes.get(corner, [])
         if len(passes) < LAPS_TO_JUDGE:
             return None
-        result = {"laps": len(passes),
-                  "countersteer": round(statistics.median(p["countersteer"] for p in passes), 3)}
+        result = {
+            "laps": len(passes),
+            "countersteer": round(
+                statistics.median(p["countersteer"] for p in passes), 3
+            ),
+        }
         for phase in PHASES:
-            values = [b for b in (self.pass_balance(p, phase) for p in passes) if b is not None]
-            result[phase] = round(statistics.median(values), 2) if len(values) >= LAPS_TO_JUDGE else None
+            values = [
+                b
+                for b in (self.pass_balance(p, phase) for p in passes)
+                if b is not None
+            ]
+            result[phase] = (
+                round(statistics.median(values), 2)
+                if len(values) >= LAPS_TO_JUDGE
+                else None
+            )
         return result
 
     def problems(self, corner):
@@ -165,8 +200,16 @@ class BalanceMeter:
                 found.append((phase, "understeer", round(1 - value, 2)))
             elif value > OVERSTEER_ABOVE:
                 found.append((phase, "oversteer", round(value - 1, 2)))
-        if balance["countersteer"] >= COUNTERSTEER_SHARE and not any(k == "oversteer" for _, k, _ in found):
-            found.append(("exit" if balance["exit"] and balance["exit"] > 1 else "mid", "oversteer", 0.3))
+        if balance["countersteer"] >= COUNTERSTEER_SHARE and not any(
+            k == "oversteer" for _, k, _ in found
+        ):
+            found.append(
+                (
+                    "exit" if balance["exit"] and balance["exit"] > 1 else "mid",
+                    "oversteer",
+                    0.3,
+                )
+            )
         found.sort(key=lambda item: item[2], reverse=True)
         return found
 
@@ -179,11 +222,17 @@ def describe(balance):
         if value is None:
             words[phase] = "not enough data"
         elif value < UNDERSTEER_BELOW:
-            words[phase] = f"understeer: rotating {round((1 - value) * 100)}% less than your normal {phase}"
+            words[phase] = (
+                f"understeer: rotating {round((1 - value) * 100)}% less than your normal {phase}"
+            )
         elif value > OVERSTEER_ABOVE:
-            words[phase] = f"oversteer: rotating {round((value - 1) * 100)}% more than your normal {phase}"
+            words[phase] = (
+                f"oversteer: rotating {round((value - 1) * 100)}% more than your normal {phase}"
+            )
         else:
             words[phase] = "normal"
     if balance["countersteer"] >= COUNTERSTEER_SHARE:
-        words["countersteer"] = f"countersteering on {round(balance['countersteer'] * 100)}% of the corner: the rear is stepping out"
+        words["countersteer"] = (
+            f"countersteering on {round(balance['countersteer'] * 100)}% of the corner: the rear is stepping out"
+        )
     return words

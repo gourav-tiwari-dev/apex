@@ -8,6 +8,7 @@
 One launch covers practice, qualifying and the race: each LMU session becomes its own
 Apex session, and the debrief runs after a race. Ctrl+C when you are done for the night.
 """
+
 import argparse
 
 from memory import latest_session_id, load_latest_contract, connect_db
@@ -21,7 +22,7 @@ from seats.setup_engineer import advice_for
 from datetime import datetime
 from voice import Voice
 
-RACE_SESSIONS = range(10, 14)      # mSession 10-13 are race sessions
+RACE_SESSIONS = range(10, 14)  # mSession 10-13 are race sessions
 
 
 def brief(conn):
@@ -29,7 +30,7 @@ def brief(conn):
     Returns the lines said, so they can be logged under the first session of the night."""
     said = []
     session = latest_session_id(conn) or 0
-    contract = load_latest_contract(conn, session+1)
+    contract = load_latest_contract(conn, session + 1)
     if contract is not None:
         # no speeds on the radio: he drives by feel (24 Sep). Jobs written before that day
         # carry a speed in their text, so those get the plain version.
@@ -42,9 +43,13 @@ def brief(conn):
 
     habits = memory_facts(conn, "lap_one") + memory_facts(conn, "pass_attempts")
     if habits:
-        said.append(("memory", "BRIEF_HABIT", f"From your last races: {habits[0]['summary']}."))
+        said.append(
+            ("memory", "BRIEF_HABIT", f"From your last races: {habits[0]['summary']}.")
+        )
 
-    last_race = conn.execute("SELECT MAX(id) FROM sessions WHERE session_type BETWEEN 10 AND 13").fetchone()[0]
+    last_race = conn.execute(
+        "SELECT MAX(id) FROM sessions WHERE session_type BETWEEN 10 AND 13"
+    ).fetchone()[0]
     if last_race is not None:
         for advice in advice_for(conn, last_race)[:1]:
             said.append(("setup", "BRIEF_" + advice["kind"], advice["conclusion"]))
@@ -57,12 +62,21 @@ def brief(conn):
 
 def log_brief(conn, session_id, said):
     for seat, kind, text in said:
-        call = Call(seat=seat, kind=kind, sim_time=0.0, priority=MEMORY, ttl=0.0, conclusion=text)
+        call = Call(
+            seat=seat,
+            kind=kind,
+            sim_time=0.0,
+            priority=MEMORY,
+            ttl=0.0,
+            conclusion=text,
+        )
         save_radio(conn, session_id, call, "spoken", text)
 
 
 def how_it_ended(conn, session_id):
-    row = conn.execute("SELECT end_reason, session_type FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute(
+        "SELECT end_reason, session_type FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
     return row[0], row[1]
 
 
@@ -85,7 +99,9 @@ def race_night(clean, record=False):
 def race_sessions(conn, clean, launch_id, voice, said):
     first = True
     while True:
-        session_id = run_session(False, None, clean=clean, launch_id=launch_id, voice=voice)
+        session_id = run_session(
+            False, None, clean=clean, launch_id=launch_id, voice=voice
+        )
         if first:
             log_brief(conn, session_id, said)
             first = False
@@ -113,13 +129,25 @@ def replay_night(tape, speed, clean):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Apex race engineer")
-    parser.add_argument("--replay", nargs="?", const=TAPE_PATH, default=None,
-                        help="replay a tape instead of reading the game")
-    parser.add_argument("--speed", type=float, default=None,
-                        help="replay speed: 1 = real time, leave out for max speed")
+    parser.add_argument(
+        "--replay",
+        nargs="?",
+        const=TAPE_PATH,
+        default=None,
+        help="replay a tape instead of reading the game",
+    )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=None,
+        help="replay speed: 1 = real time, leave out for max speed",
+    )
     parser.add_argument("--clean", action="store_true", help="no swearing")
-    parser.add_argument("--record", action="store_true",
-                        help="recording a clip: the standard voice only, never the cloned one")
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="recording a clip: the standard voice only, never the cloned one",
+    )
     args = parser.parse_args()
     if args.replay:
         replay_night(args.replay, args.speed, args.clean)

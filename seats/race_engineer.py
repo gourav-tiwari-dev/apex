@@ -4,16 +4,25 @@ where you are in the race every few laps.
 Everything comes from the race snapshots. Urgent things (lights out, safety car, blue flag,
 yellow) come from the voice bank; the rest is phrased by the persona on the next straight.
 """
+
 import math
 
 from radio import Call, RACE_CONTROL, ENGINEER
-from race_state import identity, same_class_neighbours, laps_to_go, YELLOW_FLAG, said_place, class_place, multiclass
+from race_state import (
+    identity,
+    same_class_neighbours,
+    laps_to_go,
+    YELLOW_FLAG,
+    said_place,
+    class_place,
+    multiclass,
+)
 
-FORMATION = 3                 # mGamePhase values
+FORMATION = 3  # mGamePhase values
 GREEN = 5
 SAFETY_CAR = 6
-FLAG = 8                      # the leader has taken the chequered flag
-BLUE_FLAG = 6                 # mFlag value
+FLAG = 8  # the leader has taken the chequered flag
+BLUE_FLAG = 6  # mFlag value
 # mSectorFlag: 1 is a local yellow, nothing else is (race_state.YELLOW_FLAG, measured on all 5
 # race tapes 26 Sep). The 23 Sep note "1 (and sometimes 3)" was wrong about 3: it shows before
 # the race and when the clock runs out, and said "Yellow flag" at the end of the 25 Sep night
@@ -29,11 +38,11 @@ INCIDENT_KINDS = ("SPIN", "CONTACT", "IMPACT")
 # Track limits: a step is said once it matters for a penalty. 24 Sep: "Track limits at X. Keep it
 # inside." at steps 3, 5, 6 and 7 of 20, never near one; Crew Chief users' commonest complaint is
 # off-track warnings every time "since they already know" (27 Sep, RACE_MODEL.md)
-LIMITS_SAY_FROM_SHARE = 0.5   # when he crosses half way to a penalty
-LIMITS_EVERY_STEP_LAST = 3    # and every step in the last three before it
+LIMITS_SAY_FROM_SHARE = 0.5  # when he crosses half way to a penalty
+LIMITS_EVERY_STEP_LAST = 3  # and every step in the last three before it
 STOPPED_KMH = 20.0
 STOPPED_FOR_S = 3.0
-AFTER_INCIDENT_S = 30.0       # a stop this soon after a spin or a hit is that incident
+AFTER_INCIDENT_S = 30.0  # a stop this soon after a spin or a hit is that incident
 # GUESSED: the flag list uses the game's own sector numbering (index 0 = sector 3), like mSector.
 NEXT_SECTOR = {1: 2, 2: 0, 0: 1}
 # The game numbers MY sector 1, 2, 0 (0 = sector 3); the sector flags are a list in track order
@@ -42,15 +51,15 @@ NEXT_SECTOR = {1: 2, 2: 0, 0: 1}
 # twice). Checked on the tape: with this mapping none of the 4 fire.
 FLAG_SLOT = {1: 0, 2: 1, 0: 2}
 REPORT_EVERY_LAPS = 3
-REPORT_TTL_S = 20.0           # a gap report can wait for a straight, but not for ever
+REPORT_TTL_S = 20.0  # a gap report can wait for a straight, but not for ever
 
 # the race picture at the line (24 Sep: "I got no data of other cars, like the car behind is
 # closing in, or I'm closing on the next car, keep going" and "the lap times I need to catch
 # the next guy", "at this pace the next battle is on lap 5 or 6")
 RACE_SESSIONS = range(10, 14)
-WATCH_GAP_S = 8.0             # further than this, a car is not a target yet
-FIGHT_GAP_S = 0.8             # closer than this, the spotter and racecraft have it
-TREND_S_PER_LAP = 0.1         # a tenth a lap is a trend; less is noise
+WATCH_GAP_S = 8.0  # further than this, a car is not a target yet
+FIGHT_GAP_S = 0.8  # closer than this, the spotter and racecraft have it
+TREND_S_PER_LAP = 0.1  # a tenth a lap is a trend; less is noise
 # needing more than this share of a lap, every lap, is not a target: 0.66 s at Monza, 1.4 s at
 # Le Mans (a fixed 1 s hid the call at Le Mans, where 1.1 s is 0.5 % of a lap)
 MAX_GAIN_NEEDED_SHARE = 0.006
@@ -59,13 +68,39 @@ GROWING_EVERY_LAPS = 3
 
 
 def urgent(kind, text, now, priority=RACE_CONTROL):
-    return Call(seat="race_engineer", kind=kind, sim_time=now, priority=priority, ttl=3.0,
-                conclusion=text, template=text, urgent=True)
+    return Call(
+        seat="race_engineer",
+        kind=kind,
+        sim_time=now,
+        priority=priority,
+        ttl=3.0,
+        conclusion=text,
+        template=text,
+        urgent=True,
+    )
 
 
-def spoken(kind, conclusion, now, facts, template=None, priority=ENGINEER, ttl=REPORT_TTL_S, evidence=None):
-    return Call(seat="race_engineer", kind=kind, sim_time=now, priority=priority, ttl=ttl,
-                conclusion=conclusion, facts=facts, template=template, evidence=evidence or {})
+def spoken(
+    kind,
+    conclusion,
+    now,
+    facts,
+    template=None,
+    priority=ENGINEER,
+    ttl=REPORT_TTL_S,
+    evidence=None,
+):
+    return Call(
+        seat="race_engineer",
+        kind=kind,
+        sim_time=now,
+        priority=priority,
+        ttl=ttl,
+        conclusion=conclusion,
+        facts=facts,
+        template=template,
+        evidence=evidence or {},
+    )
 
 
 def lap_time_parts(seconds_total):
@@ -96,14 +131,16 @@ def car_behind(race):
 CATCH_UPPER = 1.5
 
 
-OWN_SPIN_YELLOW_S = 20.0       # the yellow he causes himself is not news to him
+OWN_SPIN_YELLOW_S = 20.0  # the yellow he causes himself is not news to him
 YELLOW_AGAIN_S = 30.0
-PITS_AHEAD_PLACES = 2          # a car this many places ahead pitting is worth a call
-HELD_UP_COST_S = 0.7           # stuck behind a car costing this much a lap vs clean air
+PITS_AHEAD_PLACES = 2  # a car this many places ahead pitting is worth a call
+HELD_UP_COST_S = 0.7  # stuck behind a car costing this much a lap vs clean air
 
 
-ALONE_S = 5.0                  # nobody of his class this close either side: he is on his own
-REPORT_MAX_GAP_S = 30.0        # a gap bigger than this is "nobody close", not a number to chase
+ALONE_S = 5.0  # nobody of his class this close either side: he is on his own
+REPORT_MAX_GAP_S = (
+    30.0  # a gap bigger than this is "nobody close", not a number to chase
+)
 
 
 def sure_closing(model, front, back):
@@ -119,7 +156,7 @@ def sure_closing(model, front, back):
 
 class RaceEngineer:
     def __init__(self):
-        self.orders = None            # his standing orders: "gaps every lap"
+        self.orders = None  # his standing orders: "gaps every lap"
         self.phase = None
         self.formation_called = False
         self.blue_flag = False
@@ -129,31 +166,33 @@ class RaceEngineer:
         self.dents = None
         self.last_report_lap = 0
         self.last_gap_ahead = None
-        self.gaps_at_line = {}        # "ahead" / "behind" -> (identity, gap) at the last line
-        self.pits_said = set()        # (time, car) pit entries already called
+        self.gaps_at_line = {}  # "ahead" / "behind" -> (identity, gap) at the last line
+        self.pits_said = set()  # (time, car) pit entries already called
         self.own_spin_at = None
-        self.incident_at = None       # sim time of his last spin or hit
+        self.incident_at = None  # sim time of his last spin or hit
         self.stopped_since = None
         self.asked_if_ok = False
         self.yellow_said_at = None
-        self.clean_laps = []          # my road laps with nobody within a second ahead all lap
+        self.clean_laps = []  # my road laps with nobody within a second ahead all lap
         self.held_up_said = set()
-        self.to_go_at_line = None     # laps to go as counted at the last line
+        self.to_go_at_line = None  # laps to go as counted at the last line
         self.flag_called = False
-        self.line_time = None         # sim time of the last line crossing
-        self.my_lap = None            # his last lap, the game's or measured by Apex
+        self.line_time = None  # sim time of the last line crossing
+        self.my_lap = None  # his last lap, the game's or measured by Apex
         self.finish_called = False
-        self.last_said_lap = {}       # kind -> lap it was last said
+        self.last_said_lap = {}  # kind -> lap it was last said
 
     def after_a_crash(self, moment, me, phase, now):
-        """"You OK? Car's stopped." once, when he is stopped on track just after a spin or a hit."""
+        """ "You OK? Car's stopped." once, when he is stopped on track just after a spin or a hit."""
         if moment.frame is None:
             return []
         speed = moment.frame.speed_kmh
         if speed > CRAWLING_KMH:
-            self.asked_if_ok = False           # racing again: the next incident may ask again
+            self.asked_if_ok = False  # racing again: the next incident may ask again
         stopped = speed < STOPPED_KMH and not me.in_pits and phase == GREEN
-        after_incident = self.incident_at is not None and now - self.incident_at < AFTER_INCIDENT_S
+        after_incident = (
+            self.incident_at is not None and now - self.incident_at < AFTER_INCIDENT_S
+        )
         if not (stopped and after_incident):
             self.stopped_since = None
             return []
@@ -163,7 +202,14 @@ class RaceEngineer:
             return []
         self.asked_if_ok = True
         words = "You OK? Car's stopped."
-        ask = spoken("ARE_YOU_OK", words, now, {"speed_kmh": round(speed)}, template=words, priority=RACE_CONTROL)
+        ask = spoken(
+            "ARE_YOU_OK",
+            words,
+            now,
+            {"speed_kmh": round(speed)},
+            template=words,
+            priority=RACE_CONTROL,
+        )
         ask.immediate = True
         return [ask]
 
@@ -187,9 +233,15 @@ class RaceEngineer:
         phase = session.game_phase
         if phase == FORMATION and not self.formation_called:
             self.formation_called = True
-            calls.append(spoken("FORMATION",
-                                "Formation lap: weave to put heat in the tyres, and brake hard a few times to warm the brakes.",
-                                now, {}, template="Formation lap. Heat in the tyres, heat in the brakes."))
+            calls.append(
+                spoken(
+                    "FORMATION",
+                    "Formation lap: weave to put heat in the tyres, and brake hard a few times to warm the brakes.",
+                    now,
+                    {},
+                    template="Formation lap. Heat in the tyres, heat in the brakes.",
+                )
+            )
         if phase == GREEN and self.phase is not None and self.phase < GREEN:
             calls.append(urgent("LIGHTS_OUT", "Lights out. Go.", now))
         if phase == SAFETY_CAR and self.phase != SAFETY_CAR:
@@ -202,14 +254,31 @@ class RaceEngineer:
             self.flag_called = True
             already_told = self.to_go_at_line is not None and self.to_go_at_line <= 1
             if not already_told:
-                calls.append(spoken("FLAG_LAST_LAP", "The leader has the flag. This is your last lap: bring it home.",
-                                    now, {}, template="Flag's out. Last lap. Bring it home."))
+                calls.append(
+                    spoken(
+                        "FLAG_LAST_LAP",
+                        "The leader has the flag. This is your last lap: bring it home.",
+                        now,
+                        {},
+                        template="Flag's out. Last lap. Bring it home.",
+                    )
+                )
         if in_race and me.finish_status == 1 and not self.finish_called:
             self.finish_called = True
             place = said_place(race)
-            calls.append(spoken("FINISH", f"Chequered flag. {place}. Tell him where he finished, like a team would.",
-                                now, {"place": me.place, "class_place": class_place(race, me.place, me.car_class)},
-                                priority=RACE_CONTROL, template=f"Chequered flag. {place}."))
+            calls.append(
+                spoken(
+                    "FINISH",
+                    f"Chequered flag. {place}. Tell him where he finished, like a team would.",
+                    now,
+                    {
+                        "place": me.place,
+                        "class_place": class_place(race, me.place, me.car_class),
+                    },
+                    priority=RACE_CONTROL,
+                    template=f"Chequered flag. {place}.",
+                )
+            )
         self.phase = phase
 
         # flags (E2)
@@ -218,30 +287,55 @@ class RaceEngineer:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
         calls.extend(self.after_a_crash(moment, me, phase, now))
-        yellow_sectors = [i for i, flag in enumerate(session.sector_flags) if flag == YELLOW_FLAG]
-        here, next_one = FLAG_SLOT.get(me.sector), FLAG_SLOT.get(NEXT_SECTOR.get(me.sector))
+        yellow_sectors = [
+            i for i, flag in enumerate(session.sector_flags) if flag == YELLOW_FLAG
+        ]
+        here, next_one = (
+            FLAG_SLOT.get(me.sector),
+            FLAG_SLOT.get(NEXT_SECTOR.get(me.sector)),
+        )
         yellow_now = here in yellow_sectors or next_one in yellow_sectors
         # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow" twice
         # right after he spun at Indianapolis)
-        own_yellow = self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
+        own_yellow = (
+            self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
+        )
         if crawling:
             own_yellow = True
-        recent = self.yellow_said_at is not None and now - self.yellow_said_at < YELLOW_AGAIN_S
-        if yellow_now and not self.yellow and phase == GREEN and not own_yellow and not recent:
+        recent = (
+            self.yellow_said_at is not None
+            and now - self.yellow_said_at < YELLOW_AGAIN_S
+        )
+        if (
+            yellow_now
+            and not self.yellow
+            and phase == GREEN
+            and not own_yellow
+            and not recent
+        ):
             calls.append(urgent("YELLOW", "Yellow flag. Yellow.", now))
             self.yellow_said_at = now
         self.yellow = yellow_now
 
         # penalties
         if self.penalties is not None and me.penalties > self.penalties:
-            calls.append(spoken("PENALTY", f"Penalty: {me.penalties} outstanding. Serve it.",
-                                now, {"penalties": me.penalties}, priority=RACE_CONTROL,
-                                template="Penalty. Serve it."))
+            calls.append(
+                spoken(
+                    "PENALTY",
+                    f"Penalty: {me.penalties} outstanding. Serve it.",
+                    now,
+                    {"penalties": me.penalties},
+                    priority=RACE_CONTROL,
+                    template="Penalty. Serve it.",
+                )
+            )
         self.penalties = me.penalties
 
         # track limits (E3): the game counts limit "steps" and gives a penalty at
         # limit_steps_per_penalty (seen on the tapes: 12 or 20)
-        stepped = self.limit_steps is not None and me.track_limit_steps > self.limit_steps
+        stepped = (
+            self.limit_steps is not None and me.track_limit_steps > self.limit_steps
+        )
         penalty_at = session.limit_steps_per_penalty
         worth_a_word = True
         if stepped and penalty_at:
@@ -251,26 +345,48 @@ class RaceEngineer:
             worth_a_word = crossed_half or near
         if stepped and worth_a_word:
             where = moment.corner or "that corner"
-            facts = {"corner": where, "steps": me.track_limit_steps,
-                     "penalty_at": session.limit_steps_per_penalty}
-            calls.append(spoken("TRACK_LIMITS",
-                                f"Track limits at {where}. {me.track_limit_steps} steps now, a penalty at {session.limit_steps_per_penalty}. Keep it inside.",
-                                now, facts, priority=RACE_CONTROL, template=f"Track limits at {where}. Keep it inside."))
+            facts = {
+                "corner": where,
+                "steps": me.track_limit_steps,
+                "penalty_at": session.limit_steps_per_penalty,
+            }
+            calls.append(
+                spoken(
+                    "TRACK_LIMITS",
+                    f"Track limits at {where}. {me.track_limit_steps} steps now, a penalty at {session.limit_steps_per_penalty}. Keep it inside.",
+                    now,
+                    facts,
+                    priority=RACE_CONTROL,
+                    template=f"Track limits at {where}. Keep it inside.",
+                )
+            )
         self.limit_steps = me.track_limit_steps
 
         # damage (E4)
         dent_total = sum(me.dents)
         if self.dents is not None and dent_total > self.dents:
-            calls.append(spoken("DAMAGE", "The car has picked up damage. Tell him, and say we are watching the lap times.",
-                                now, {}, template="Damage on the car. Watching your times."))
+            calls.append(
+                spoken(
+                    "DAMAGE",
+                    "The car has picked up damage. Tell him, and say we are watching the lap times.",
+                    now,
+                    {},
+                    template="Damage on the car. Watching your times.",
+                )
+            )
         self.dents = dent_total
 
         # who is catching whom, and the lap times that matter, at every line in a race
-        racing = moment.session_type in RACE_SESSIONS and phase == GREEN and not me.in_pits
+        racing = (
+            moment.session_type in RACE_SESSIONS and phase == GREEN and not me.in_pits
+        )
         if moment.lap_wrapped:
             from seats.strategist import measured_lap
-            if me.laps >= 1:                  # at lights out the "lap" is the formation (2:23, 25 Sep)
-                self.my_lap = measured_lap(me.last_lap, self.line_time, now) or self.my_lap
+
+            if me.laps >= 1:  # at lights out the "lap" is the formation (2:23, 25 Sep)
+                self.my_lap = (
+                    measured_lap(me.last_lap, self.line_time, now) or self.my_lap
+                )
             self.line_time = now
         if moment.lap_wrapped and racing and moment.lap_count >= 1:
             calls.extend(self.race_picture(race, moment.lap_count, now, moment.model))
@@ -283,8 +399,12 @@ class RaceEngineer:
         # he joined 3 minutes late, nobody was within two minutes, and the radio went quiet for the
         # race - a real engineer talks a lone driver through his laps)
         alone = racing and self.alone(race, moment.model)
-        every_lap = alone or (self.orders is not None and self.orders.gaps_every_lap())   # his order
-        due = moment.lap_count >= self.last_report_lap + (1 if every_lap else REPORT_EVERY_LAPS)
+        every_lap = alone or (
+            self.orders is not None and self.orders.gaps_every_lap()
+        )  # his order
+        due = moment.lap_count >= self.last_report_lap + (
+            1 if every_lap else REPORT_EVERY_LAPS
+        )
         if moment.lap_wrapped and due and moment.lap_count > 1:
             self.last_report_lap = moment.lap_count
             calls.append(self.gap_report(race, now, moment.model, moment.lap_count))
@@ -304,14 +424,18 @@ class RaceEngineer:
             gained = self.gain_since_last_line("ahead", ahead, gap_ahead)
             if model is not None:
                 gained = sure_closing(model, ahead.id, "me")
-            chase = self.chase_call(ahead, gap_ahead, gained, to_go, lap, final_lap, now)
+            chase = self.chase_call(
+                ahead, gap_ahead, gained, to_go, lap, final_lap, now
+            )
             if chase is not None:
                 calls.append(chase)
         if behind is not None and gap_behind is not None:
             his_gain = self.gain_since_last_line("behind", behind, gap_behind)
             if model is not None:
                 his_gain = sure_closing(model, "me", behind.id)
-            defence = self.defence_call(behind, gap_behind, his_gain, lap, final_lap, now)
+            defence = self.defence_call(
+                behind, gap_behind, his_gain, lap, final_lap, now
+            )
             if defence is not None:
                 calls.append(defence)
         self.gaps_at_line = {}
@@ -329,12 +453,20 @@ class RaceEngineer:
             if what != "in" or (when, key) in self.pits_said:
                 continue
             car = model.car(key)
-            if car is None or car.car_class != race.me.car_class or car.place >= race.me.place \
-                    or race.me.place - car.place > PITS_AHEAD_PLACES:
+            if (
+                car is None
+                or car.car_class != race.me.car_class
+                or car.place >= race.me.place
+                or race.me.place - car.place > PITS_AHEAD_PLACES
+            ):
                 continue
             self.pits_said.add((when, key))
             words = f"P{class_place(race, car.place, car.car_class)}'s in the pits. That's a place for you."
-            calls.append(spoken("PITS_AHEAD", words, now, {"their_place": car.place}, template=words))
+            calls.append(
+                spoken(
+                    "PITS_AHEAD", words, now, {"their_place": car.place}, template=words
+                )
+            )
         return calls
 
     def held_up(self, race, model, corners, now):
@@ -344,8 +476,14 @@ class RaceEngineer:
         me = race.me
         lap = model.road_lap("me")
         ahead, _, _, _ = same_class_neighbours(race, model)
-        stuck_since = model.close_since.get((ahead.id, "me")) if ahead is not None else None
-        followed = stuck_since is not None and lap is not None and now - stuck_since >= 0.9 * lap
+        stuck_since = (
+            model.close_since.get((ahead.id, "me")) if ahead is not None else None
+        )
+        followed = (
+            stuck_since is not None
+            and lap is not None
+            and now - stuck_since >= 0.9 * lap
+        )
         if lap is not None and not followed:
             self.clean_laps.append(lap)
             return []
@@ -361,10 +499,22 @@ class RaceEngineer:
         strong = None
         if corners:
             gains = model.corner_gains("me", ahead.id, corners)
-            strong = max(gains, key=gains.get) if gains and max(gains.values()) >= 0.15 else None
+            strong = (
+                max(gains, key=gains.get)
+                if gains and max(gains.values()) >= 0.15
+                else None
+            )
         where = f"Pass it into {strong}" if strong else "Pass it"
         words = f"You're losing {cost} a lap stuck behind that car. {where}, or drop back to two seconds."
-        return [spoken("HELD_UP", words, now, {"cost_s": cost, "corner": strong}, template=words)]
+        return [
+            spoken(
+                "HELD_UP",
+                words,
+                now,
+                {"cost_s": cost, "corner": strong},
+                template=words,
+            )
+        ]
 
     def gain_since_last_line(self, side, car, gap):
         """How much the gap shrank over the last lap (> 0: shrinking), or None when this is not
@@ -389,13 +539,26 @@ class RaceEngineer:
             catch_lap = lap + math.ceil(round(gap / gained * CATCH_UPPER, 3)) - 1
             if final_lap is None or catch_lap <= final_lap:
                 self.last_said_lap["CATCHING"] = lap
-                facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": gained, "catch_lap": catch_lap}
-                return spoken("CATCHING",
-                              f"The car ahead is {gap} s up the road and you are taking {gained} s a lap out of that: at this pace you are on it by lap {catch_lap}. Keep pushing.",
-                              now, facts,
-                              template=f"Car ahead, {gap}. You're taking {tenths(gained)} a lap. On it by lap {catch_lap}.")
+                facts = {
+                    "driver": driver,
+                    "gap_s": gap,
+                    "gain_per_lap_s": gained,
+                    "catch_lap": catch_lap,
+                }
+                return spoken(
+                    "CATCHING",
+                    f"The car ahead is {gap} s up the road and you are taking {gained} s a lap out of that: at this pace you are on it by lap {catch_lap}. Keep pushing.",
+                    now,
+                    facts,
+                    template=f"Car ahead, {gap}. You're taking {tenths(gained)} a lap. On it by lap {catch_lap}.",
+                )
         # not closing fast enough to catch before the flag: the lap time that would
-        if to_go is None or to_go < 1 or ahead.last_lap <= 0 or self.said_recently("PACE_TARGET", lap, PACE_TARGET_EVERY_LAPS):
+        if (
+            to_go is None
+            or to_go < 1
+            or ahead.last_lap <= 0
+            or self.said_recently("PACE_TARGET", lap, PACE_TARGET_EVERY_LAPS)
+        ):
             return None
         needed = gap / to_go
         if needed > MAX_GAIN_NEEDED_SHARE * ahead.last_lap:
@@ -404,13 +567,22 @@ class RaceEngineer:
         their_min, their_sec = lap_time_parts(ahead.last_lap)
         target_min, target_sec = lap_time_parts(target)
         self.last_said_lap["PACE_TARGET"] = lap
-        facts = {"driver": driver, "gap_s": gap, "laps_to_go": to_go,
-                 "their_minutes": their_min, "their_seconds": their_sec,
-                 "target_minutes": target_min, "target_seconds": target_sec}
-        return spoken("PACE_TARGET",
-                      f"The car ahead is {gap} s up, lapping {their_min}:{their_sec:04.1f}. To catch it by the flag you need {target_min}:{target_sec:04.1f} laps.",
-                      now, facts,
-                      template=f"Car ahead's doing {their_min}:{their_sec:04.1f}. You need {target_min}:{target_sec:04.1f} to catch it by the flag.")
+        facts = {
+            "driver": driver,
+            "gap_s": gap,
+            "laps_to_go": to_go,
+            "their_minutes": their_min,
+            "their_seconds": their_sec,
+            "target_minutes": target_min,
+            "target_seconds": target_sec,
+        }
+        return spoken(
+            "PACE_TARGET",
+            f"The car ahead is {gap} s up, lapping {their_min}:{their_sec:04.1f}. To catch it by the flag you need {target_min}:{target_sec:04.1f} laps.",
+            now,
+            facts,
+            template=f"Car ahead's doing {their_min}:{their_sec:04.1f}. You need {target_min}:{target_sec:04.1f} to catch it by the flag.",
+        )
 
     def defence_call(self, behind, gap, his_gain, lap, final_lap, now):
         if gap < FIGHT_GAP_S or gap > WATCH_GAP_S or his_gain is None:
@@ -420,8 +592,13 @@ class RaceEngineer:
         if his_gain >= TREND_S_PER_LAP:
             reach_lap = lap + math.ceil(round(gap / his_gain, 3)) - 1
             if final_lap is not None and reach_lap > final_lap:
-                return None                      # the race runs out before he gets there
-            facts = {"driver": driver, "gap_s": gap, "gain_per_lap_s": his_gain, "reach_lap": reach_lap}
+                return None  # the race runs out before he gets there
+            facts = {
+                "driver": driver,
+                "gap_s": gap,
+                "gain_per_lap_s": his_gain,
+                "reach_lap": reach_lap,
+            }
             conclusion = f"The car behind is {gap} s back and closing {his_gain} s a lap: on your gearbox by lap {reach_lap}."
             template = f"Car behind, {gap}. Closing {tenths(his_gain)} a lap. On you by lap {reach_lap}."
             if behind.last_lap > 0:
@@ -431,17 +608,28 @@ class RaceEngineer:
                 template += f" Match {his_min}:{his_sec:04.1f}."
             self.last_said_lap["THREAT_BEHIND"] = lap
             return spoken("THREAT_BEHIND", conclusion, now, facts, template=template)
-        if -his_gain >= 2 * TREND_S_PER_LAP and gap <= 3.0 and not self.said_recently("GAP_GROWING", lap, GROWING_EVERY_LAPS):
+        if (
+            -his_gain >= 2 * TREND_S_PER_LAP
+            and gap <= 3.0
+            and not self.said_recently("GAP_GROWING", lap, GROWING_EVERY_LAPS)
+        ):
             self.last_said_lap["GAP_GROWING"] = lap
             facts = {"driver": driver, "gap_s": gap}
-            return spoken("GAP_GROWING", f"The gap back to the car behind is growing, {gap} s now. Whatever you are doing, keep doing it.",
-                          now, facts, template=f"Gap behind growing, {gap}. Keep doing that.")
+            return spoken(
+                "GAP_GROWING",
+                f"The gap back to the car behind is growing, {gap} s now. Whatever you are doing, keep doing it.",
+                now,
+                facts,
+                template=f"Gap behind growing, {gap}. Keep doing that.",
+            )
         return None
 
     def alone(self, race, model):
         """No car of his class within ALONE_S ahead or behind on the road."""
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
-        near = [g for g in (gap_ahead, gap_behind) if g is not None and 0 <= g <= ALONE_S]
+        near = [
+            g for g in (gap_ahead, gap_behind) if g is not None and 0 <= g <= ALONE_S
+        ]
         return not near
 
     def gap_report(self, race, now, model=None, lap=None):
@@ -449,7 +637,10 @@ class RaceEngineer:
         from the race model: the game's own gap said "closing 43.8" and "car behind -213.6" in his
         online lobby (25 Sep). A gap over REPORT_MAX_GAP_S is said as "nobody close"."""
         me = race.me
-        facts = {"place": me.place, "class_place": class_place(race, me.place, me.car_class)}
+        facts = {
+            "place": me.place,
+            "class_place": class_place(race, me.place, me.car_class),
+        }
         parts = [f"{said_place(race)}."]
         if self.my_lap:
             best = me.best_lap if me.best_lap > 0 else self.my_lap
@@ -462,18 +653,30 @@ class RaceEngineer:
                 facts["off_best_s"] = off
                 parts.append(f"{minutes}:{seconds:04.1f}, {off} off your best.")
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
-        if ahead is not None and gap_ahead is not None and 0 <= gap_ahead <= REPORT_MAX_GAP_S:
+        if (
+            ahead is not None
+            and gap_ahead is not None
+            and 0 <= gap_ahead <= REPORT_MAX_GAP_S
+        ):
             gap = round(gap_ahead, 1)
             facts["gap_ahead_s"] = gap
             words = f"Car ahead {gap}."
             closing = sure_closing(model, ahead.id, "me") if model is not None else None
             if closing is not None and abs(closing) >= 0.2:
                 facts["closing_s"] = abs(round(closing, 1))
-                words += f" You're taking {abs(round(closing, 1))} a lap." if closing > 0 else f" Losing {abs(round(closing, 1))} a lap."
+                words += (
+                    f" You're taking {abs(round(closing, 1))} a lap."
+                    if closing > 0
+                    else f" Losing {abs(round(closing, 1))} a lap."
+                )
             parts.append(words)
         elif ahead is not None:
             parts.append("Nobody close ahead.")
-        if behind is not None and gap_behind is not None and 0 <= gap_behind <= REPORT_MAX_GAP_S:
+        if (
+            behind is not None
+            and gap_behind is not None
+            and 0 <= gap_behind <= REPORT_MAX_GAP_S
+        ):
             gap = round(gap_behind, 1)
             facts["gap_behind_s"] = gap
             parts.append(f"Car behind {gap} back.")

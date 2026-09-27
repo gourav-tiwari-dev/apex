@@ -18,22 +18,23 @@ The rules, like a real pit wall:
   - v3: at the start and after a restart, only the spotter, flags and answers speak until the
     race has settled (seats/settle.py decides when). Coaching in the chaos is noise
 """
+
 import hashlib
 import json
 from dataclasses import dataclass, field
 
 # Lower number = more important.
-SPOTTER = 1          # car alongside, clear, three wide
-RACE_CONTROL = 2     # flags, safety car, penalties, physics abort
-RACECRAFT = 3        # attack, defend, "not here"
-ENGINEER = 4         # gaps, damage, composure
-STRATEGY = 5         # fuel, tyres, weather, pits
-PERFORMANCE = 6      # corner deltas, lap feedback
-MEMORY = 7           # habits recalled, earned praise
+SPOTTER = 1  # car alongside, clear, three wide
+RACE_CONTROL = 2  # flags, safety car, penalties, physics abort
+RACECRAFT = 3  # attack, defend, "not here"
+ENGINEER = 4  # gaps, damage, composure
+STRATEGY = 5  # fuel, tyres, weather, pits
+PERFORMANCE = 6  # corner deltas, lap feedback
+MEMORY = 7  # habits recalled, earned praise
 
-SECONDS_PER_WORD = 0.4      # measured edge-tts pace is about 2.5 words a second
-LINE_OVERHEAD_S = 0.8       # a radio click and a breath around every line
-UNKNOWN_LINE_WORDS = 10     # an LLM line's length is unknown when it is admitted
+SECONDS_PER_WORD = 0.4  # measured edge-tts pace is about 2.5 words a second
+LINE_OVERHEAD_S = 0.8  # a radio click and a breath around every line
+UNKNOWN_LINE_WORDS = 10  # an LLM line's length is unknown when it is admitted
 
 DEFAULT_COOLDOWN_S = 8.0
 # GUESSED from his words ("less noise"): 2 engineer lines a minute. Tune on the next race.
@@ -45,25 +46,29 @@ CHAOS_ALLOWED = ("PASS_PRAISE", "STICK_IT")
 # into Arnage" four times, "stick it, cover Mulsanne Corner" twice in 8 s)
 SAME_WORDS_S = 240.0
 SEAT_COOLDOWN_S = {
-    "spotter": 0.0,         # the spotter must never be held back
+    "spotter": 0.0,  # the spotter must never be held back
     "race_control": 0.0,
-    "performance": 5.0,     # v1's SPEAK_COOLDOWN
+    "performance": 5.0,  # v1's SPEAK_COOLDOWN
 }
 
 
 @dataclass
 class Call:
-    seat: str                 # "spotter", "race_engineer", "strategist", ...
-    kind: str                 # what happened, e.g. "CAR_LEFT", "OFF_TRACK", "FUEL_TO_FINISH"
-    sim_time: float           # when the seat raised it
-    priority: int             # see the ladder above
-    ttl: float                # seconds of sim time it stays worth saying
-    conclusion: str           # the plain-English sentence code wrote; the LLM only rephrases it
-    facts: dict = field(default_factory=dict)      # the only numbers the spoken line may use
-    urgent: bool = False      # time-critical: goes out at once, from the pre-rendered voice bank
-    template: str | None = None                    # exact words; urgent calls always have one
-    evidence: dict = field(default_factory=dict)   # database ids this call rests on
-    asked: bool = False       # an answer to his push-to-talk question
+    seat: str  # "spotter", "race_engineer", "strategist", ...
+    kind: str  # what happened, e.g. "CAR_LEFT", "OFF_TRACK", "FUEL_TO_FINISH"
+    sim_time: float  # when the seat raised it
+    priority: int  # see the ladder above
+    ttl: float  # seconds of sim time it stays worth saying
+    conclusion: str  # the plain-English sentence code wrote; the LLM only rephrases it
+    facts: dict = field(
+        default_factory=dict
+    )  # the only numbers the spoken line may use
+    urgent: bool = (
+        False  # time-critical: goes out at once, from the pre-rendered voice bank
+    )
+    template: str | None = None  # exact words; urgent calls always have one
+    evidence: dict = field(default_factory=dict)  # database ids this call rests on
+    asked: bool = False  # an answer to his push-to-talk question
     # v3 (24 Sep): False by default. Code's own words are said as they are, with a Max closer
     # from lines.py; the model rewording them added ~1.8 s a line and nothing else. True only
     # for a line that genuinely needs the model's judgment.
@@ -71,7 +76,9 @@ class Call:
     # v3: goes out the moment the radio is free, even mid-corner, and is never counted in the
     # talk budget (closing alarms, "stick it", praise at the moment it is earned)
     immediate: bool = False
-    voice: str = "engineer"   # "spotter": the standard spotter voice, never the cloned one
+    voice: str = (
+        "engineer"  # "spotter": the standard spotter voice, never the cloned one
+    )
 
 
 def words_in(text):
@@ -91,19 +98,28 @@ class Governor:
         self.pending = []
         self.busy_until = 0.0
         self.last_spoken_by_seat = {}
-        self.admitted = []        # (seat, kind, sim_time) of every call put on air - hashed
-        self.dropped = []         # (call, reason) - calls that never went out, for the log
-        self.lap = 0              # the lap he is on, kept up to date by the session loop
+        self.admitted = []  # (seat, kind, sim_time) of every call put on air - hashed
+        self.dropped = []  # (call, reason) - calls that never went out, for the log
+        self.lap = 0  # the lap he is on, kept up to date by the session loop
         self.quiet_until_lap = None
-        self.orders = None             # his standing orders (orders.StandingOrders), set by the race loop
-        self.settled = True       # False from lights out until seats/settle.py says the race settled
-        self.engineer_air_times = []   # sim times of the counted lines, for the talk budget
-        self.said_at = {}              # the words of every coaching line -> when it went on air
-        self.chequered = False         # his flag is out: no more coaching this session
+        self.orders = (
+            None  # his standing orders (orders.StandingOrders), set by the race loop
+        )
+        self.settled = (
+            True  # False from lights out until seats/settle.py says the race settled
+        )
+        self.engineer_air_times = []  # sim times of the counted lines, for the talk budget
+        self.said_at = {}  # the words of every coaching line -> when it went on air
+        self.chequered = False  # his flag is out: no more coaching this session
 
     def exempt(self, call):
         """The spotter, flags and his own answers: never held, never counted."""
-        return call.urgent or call.asked or call.immediate or call.seat in NEVER_COUNTED_SEATS
+        return (
+            call.urgent
+            or call.asked
+            or call.immediate
+            or call.seat in NEVER_COUNTED_SEATS
+        )
 
     def hold_reason(self, call):
         # only the spotter, flags and his answers speak in the chaos or on quiet; an immediate
@@ -138,7 +154,12 @@ class Governor:
         reason = self.hold_reason(call)
         # the spotter's hazards are kept apart per car by track awareness itself: the same words for
         # another car are news (27 Sep, 58-car race: two "LMP2 behind" calls dropped as said_recently)
-        if reason is None and not (call.urgent or call.asked) and call.template and call.seat != "spotter":
+        if (
+            reason is None
+            and not (call.urgent or call.asked)
+            and call.template
+            and call.seat != "spotter"
+        ):
             said = self.said_at.get(call.template)
             if said is not None and call.sim_time - said < SAME_WORDS_S:
                 reason = "said_recently"
@@ -180,7 +201,10 @@ class Governor:
                 best_call = call
             elif call.priority < best_call.priority:
                 best_call = call
-            elif call.priority == best_call.priority and call.sim_time < best_call.sim_time:
+            elif (
+                call.priority == best_call.priority
+                and call.sim_time < best_call.sim_time
+            ):
                 best_call = call
         return best_call
 
@@ -231,7 +255,11 @@ class Governor:
         # flow-state rule: no talking to the driver in the middle of a corner
         if in_corner:
             return None
-        ready = [c for c in self.pending if self.cooled_down(c, now) and self.within_talk_budget(c, now)]
+        ready = [
+            c
+            for c in self.pending
+            if self.cooled_down(c, now) and self.within_talk_budget(c, now)
+        ]
         if not ready:
             return None
         return self.put_on_air(self.best(ready), now)
@@ -253,7 +281,9 @@ class Budget:
         self.spent_rs = 0.0
 
     def cost_of(self, tokens_in, tokens_out):
-        return (tokens_in * self.RS_PER_MILLION_IN + tokens_out * self.RS_PER_MILLION_OUT) / 1_000_000
+        return (
+            tokens_in * self.RS_PER_MILLION_IN + tokens_out * self.RS_PER_MILLION_OUT
+        ) / 1_000_000
 
     def charge(self, tokens_in, tokens_out):
         cost = self.cost_of(tokens_in, tokens_out)

@@ -18,63 +18,207 @@ back once, kept, shown to the coach with every question, and every seat's calls 
 Only a fact that ends the race (the fuel will not make the flag) gets through a "push" order, and
 it is said as his decision to make.
 """
+
 from dataclasses import dataclass
 
 # topic -> the stances it can take, and what he hears back
 STANCES = {
-    "pace": {"push": "Copy. We push, no holding back. I'll only come back on fuel if it won't make the flag.",
-             "save": "Copy. We save. Lift and coast into the big stops, I'll tell you when it's enough.",
-             "bring_home": "Copy. Bring it home. No risks, no lunges."},
-    "fight": {"fight": "Copy. Nobody gets past without a fight.",
-              "let_quick_go": "Copy. The genuinely quick ones go by clean, the rest we fight."},
-    "coaching": {"off": "Copy. No more coaching, just the race.",
-                 "on": "Copy. Coaching's back on."},
-    "gaps": {"every_lap": "Copy. Gaps every lap.",
-             "off": "Copy. No more gaps unless you ask.",
-             "normal": "Copy. Gaps back to normal."},
+    "pace": {
+        "push": "Copy. We push, no holding back. I'll only come back on fuel if it won't make the flag.",
+        "save": "Copy. We save. Lift and coast into the big stops, I'll tell you when it's enough.",
+        "bring_home": "Copy. Bring it home. No risks, no lunges.",
+    },
+    "fight": {
+        "fight": "Copy. Nobody gets past without a fight.",
+        "let_quick_go": "Copy. The genuinely quick ones go by clean, the rest we fight.",
+    },
+    "coaching": {
+        "off": "Copy. No more coaching, just the race.",
+        "on": "Copy. Coaching's back on.",
+    },
+    "gaps": {
+        "every_lap": "Copy. Gaps every lap.",
+        "off": "Copy. No more gaps unless you ask.",
+        "normal": "Copy. Gaps back to normal.",
+    },
 }
 
 # the plain ways he says them: (topic, stance, phrases). Checked in this order, first match per topic.
 PHRASES = [
-    ("pace", "push", ("no holding back", "flat out", "full attack", "full send", "no saving", "dont save",
-                      "stop saving", "no lift and coast", "no lifting", "we push", "we will push", "were pushing",
-                      "we are pushing", "im pushing", "i am pushing", "just push", "keep pushing", "pushing now")),
-    ("pace", "bring_home", ("bring it home", "no risks", "no risk", "take it easy", "just finish", "play it safe")),
-    ("pace", "save", ("we save", "ill save", "i will save", "saving fuel now", "start saving", "save fuel then",
-                      "ok save", "okay save")),
-    ("fight", "let_quick_go", ("let the quick ones go", "let the fast ones go", "let faster cars go",
-                               "let the faster cars go", "let quick cars go")),
-    ("fight", "fight", ("fight everything", "fight everyone", "fight them all", "nobody gets past",
-                        "no one gets past", "not letting anyone", "not letting him", "not letting them",
-                        "im not letting", "i wont let", "dont tell me to let", "no letting by", "we fight")),
-    ("coaching", "on", ("coaching back on", "coaching on", "coach me again", "tips back on")),
-    ("coaching", "off", ("no coaching", "stop coaching", "no more coaching", "i know the corners",
-                         "stop telling me about corners", "no corner tips", "no more tips", "stop the tips")),
+    (
+        "pace",
+        "push",
+        (
+            "no holding back",
+            "flat out",
+            "full attack",
+            "full send",
+            "no saving",
+            "dont save",
+            "stop saving",
+            "no lift and coast",
+            "no lifting",
+            "we push",
+            "we will push",
+            "were pushing",
+            "we are pushing",
+            "im pushing",
+            "i am pushing",
+            "just push",
+            "keep pushing",
+            "pushing now",
+        ),
+    ),
+    (
+        "pace",
+        "bring_home",
+        (
+            "bring it home",
+            "no risks",
+            "no risk",
+            "take it easy",
+            "just finish",
+            "play it safe",
+        ),
+    ),
+    (
+        "pace",
+        "save",
+        (
+            "we save",
+            "ill save",
+            "i will save",
+            "saving fuel now",
+            "start saving",
+            "save fuel then",
+            "ok save",
+            "okay save",
+        ),
+    ),
+    (
+        "fight",
+        "let_quick_go",
+        (
+            "let the quick ones go",
+            "let the fast ones go",
+            "let faster cars go",
+            "let the faster cars go",
+            "let quick cars go",
+        ),
+    ),
+    (
+        "fight",
+        "fight",
+        (
+            "fight everything",
+            "fight everyone",
+            "fight them all",
+            "nobody gets past",
+            "no one gets past",
+            "not letting anyone",
+            "not letting him",
+            "not letting them",
+            "im not letting",
+            "i wont let",
+            "dont tell me to let",
+            "no letting by",
+            "we fight",
+        ),
+    ),
+    (
+        "coaching",
+        "on",
+        ("coaching back on", "coaching on", "coach me again", "tips back on"),
+    ),
+    (
+        "coaching",
+        "off",
+        (
+            "no coaching",
+            "stop coaching",
+            "no more coaching",
+            "i know the corners",
+            "stop telling me about corners",
+            "no corner tips",
+            "no more tips",
+            "stop the tips",
+        ),
+    ),
     # "off" before "every lap": "never tell me the gaps" contains "tell me the gaps"
-    ("gaps", "off", ("dont tell me the gaps", "never tell me the gaps", "no gaps", "no more gaps", "stop the gaps",
-                     "stop telling me the gaps")),
-    ("gaps", "every_lap", ("gaps every lap", "gap every lap", "tell me the gaps", "give me the gaps",
-                           "keep me updated on the gaps")),
+    (
+        "gaps",
+        "off",
+        (
+            "dont tell me the gaps",
+            "never tell me the gaps",
+            "no gaps",
+            "no more gaps",
+            "stop the gaps",
+            "stop telling me the gaps",
+        ),
+    ),
+    (
+        "gaps",
+        "every_lap",
+        (
+            "gaps every lap",
+            "gap every lap",
+            "tell me the gaps",
+            "give me the gaps",
+            "keep me updated on the gaps",
+        ),
+    ),
     ("gaps", "normal", ("gaps back to normal", "normal gaps")),
 ]
-BACK_TO_NORMAL = ("back to normal", "as you were", "cancel that", "cancel the orders", "forget what i said",
-                  "your call again", "reset the orders")
+BACK_TO_NORMAL = (
+    "back to normal",
+    "as you were",
+    "cancel that",
+    "cancel the orders",
+    "forget what i said",
+    "your call again",
+    "reset the orders",
+)
 # a question is not an order: "should we push?" goes to the coach
-QUESTION_WORDS = ("should", "can i", "can we", "could", "do i", "do we", "shall", "what", "how", "why",
-                  "is it", "are we", "will we", "worth")
+QUESTION_WORDS = (
+    "should",
+    "can i",
+    "can we",
+    "could",
+    "do i",
+    "do we",
+    "shall",
+    "what",
+    "how",
+    "why",
+    "is it",
+    "are we",
+    "will we",
+    "worth",
+)
 # said like this, it outlives the race
 FOR_GOOD = ("always", "every race", "from now on", "never", "in every race")
 
 # the calls each order changes
-COACHING_KINDS = {"CORNER_HABIT", "LAP_ONE_HABIT", "FASTEST_CAR", "CORNER_LOSS", "BALANCE"}
+COACHING_KINDS = {
+    "CORNER_HABIT",
+    "LAP_ONE_HABIT",
+    "FASTEST_CAR",
+    "CORNER_LOSS",
+    "BALANCE",
+}
 
 
 def plain(text):
-    return " ".join("".join(c if c.isalnum() or c == " " else " " for c in text.lower().replace("'", "")).split())
+    return " ".join(
+        "".join(
+            c if c.isalnum() or c == " " else " " for c in text.lower().replace("'", "")
+        ).split()
+    )
 
 
 def race_ending_fuel(call):
-    """"box" or "short" when this fuel call means the car will not make the flag at this pace,
+    """ "box" or "short" when this fuel call means the car will not make the flag at this pace,
     None otherwise (fine, tight, saving). Those two get through a push order, once each."""
     verdict = call.facts.get("verdict")
     if verdict == "box" or (call.template or "").startswith("Box"):
@@ -88,18 +232,18 @@ def race_ending_fuel(call):
 class Order:
     topic: str
     stance: str
-    said: str               # his words
+    said: str  # his words
     lap: int
     sim_time: float
-    source: str             # "him" (heard), "coach" (the coach's ORDER line), "remembered" (a past race)
+    source: str  # "him" (heard), "coach" (the coach's ORDER line), "remembered" (a past race)
     for_good: bool = False
 
 
 class StandingOrders:
     def __init__(self):
-        self.orders = {}           # topic -> Order
-        self.decisions = []        # every order and cancel this race, oldest first, for the coach
-        self.cost_said = set()     # (topic, what) costs already said once: never nag
+        self.orders = {}  # topic -> Order
+        self.decisions = []  # every order and cancel this race, oldest first, for the coach
+        self.cost_said = set()  # (topic, what) costs already said once: never nag
 
     # ---- hearing -------------------------------------------------------------------------------
     def hear(self, text, lap, now):
@@ -118,8 +262,17 @@ class StandingOrders:
                 continue
             if any(" " + phrase + " " in heard for phrase in phrases):
                 topics.add(topic)
-                found.append(self.set(topic, stance, text, lap, now, "him",
-                                      for_good=any(" " + w + " " in heard for w in FOR_GOOD)))
+                found.append(
+                    self.set(
+                        topic,
+                        stance,
+                        text,
+                        lap,
+                        now,
+                        "him",
+                        for_good=any(" " + w + " " in heard for w in FOR_GOOD),
+                    )
+                )
         if not found:
             return None
         return " ".join(STANCES[o.topic][o.stance] for o in found), found
@@ -151,31 +304,39 @@ class StandingOrders:
         """The call as his orders allow it: None when an order says not to say it, the call
         (maybe reworded) otherwise. Safety and race control are never touched."""
         if call.asked:
-            return call                      # what he asked for, he gets
+            return call  # what he asked for, he gets
         verdict = race_ending_fuel(call) if call.kind == "FUEL" else None
         if verdict is not None and self.get("pace") == "push":
             # what his order was said back with: "I'll only come back on fuel if it won't make
             # the flag" (replay of 25 Sep 12:31: "short by 0.1 laps" was silenced under push)
             key = ("pace", verdict)
             if key in self.cost_said:
-                return None                  # said once; his call now
+                return None  # said once; his call now
             self.cost_said.add(key)
             short = call.facts.get("spare_laps")
             if verdict == "box":
-                words = (f"You said push, your call. Straight: it won't make the flag, short by {short} laps. "
-                         "Box this lap or you stop.")
+                words = (
+                    f"You said push, your call. Straight: it won't make the flag, short by {short} laps. "
+                    "Box this lap or you stop."
+                )
             else:
-                words = (f"You said push, your call. Straight: at this pace it won't make the flag, short by "
-                         f"{short} laps. Lift and coast in the big stops, or box.")
+                words = (
+                    f"You said push, your call. Straight: at this pace it won't make the flag, short by "
+                    f"{short} laps. Lift and coast in the big stops, or box."
+                )
             call.template = call.conclusion = words
             return call
-        if call.kind == "FUEL" and self.get("pace") == "save" and call.facts.get("verdict") == "fine":
+        if (
+            call.kind == "FUEL"
+            and self.get("pace") == "save"
+            and call.facts.get("verdict") == "fine"
+        ):
             # the reason for his order has gone: said once, as his call, and the order stands
             # (Leclerc, Singapore 2025: "Tell me when I can push again." 27 Sep: under his "we save"
             # the strategist said "Fuel's fine to the flag... Push.", against his own order)
             key = ("pace", "fine")
             if key in self.cost_said:
-                return None                  # said once; never nag
+                return None  # said once; never nag
             self.cost_said.add(key)
             spare = call.facts.get("spare_laps")
             what = "Energy" if (call.template or "").startswith("Energy") else "Fuel"
@@ -184,7 +345,11 @@ class StandingOrders:
             return call
         if call.kind == "FIGHT_COST" and self.get("fight") == "fight":
             # he said fight: the call keeps its facts but loses the "settle" option
-            words = (call.template or "").replace(" Commit or settle.", " Commit.").replace(" this lap or settle in.", " this lap.")
+            words = (
+                (call.template or "")
+                .replace(" Commit or settle.", " Commit.")
+                .replace(" this lap or settle in.", " this lap.")
+            )
             call.template = call.conclusion = words
         if self.forbids(call):
             return None
@@ -203,7 +368,11 @@ class StandingOrders:
             if words.startswith("You said push"):
                 return False
             return race_ending_fuel(call) is None
-        if call.kind == "FUEL" and pace == "save" and call.facts.get("verdict") == "fine":
+        if (
+            call.kind == "FUEL"
+            and pace == "save"
+            and call.facts.get("verdict") == "fine"
+        ):
             # a "Push." worded before he said save; the change is said as his call instead
             return not words.startswith("You said save")
         if call.kind in COACHING_KINDS and self.get("coaching") == "off":
@@ -225,28 +394,48 @@ class StandingOrders:
         """His orders and decisions this race, in words, for every question the coach answers."""
         lines = []
         for order in self.orders.values():
-            lines.append(f"{order.topic} = {order.stance} (lap {order.lap}, he said: \"{order.said}\")")
+            lines.append(
+                f'{order.topic} = {order.stance} (lap {order.lap}, he said: "{order.said}")'
+            )
         history = [f"lap {o.lap}: {o.topic}={o.stance}" for o in self.decisions[-6:]]
-        return {"standing_orders": lines or ["none: your calls stand"], "his_decisions_this_race": history}
+        return {
+            "standing_orders": lines or ["none: your calls stand"],
+            "his_decisions_this_race": history,
+        }
 
     # ---- between races -------------------------------------------------------------------------
     def save(self, conn):
         """The orders he said for good ("never tell me the gaps") outlive the race."""
-        conn.execute("CREATE TABLE IF NOT EXISTS standing_orders (topic TEXT PRIMARY KEY, stance TEXT, said TEXT)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS standing_orders (topic TEXT PRIMARY KEY, stance TEXT, said TEXT)"
+        )
         for order in self.decisions:
             if order.for_good and order.topic in STANCES:
-                if (order.topic, order.stance) in (("coaching", "on"), ("gaps", "normal")):
-                    conn.execute("DELETE FROM standing_orders WHERE topic = ?", (order.topic,))
+                if (order.topic, order.stance) in (
+                    ("coaching", "on"),
+                    ("gaps", "normal"),
+                ):
+                    conn.execute(
+                        "DELETE FROM standing_orders WHERE topic = ?", (order.topic,)
+                    )
                 else:
-                    conn.execute("INSERT OR REPLACE INTO standing_orders VALUES (?, ?, ?)",
-                                 (order.topic, order.stance, order.said))
+                    conn.execute(
+                        "INSERT OR REPLACE INTO standing_orders VALUES (?, ?, ?)",
+                        (order.topic, order.stance, order.said),
+                    )
         conn.commit()
 
     def load(self, conn):
-        conn.execute("CREATE TABLE IF NOT EXISTS standing_orders (topic TEXT PRIMARY KEY, stance TEXT, said TEXT)")
-        for topic, stance, said in conn.execute("SELECT topic, stance, said FROM standing_orders"):
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS standing_orders (topic TEXT PRIMARY KEY, stance TEXT, said TEXT)"
+        )
+        for topic, stance, said in conn.execute(
+            "SELECT topic, stance, said FROM standing_orders"
+        ):
             if stance in STANCES.get(topic, {}):
-                self.orders[topic] = Order(topic, stance, said, 0, 0.0, "remembered", True)
+                self.orders[topic] = Order(
+                    topic, stance, said, 0, 0.0, "remembered", True
+                )
 
 
 def current_plan(orders, fuel_now, damaged, laps_to_go):
@@ -256,10 +445,14 @@ def current_plan(orders, fuel_now, damaged, laps_to_go):
     answers "what's the plan?" with, so the answer matches them."""
     pace = orders.get("pace") if orders is not None else None
     fight = orders.get("fight") if orders is not None else None
-    verdict = fuel_now.get("verdict") if isinstance(fuel_now, dict) else None     # "not known yet" is text
+    verdict = (
+        fuel_now.get("verdict") if isinstance(fuel_now, dict) else None
+    )  # "not known yet" is text
     parts = []
     if verdict == "box":
-        parts.append("box this lap for fuel: it will not make the flag (the one fact that beats a push order)")
+        parts.append(
+            "box this lap for fuel: it will not make the flag (the one fact that beats a push order)"
+        )
     elif pace == "push":
         parts.append("push to the flag, no saving (his order)")
     elif pace == "bring_home":

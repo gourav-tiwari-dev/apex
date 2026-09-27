@@ -6,6 +6,7 @@ Freezes the race (like try_coach.py), then:
   - N agent questions, spread evenly over the categories, go to the real model
 Writes every answer with its tools, time and cost to OUT_JSON, and prints a summary.
 Nothing touches apex.db: the replay goes into a throwaway database."""
+
 import argparse
 import json
 import os
@@ -25,7 +26,12 @@ from agent import RaceAgent
 from answers import Answers, needs_agent
 from radio import Budget
 
-GAVE_UP = ("No clean answer", "Radio's lagging", "Lost the data", "Over the radio budget")
+GAVE_UP = (
+    "No clean answer",
+    "Radio's lagging",
+    "Lost the data",
+    "Over the radio budget",
+)
 
 
 def spread(questions, n):
@@ -61,13 +67,25 @@ def main():
     race, lap = frozen["race"], frozen["lap"]
 
     results = []
-    lane = Answers(seats["Governor"], seats["RaceEngineer"], seats["Strategist"], seats["PerformanceEngineer"])
+    lane = Answers(
+        seats["Governor"],
+        seats["RaceEngineer"],
+        seats["Strategist"],
+        seats["PerformanceEngineer"],
+    )
     fixed = [q for q in QUESTIONS if q[1] != "agent"]
     for category, route, question, _ in fixed:
         started = time.perf_counter()
         call = lane.answer(question, race, lap, 0.0)
-        results.append({"category": category, "lane": "fixed", "question": question, "answer": call.template,
-                        "ms": round((time.perf_counter() - started) * 1000, 2)})
+        results.append(
+            {
+                "category": category,
+                "lane": "fixed",
+                "question": question,
+                "answer": call.template,
+                "ms": round((time.perf_counter() - started) * 1000, 2),
+            }
+        )
     print(f"fixed lane: {len(fixed)} answered by code")
 
     budget = Budget(cap_rs=args.cap)
@@ -87,22 +105,40 @@ def main():
         cost = round(sum(c["cost_rs"] for c in info.get("costs", [])), 3)
         used = info.get("tools", [])
         hit = (not expected_tools) or any(tool in used for tool in expected_tools)
-        results.append({"category": category, "lane": "agent", "question": question, "answer": answer,
-                        "tools": used, "expected_tools": list(expected_tools), "tool_hit": hit,
-                        "seconds": seconds, "cost_rs": cost, "rounds": info.get("rounds"),
-                        "refused": info.get("refused"), "gave_up": answer.startswith(GAVE_UP)})
-        print(f"  {n:3d} {seconds:5.1f}s Rs{cost:.2f} {'  ' if hit else 'T!'} {question}\n        -> {answer}")
+        results.append(
+            {
+                "category": category,
+                "lane": "agent",
+                "question": question,
+                "answer": answer,
+                "tools": used,
+                "expected_tools": list(expected_tools),
+                "tool_hit": hit,
+                "seconds": seconds,
+                "cost_rs": cost,
+                "rounds": info.get("rounds"),
+                "refused": info.get("refused"),
+                "gave_up": answer.startswith(GAVE_UP),
+            }
+        )
+        print(
+            f"  {n:3d} {seconds:5.1f}s Rs{cost:.2f} {'  ' if hit else 'T!'} {question}\n        -> {answer}"
+        )
         with open(args.out, "w", encoding="utf8") as f:
             json.dump(results, f, indent=1)
 
     asked = [r for r in results if r["lane"] == "agent"]
     if asked:
         times = sorted(r["seconds"] for r in asked)
-        print(f"\nagent: {len(asked)} asked, {sum(r['gave_up'] for r in asked)} gave up, "
-              f"{sum(not r['tool_hit'] for r in asked)} without an expected tool, "
-              f"{sum(1 for r in asked if r['refused'])} needed a rewrite")
-        print(f"time: median {statistics.median(times)} s, 90% under {times[int(len(times) * 0.9) - 1]} s, "
-              f"cost Rs {round(budget.spent_rs, 2)} (Rs {round(budget.spent_rs / len(asked), 3)} a question)")
+        print(
+            f"\nagent: {len(asked)} asked, {sum(r['gave_up'] for r in asked)} gave up, "
+            f"{sum(not r['tool_hit'] for r in asked)} without an expected tool, "
+            f"{sum(1 for r in asked if r['refused'])} needed a rewrite"
+        )
+        print(
+            f"time: median {statistics.median(times)} s, 90% under {times[int(len(times) * 0.9) - 1]} s, "
+            f"cost Rs {round(budget.spent_rs, 2)} (Rs {round(budget.spent_rs / len(asked), 3)} a question)"
+        )
     with open(args.out, "w", encoding="utf8") as f:
         json.dump(results, f, indent=1)
 

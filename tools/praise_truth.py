@@ -8,6 +8,7 @@ check is strict on purpose.
 
 Usage: praise_truth.py [TAPE ...]   (default: every race tape in tools/tapes.py)
 Exit code 0 = every praise held."""
+
 import os
 import sys
 
@@ -49,7 +50,9 @@ def main():
                 held += 1
                 tape_held += 1
             else:
-                undone.append(f"{tape} {when:.1f}s: P{before} at the praise, P{after} 10 s later: {line!r}")
+                undone.append(
+                    f"{tape} {when:.1f}s: P{before} at the praise, P{after} 10 s later: {line!r}"
+                )
         print(f"{tape}: {len(praised)} praises, {tape_held} held 10 s")
     print(f"{held}/{total} praises held")
     if not undone:

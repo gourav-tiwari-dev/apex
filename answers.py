@@ -9,6 +9,7 @@ about 7 s to answer, which is a corner and a half at Le Mans.
 Matching: every intent has phrases that ask for it. The intent with the LONGEST matching
 phrase wins, so "where am I losing time" is about lap time, not position ("where am i").
 """
+
 import re
 
 from persona import words_to_digits
@@ -24,70 +25,242 @@ DEFAULT_QUIET_LAPS = 2
 # the situation or the other cars, never at him. Each intent takes turns through its lines.
 # (swearing line, clean line)
 CLOSERS = {
-    "GAP_AHEAD": [("Go fucking get them.", "Go get them."), ("Reel that car in, mate.", "Reel that car in, mate."),
-                  ("Hunt them down. No fucking mercy.", "Hunt them down.")],
-    "GAP_BEHIND": [("Keep them in the fucking mirrors.", "Keep them in the mirrors."),
-                   ("Don't give them a bloody sniff.", "Don't give them a sniff.")],
-    "PACE_TO_CATCH": [("Simple as that. Fucking go.", "Simple as that. Go."),
-                      ("Every lap, mate. No excuses.", "Every lap, mate. No excuses.")],
-    "FUEL": [("Stop worrying about the fucking fuel.", "Stop worrying about the fuel."),
-             ("Tank's not your problem, mate.", "Tank's not your problem, mate.")],
-    "LAPS_LEFT": [("Head down, mate.", "Head down, mate."), ("Bring this fucking thing home.", "Bring it home.")],
-    "POSITION": [("Let's fucking do better than that.", "Let's do better than that."),
-                 ("Plenty of race left, mate.", "Plenty of race left, mate.")],
-    "LAP_TIME": [("Simply lovely. Again.", "Simply lovely. Again."), ("More of that shit, mate.", "More of that, mate.")],
+    "GAP_AHEAD": [
+        ("Go fucking get them.", "Go get them."),
+        ("Reel that car in, mate.", "Reel that car in, mate."),
+        ("Hunt them down. No fucking mercy.", "Hunt them down."),
+    ],
+    "GAP_BEHIND": [
+        ("Keep them in the fucking mirrors.", "Keep them in the mirrors."),
+        ("Don't give them a bloody sniff.", "Don't give them a sniff."),
+    ],
+    "PACE_TO_CATCH": [
+        ("Simple as that. Fucking go.", "Simple as that. Go."),
+        ("Every lap, mate. No excuses.", "Every lap, mate. No excuses."),
+    ],
+    "FUEL": [
+        ("Stop worrying about the fucking fuel.", "Stop worrying about the fuel."),
+        ("Tank's not your problem, mate.", "Tank's not your problem, mate."),
+    ],
+    "LAPS_LEFT": [
+        ("Head down, mate.", "Head down, mate."),
+        ("Bring this fucking thing home.", "Bring it home."),
+    ],
+    "POSITION": [
+        ("Let's fucking do better than that.", "Let's do better than that."),
+        ("Plenty of race left, mate.", "Plenty of race left, mate."),
+    ],
+    "LAP_TIME": [
+        ("Simply lovely. Again.", "Simply lovely. Again."),
+        ("More of that shit, mate.", "More of that, mate."),
+    ],
 }
 
 INTENTS = {
-    "GAP_AHEAD": ["gap", "the gap", "ahead", "in front", "car in front", "gap ahead", "gap in front", "gap to the car ahead"],
-    "GAP_BEHIND": ["behind", "car behind", "gap behind", "who is behind", "whos behind", "gap back"],
-    "PACE_TO_CATCH": ["catch", "catch him", "catch them", "catch the car ahead", "what lap time do i need", "lap time do i need",
-                      "what pace do i need", "pace do i need", "need to do"],
+    "GAP_AHEAD": [
+        "gap",
+        "the gap",
+        "ahead",
+        "in front",
+        "car in front",
+        "gap ahead",
+        "gap in front",
+        "gap to the car ahead",
+    ],
+    "GAP_BEHIND": [
+        "behind",
+        "car behind",
+        "gap behind",
+        "who is behind",
+        "whos behind",
+        "gap back",
+    ],
+    "PACE_TO_CATCH": [
+        "catch",
+        "catch him",
+        "catch them",
+        "catch the car ahead",
+        "what lap time do i need",
+        "lap time do i need",
+        "what pace do i need",
+        "pace do i need",
+        "need to do",
+    ],
     "FUEL": ["fuel", "energy", "tank", "enough fuel", "lift and coast", "save fuel"],
-    "LAPS_LEFT": ["laps left", "how many laps", "laps to go", "time left", "how long left", "how long to go",
-                  "how many to go", "is this the last lap"],
-    "WHERE_LOSING": ["losing time", "where am i losing", "where am i slow", "slow", "improve", "faster",
-                     "where can i gain", "gain time"],
+    "LAPS_LEFT": [
+        "laps left",
+        "how many laps",
+        "laps to go",
+        "time left",
+        "how long left",
+        "how long to go",
+        "how many to go",
+        "is this the last lap",
+    ],
+    "WHERE_LOSING": [
+        "losing time",
+        "where am i losing",
+        "where am i slow",
+        "slow",
+        "improve",
+        "faster",
+        "where can i gain",
+        "gain time",
+    ],
     "POSITION": ["position", "what position", "where am i", "what place", "what p"],
     "LAP_TIME": ["lap time", "last lap", "my lap", "best lap", "my time"],
-    "QUIET": ["quiet", "be quiet", "shut up", "silence", "mute", "leave me", "stop talking"],
+    "QUIET": [
+        "quiet",
+        "be quiet",
+        "shut up",
+        "silence",
+        "mute",
+        "leave me",
+        "stop talking",
+    ],
     "RADIO_ON": ["radio on", "back on", "talk to me", "unmute", "radio back"],
     # v3 5b (his ask, 25 Sep): lookups need no judgment, so code answers them - no model,
     # no 2-4 s wait, no cost. Anything asking what to DO about it still goes to the agent.
-    "TYRES": ["tyres", "tires", "tyre", "tire", "tyre temps", "tire temps", "tyre temperatures", "tire temperatures",
-              "fronts", "rears", "how are the tyres", "how are the tires"],
+    "TYRES": [
+        "tyres",
+        "tires",
+        "tyre",
+        "tire",
+        "tyre temps",
+        "tire temps",
+        "tyre temperatures",
+        "tire temperatures",
+        "fronts",
+        "rears",
+        "how are the tyres",
+        "how are the tires",
+    ],
     "TYRE_PRESSURES": ["pressures", "tyre pressures", "tire pressures", "pressure"],
     "TYRE_WEAR": ["wear", "tyre wear", "tire wear"],
-    "COMPOUND": ["compound", "what tyres am i on", "what tires am i on", "what tyre am i on", "which tyres"],
+    "COMPOUND": [
+        "compound",
+        "what tyres am i on",
+        "what tires am i on",
+        "what tyre am i on",
+        "which tyres",
+    ],
     "BRAKES": ["brakes", "brake temps", "brake temperatures", "how are my brakes"],
-    "DAMAGE": ["damage", "damage report", "hows my car", "how is my car", "is my car ok", "car status",
-               "anything broken", "broken", "everything ok with the car", "car ok"],
+    "DAMAGE": [
+        "damage",
+        "damage report",
+        "hows my car",
+        "how is my car",
+        "is my car ok",
+        "car status",
+        "anything broken",
+        "broken",
+        "everything ok with the car",
+        "car ok",
+    ],
     "ENGINE": ["engine", "is the engine overheating", "hows my engine"],
-    "WEATHER": ["weather", "track temp", "track temperature", "air temp", "air temperature", "rain", "raining",
-                "wet", "grip"],
-    "FLAGS": ["yellow", "yellow flag", "safety car", "full course yellow", "blue flag", "flags", "flag"],
-    "SECTORS": ["sectors", "sector times", "my sectors", "theoretical best", "best possible", "best possible lap"],
-    "CLASS_POSITION": ["position in class", "in class", "class position", "cars in my class", "how many cars in my class"],
-    "LEADER": ["leading", "leader", "whos leading", "who is leading", "whos in the lead", "leading my class"],
+    "WEATHER": [
+        "weather",
+        "track temp",
+        "track temperature",
+        "air temp",
+        "air temperature",
+        "rain",
+        "raining",
+        "wet",
+        "grip",
+    ],
+    "FLAGS": [
+        "yellow",
+        "yellow flag",
+        "safety car",
+        "full course yellow",
+        "blue flag",
+        "flags",
+        "flag",
+    ],
+    "SECTORS": [
+        "sectors",
+        "sector times",
+        "my sectors",
+        "theoretical best",
+        "best possible",
+        "best possible lap",
+    ],
+    "CLASS_POSITION": [
+        "position in class",
+        "in class",
+        "class position",
+        "cars in my class",
+        "how many cars in my class",
+    ],
+    "LEADER": [
+        "leading",
+        "leader",
+        "whos leading",
+        "who is leading",
+        "whos in the lead",
+        "leading my class",
+    ],
     "FASTEST_LAP": ["fastest lap", "quickest lap", "fastest lap in my class"],
     "PENALTY": ["penalty", "penalties", "do i have a penalty", "served my penalty"],
-    "TRACK_LIMITS": ["track limits", "track limit", "cuts", "warnings", "track limit warnings", "how many cuts"],
-    "SETTINGS": ["brake bias", "bias", "tc", "traction control", "abs", "motor map", "engine map", "settings"],
-    "FUEL_USAGE": ["fuel usage", "fuel per lap", "fuel use", "fuel consumption", "litres", "liters", "litres left",
-                   "how much fuel"],
+    "TRACK_LIMITS": [
+        "track limits",
+        "track limit",
+        "cuts",
+        "warnings",
+        "track limit warnings",
+        "how many cuts",
+    ],
+    "SETTINGS": [
+        "brake bias",
+        "bias",
+        "tc",
+        "traction control",
+        "abs",
+        "motor map",
+        "engine map",
+        "settings",
+    ],
+    "FUEL_USAGE": [
+        "fuel usage",
+        "fuel per lap",
+        "fuel use",
+        "fuel consumption",
+        "litres",
+        "liters",
+        "litres left",
+        "how much fuel",
+    ],
     "BATTERY": ["battery"],
     "LAP_VALID": ["valid", "lap valid", "invalid", "was that lap valid"],
     # v3 5b: asking the radio to behave differently. There is no such switch, and on the 25 Sep
     # bank run the model promised one anyway ("I'll only key up on the straights"), twice.
     # Code answers honestly: what the radio already does, and the switches he has.
-    "RADIO_REQUEST": ["only talk to me", "talk to me on", "stop telling me", "talk less", "less talking",
-                      "every lap", "dont tell me", "stop calling"],
+    "RADIO_REQUEST": [
+        "only talk to me",
+        "talk to me on",
+        "stop telling me",
+        "talk less",
+        "less talking",
+        "every lap",
+        "dont tell me",
+        "stop calling",
+    ],
     # live test marker (25 Sep): he says "mark" when something is wrong or great; the time is in
     # the radio log, so the moment can be found on the tape afterwards
     "MARK": ["mark", "mark that", "mark it", "note that", "bookmark", "flag that"],
     # v3 5b: a line lost under the engine or a spotter call
-    "REPEAT": ["repeat", "repeat that", "say again", "say that again", "come again", "what did you say",
-               "didnt catch", "didnt hear", "one more time"],
+    "REPEAT": [
+        "repeat",
+        "repeat that",
+        "say again",
+        "say that again",
+        "come again",
+        "what did you say",
+        "didnt catch",
+        "didnt hear",
+        "one more time",
+    ],
 }
 
 
@@ -107,7 +280,7 @@ MISHEARD = [
     (r"\bthought ahead\b", "car ahead"),
     (r"\bcar hat\b", "car ahead"),
     (r"\bcut ahead\b", "car ahead"),
-    (r"\b(caulif|cauley|kali)\b", "quali"),         # live 27 Sep, twice: "I crashed in Caulif"
+    (r"\b(caulif|cauley|kali)\b", "quali"),  # live 27 Sep, twice: "I crashed in Caulif"
 ]
 
 
@@ -128,13 +301,63 @@ def fix_mishearing(text):
 # clean one there carried a racing word and no garbled one did. A mark is a note, never a guess.
 GARBLED_BELOW = -0.9
 UNSURE_BELOW = -0.5
-RACING_WORDS = ("gap", "gaps", "ahead", "behind", "leader", "fuel", "energy", "tyre", "tyres", "tire",
-                "tires", "plan", "position", "place", "damage", "fight", "fighting", "catch", "losing",
-                "time", "lap", "laps", "pace", "box", "pit", "push", "save", "sector", "brake", "brakes",
-                "corner", "qualifying", "rain", "flag", "penalty", "overtake", "pass", "defend", "attack",
-                "car", "cars", "faster", "slower", "quick", "race", "finish", "points", "performance",
-                # live 27 Sep: "What's the problem?" (-0.85) and "I crashed in quali" got "say again"
-                "quali", "problem", "issue", "temps", "temp", "temperature")
+RACING_WORDS = (
+    "gap",
+    "gaps",
+    "ahead",
+    "behind",
+    "leader",
+    "fuel",
+    "energy",
+    "tyre",
+    "tyres",
+    "tire",
+    "tires",
+    "plan",
+    "position",
+    "place",
+    "damage",
+    "fight",
+    "fighting",
+    "catch",
+    "losing",
+    "time",
+    "lap",
+    "laps",
+    "pace",
+    "box",
+    "pit",
+    "push",
+    "save",
+    "sector",
+    "brake",
+    "brakes",
+    "corner",
+    "qualifying",
+    "rain",
+    "flag",
+    "penalty",
+    "overtake",
+    "pass",
+    "defend",
+    "attack",
+    "car",
+    "cars",
+    "faster",
+    "slower",
+    "quick",
+    "race",
+    "finish",
+    "points",
+    "performance",
+    # live 27 Sep: "What's the problem?" (-0.85) and "I crashed in quali" got "say again"
+    "quali",
+    "problem",
+    "issue",
+    "temps",
+    "temp",
+    "temperature",
+)
 
 
 def has_racing_word(text):
@@ -142,7 +365,7 @@ def has_racing_word(text):
         if word in RACING_WORDS:
             return True
         if len(word) >= 2 and word[0] == "p" and word[1:].isdigit():
-            return True               # "p5"
+            return True  # "p5"
     return False
 
 
@@ -164,7 +387,9 @@ def matched(text):
     best = (None, None)
     for intent, phrases in INTENTS.items():
         for phrase in phrases:
-            if " " + phrase + " " in heard and (best[1] is None or len(phrase) > len(best[1])):
+            if " " + phrase + " " in heard and (
+                best[1] is None or len(phrase) > len(best[1])
+            ):
                 best = (intent, phrase)
     return best
 
@@ -183,36 +408,133 @@ def intent_of(text):
 # behind" got the gap behind. Now a fixed answer is given only when every word he said is
 # either filler or part of what that intent is about; any word left over ("class", "sector",
 # "usage", "damage") means he asked something the fixed answer does not cover.
-FILLER = {"a", "an", "the", "is", "are", "am", "i", "im", "me", "my", "we", "our", "us", "you", "your", "it",
-          "its", "whats", "what", "hows", "how", "was", "were", "be", "to", "in", "on", "at", "of", "for",
-          "about", "now", "mate", "please", "sorry", "hey", "so", "just", "ok", "okay", "right", "then",
-          "this", "that", "there", "doing", "going", "gonna", "like", "and", "any", "do", "whos", "who",
-          "tell", "give", "quick", "again", "yet", "still", "whats", "wheres", "where"}
+FILLER = {
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "am",
+    "i",
+    "im",
+    "me",
+    "my",
+    "we",
+    "our",
+    "us",
+    "you",
+    "your",
+    "it",
+    "its",
+    "whats",
+    "what",
+    "hows",
+    "how",
+    "was",
+    "were",
+    "be",
+    "to",
+    "in",
+    "on",
+    "at",
+    "of",
+    "for",
+    "about",
+    "now",
+    "mate",
+    "please",
+    "sorry",
+    "hey",
+    "so",
+    "just",
+    "ok",
+    "okay",
+    "right",
+    "then",
+    "this",
+    "that",
+    "there",
+    "doing",
+    "going",
+    "gonna",
+    "like",
+    "and",
+    "any",
+    "do",
+    "whos",
+    "who",
+    "tell",
+    "give",
+    "quick",
+    "again",
+    "yet",
+    "still",
+    "whats",
+    "wheres",
+    "where",
+}
 VOCABULARY_EXTRA = {
-    "GAP_AHEAD": {"far", "close", "distance", "car"}, "GAP_BEHIND": {"far", "close", "distance", "car"},
-    "FUEL": {"much", "left", "tank", "enough", "level"}, "LAPS_LEFT": {"many", "long", "much", "last", "lap"},
-    "POSITION": {"place", "p", "we", "are"}, "LAP_TIME": {"time", "lap"},
-    "QUIET": {"lap", "laps", "alone", "bit", "while", "for"}, "REPEAT": {"didnt", "catch", "hear", "said"},
-    "PACE_TO_CATCH": {"need", "lap", "time", "pace"}, "WHERE_LOSING": {"time", "pace", "losing", "gain", "can"},
-    "TYRES": {"doing", "hot", "hottest", "which", "overheating", "cooking", "temperature", "temps", "are"},
-    "TYRE_PRESSURES": {"are", "my"}, "TYRE_WEAR": {"hows", "are", "my", "much"},
-    "BRAKES": {"are", "temp", "temperature", "hot", "ok"}, "DAMAGE": {"did", "i", "any", "report", "status", "ok"},
+    "GAP_AHEAD": {"far", "close", "distance", "car"},
+    "GAP_BEHIND": {"far", "close", "distance", "car"},
+    "FUEL": {"much", "left", "tank", "enough", "level"},
+    "LAPS_LEFT": {"many", "long", "much", "last", "lap"},
+    "POSITION": {"place", "p", "we", "are"},
+    "LAP_TIME": {"time", "lap"},
+    "QUIET": {"lap", "laps", "alone", "bit", "while", "for"},
+    "REPEAT": {"didnt", "catch", "hear", "said"},
+    "PACE_TO_CATCH": {"need", "lap", "time", "pace"},
+    "WHERE_LOSING": {"time", "pace", "losing", "gain", "can"},
+    "TYRES": {
+        "doing",
+        "hot",
+        "hottest",
+        "which",
+        "overheating",
+        "cooking",
+        "temperature",
+        "temps",
+        "are",
+    },
+    "TYRE_PRESSURES": {"are", "my"},
+    "TYRE_WEAR": {"hows", "are", "my", "much"},
+    "BRAKES": {"are", "temp", "temperature", "hot", "ok"},
+    "DAMAGE": {"did", "i", "any", "report", "status", "ok"},
     "ENGINE": {"temps", "temperature", "hot", "ok", "overheating"},
-    "WEATHER": {"going", "temperature", "temps", "much", "there", "track", "air", "anywhere", "doing", "dry"},
+    "WEATHER": {
+        "going",
+        "temperature",
+        "temps",
+        "much",
+        "there",
+        "track",
+        "air",
+        "anywhere",
+        "doing",
+        "dry",
+    },
     "FLAGS": {"out", "there", "any", "getting", "flagged", "blue"},
     "SECTORS": {"times", "time", "best", "possible", "lap"},
-    "CLASS_POSITION": {"many", "cars", "position", "my"}, "LEADER": {"class", "my", "race", "lead"},
-    "FASTEST_LAP": {"class", "my", "time", "whats"}, "PENALTY": {"have", "served", "got", "any"},
+    "CLASS_POSITION": {"many", "cars", "position", "my"},
+    "LEADER": {"class", "my", "race", "lead"},
+    "FASTEST_LAP": {"class", "my", "time", "whats"},
+    "PENALTY": {"have", "served", "got", "any"},
     "TRACK_LIMITS": {"many", "have", "got", "steps", "points", "i"},
     "SETTINGS": {"am", "setting", "on", "which", "have", "what", "map", "motor"},
-    "FUEL_USAGE": {"left", "have", "got", "per", "lap", "much", "usage"}, "BATTERY": {"hows", "level"},
+    "FUEL_USAGE": {"left", "have", "got", "per", "lap", "much", "usage"},
+    "BATTERY": {"hows", "level"},
     "LAP_VALID": {"that", "lap", "last", "was"},
 }
 
 
 def words_beyond(text, intent):
-    vocabulary = {word for phrase in INTENTS[intent] for word in phrase.split()} | VOCABULARY_EXTRA.get(intent, set())
-    return [word for word in clean(text).split() if word not in vocabulary and word not in FILLER and not word.isdigit()]
+    vocabulary = {
+        word for phrase in INTENTS[intent] for word in phrase.split()
+    } | VOCABULARY_EXTRA.get(intent, set())
+    return [
+        word
+        for word in clean(text).split()
+        if word not in vocabulary and word not in FILLER and not word.isdigit()
+    ]
 
 
 # the fixed list answers short questions; anything longer is a real question for the agent
@@ -225,12 +547,39 @@ ALWAYS_FIXED = {"QUIET", "RADIO_ON", "REPEAT"}
 # "can I catch him?" is a judgment, not a lookup: on 24 Sep the fixed list answered it with
 # the bare gap. Questions that ask what to DO go to the agent however short they are.
 # ...anywhere in the question: "realistically which position can we get" got a bare "P5"
-JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "how do i", "why",
-                  "is it worth", "will i", "will we", "realistic", "what if",
-                  # a fight is a judgment too: live 24 Sep, "car ahead is defending" got the bare gap
-                  "defending", "defend", "blocking", "block", "diving", "dive", "attack", "attacking",
-                  "overtake", "pass", "passing", "hitting", "hit me", "let him", "let them", "aggressive",
-                  "aggressively")
+JUDGMENT_WORDS = (
+    "can i",
+    "can we",
+    "should",
+    "could",
+    "do i",
+    "what do i",
+    "how do i",
+    "why",
+    "is it worth",
+    "will i",
+    "will we",
+    "realistic",
+    "what if",
+    # a fight is a judgment too: live 24 Sep, "car ahead is defending" got the bare gap
+    "defending",
+    "defend",
+    "blocking",
+    "block",
+    "diving",
+    "dive",
+    "attack",
+    "attacking",
+    "overtake",
+    "pass",
+    "passing",
+    "hitting",
+    "hit me",
+    "let him",
+    "let them",
+    "aggressive",
+    "aggressively",
+)
 
 
 def is_mark(text):
@@ -242,11 +591,53 @@ def is_mark(text):
 
 # "okay, got it" after an answer is him saying he heard it. Live 27 Sep it went to the agent, which
 # answered it with a new answer that contradicted its last one (and a model call)
-ACKNOWLEDGE = {"ok", "okay", "got", "it", "copy", "copied", "that", "understood", "understand", "roger",
-               "thanks", "thank", "you", "cheers", "alright", "right", "sure", "yeah", "yes", "yep",
-               "noted", "cool", "nice", "good", "fine", "mate", "i", "will", "do", "clear"}
-ACKNOWLEDGE_CORE = {"ok", "okay", "got", "copy", "copied", "understood", "understand", "roger", "thanks",
-                    "thank", "cheers", "alright", "noted"}
+ACKNOWLEDGE = {
+    "ok",
+    "okay",
+    "got",
+    "it",
+    "copy",
+    "copied",
+    "that",
+    "understood",
+    "understand",
+    "roger",
+    "thanks",
+    "thank",
+    "you",
+    "cheers",
+    "alright",
+    "right",
+    "sure",
+    "yeah",
+    "yes",
+    "yep",
+    "noted",
+    "cool",
+    "nice",
+    "good",
+    "fine",
+    "mate",
+    "i",
+    "will",
+    "do",
+    "clear",
+}
+ACKNOWLEDGE_CORE = {
+    "ok",
+    "okay",
+    "got",
+    "copy",
+    "copied",
+    "understood",
+    "understand",
+    "roger",
+    "thanks",
+    "thank",
+    "cheers",
+    "alright",
+    "noted",
+}
 
 
 def is_acknowledgement(text):
@@ -267,7 +658,7 @@ def needs_agent(text):
         return False
     intent, phrase = matched(text)
     if intent in ("QUIET", "RADIO_REQUEST", "MARK"):
-        return False              # "quiet, I need to focus on this fight": obeyed at once, whatever else he says
+        return False  # "quiet, I need to focus on this fight": obeyed at once, whatever else he says
     if intent is None or words_beyond(text, intent):
         return True
     if intent in ALWAYS_FIXED:
@@ -281,7 +672,7 @@ def needs_agent(text):
 
 
 def laps_asked(text):
-    """ "quiet for 3 laps" -> 3. """
+    """ "quiet for 3 laps" -> 3."""
     match = re.search(r"(\d+)\s*lap", clean(text))
     if match:
         return max(1, int(match.group(1)))
@@ -291,7 +682,7 @@ def laps_asked(text):
 
 
 WHEEL_NAMES = ("front left", "front right", "rear left", "rear right")
-HOT_TYRE_C = 105          # the strategist's "cooking" line
+HOT_TYRE_C = 105  # the strategist's "cooking" line
 
 
 def lap_text(seconds):
@@ -313,9 +704,11 @@ class Answers:
         self.strategist = strategist
         self.performance = performance
         self.clean = clean
-        self.said = {}            # intent -> how many times answered: the closers take turns
-        self.last_line = None     # the last engineer line on air, for "say again" (set by the race loop)
-        self.model = None         # the race model (set by the race loop): the same gaps everywhere
+        self.said = {}  # intent -> how many times answered: the closers take turns
+        self.last_line = None  # the last engineer line on air, for "say again" (set by the race loop)
+        self.model = (
+            None  # the race model (set by the race loop): the same gaps everywhere
+        )
 
     def closer(self, intent):
         lines = CLOSERS.get(intent)
@@ -347,8 +740,10 @@ class Answers:
             self.governor.quiet_until_lap = None
             words = "Radio's back, mate."
         elif intent == "RADIO_REQUEST":
-            words = ("Can't switch that one, mate. What you can: quiet for some laps, radio back on, gaps every lap "
-                     "or no gaps, no coaching, we push, we save, fight everyone, back to normal.")
+            words = (
+                "Can't switch that one, mate. What you can: quiet for some laps, radio back on, gaps every lap "
+                "or no gaps, no coaching, we push, we save, fight everyone, back to normal."
+            )
         elif intent == "MARK":
             words = "Marked."
         elif intent == "ACK":
@@ -360,12 +755,26 @@ class Answers:
         # the attitude line; "stop worrying about the fuel" only when the fuel IS fine, and
         # never after a non-answer ("No lap time for it yet. Simple as that. Fucking go.")
         no_answer = words.startswith(("No ", "Nobody", "Need ")) or "yet." in words
-        if intent in CLOSERS and race is not None and race.me is not None and not no_answer:
+        if (
+            intent in CLOSERS
+            and race is not None
+            and race.me is not None
+            and not no_answer
+        ):
             if intent != "FUEL" or "fine" in words:
                 words += self.closer(intent)
-        return Call(seat=seat, kind="ANSWER_" + (intent or "UNHEARD"), sim_time=now,
-                    priority=RACE_CONTROL, ttl=ANSWER_TTL_S, conclusion=words, template=words,
-                    facts={"heard": text}, asked=True, phrase=False)
+        return Call(
+            seat=seat,
+            kind="ANSWER_" + (intent or "UNHEARD"),
+            sim_time=now,
+            priority=RACE_CONTROL,
+            ttl=ANSWER_TTL_S,
+            conclusion=words,
+            template=words,
+            facts={"heard": text},
+            asked=True,
+            phrase=False,
+        )
 
     def gap_ahead(self, race):
         ahead, gap, behind, gap_behind = same_class_neighbours(race, self.model)
@@ -411,7 +820,9 @@ class Answers:
         if to_go is None:
             # the same fallback "laps left" uses (25 Sep bank run: one said "2 laps to go" while
             # the other said "need a timed lap first")
-            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None, self.model)
+            to_go = laps_to_go(
+                race, race.me.last_lap if race.me.last_lap > 0 else None, self.model
+            )
         # its last lap, or its best when the game posted -1 for the last one (the agent's rule too)
         theirs = ahead.last_lap if ahead.last_lap > 0 else ahead.best_lap
         if to_go is None or to_go < 1 or theirs <= 0:
@@ -423,7 +834,8 @@ class Answers:
         picture = self.strategist.fuel_now
         if picture is not None and "verdict" in picture:
             from seats.strategist import fuel_words
-            return fuel_words(picture)             # the verdict, not just numbers (25 Sep)
+
+            return fuel_words(picture)  # the verdict, not just numbers (25 Sep)
         if picture is None:
             # live 25 Sep: "Need two laps to measure the fuel" was all he got. The tank is known
             # from the first second; only the laps it lasts needs two laps at the line.
@@ -432,23 +844,33 @@ class Answers:
             words = f"{round(race.me.fuel, 1)} litres in."
             if race.me.virtual_energy > 0:
                 words += f" Energy {round(race.me.virtual_energy * 100)} percent."
-            low = race.me.fuel_capacity > 0 and race.me.fuel / race.me.fuel_capacity < 0.1
+            low = (
+                race.me.fuel_capacity > 0 and race.me.fuel / race.me.fuel_capacity < 0.1
+            )
             if low or 0 < race.me.virtual_energy < 0.1:
-                return words + " That's LOW. Usage in half a lap: check your screen, be ready to box."
+                return (
+                    words
+                    + " That's LOW. Usage in half a lap: check your screen, be ready to box."
+                )
             return words + " Usage measured in half a lap."
         spare = picture["spare_laps"]
         what = "Fuel" if picture["limit"] == "fuel" else "Energy"
         from seats.strategist import fine_margin
+
         if spare >= fine_margin(picture.get("laps_left") or 99.0):
             return f"{what}'s fine. {spare} laps spare. Push."
         if spare >= 0:
             return f"{what}'s tight, {spare} laps spare. Lift and coast into the big stops."
-        return f"{what}'s short by {abs(spare)} laps. Lift and coast every braking zone."
+        return (
+            f"{what}'s short by {abs(spare)} laps. Lift and coast every braking zone."
+        )
 
     def laps_left(self, race):
         to_go = self.engineer.to_go_at_line
         if to_go is None:
-            to_go = laps_to_go(race, race.me.last_lap if race.me.last_lap > 0 else None, self.model)
+            to_go = laps_to_go(
+                race, race.me.last_lap if race.me.last_lap > 0 else None, self.model
+            )
         if to_go is None:
             return "Need a timed lap to count it."
         if to_go <= 1:
@@ -465,7 +887,7 @@ class Answers:
 
     def position(self, race):
         if multiclass(race):
-            return self.class_standing(race)          # "P7 in class, of 25. P43 overall."
+            return self.class_standing(race)  # "P7 in class, of 25. P43 overall."
         return f"P{race.me.place}."
 
     # ---- v3 5b: lookups answered by code (his ask, 25 Sep) ------------------------------------
@@ -480,7 +902,9 @@ class Answers:
         words = f"Fronts {temps[0]} and {temps[1]}. Rears {temps[2]} and {temps[3]}."
         cooking = [name for name, t in zip(WHEEL_NAMES, temps) if t > HOT_TYRE_C]
         if cooking:
-            words += f" {' and '.join(cooking).capitalize()} cooking, over {HOT_TYRE_C}."
+            words += (
+                f" {' and '.join(cooking).capitalize()} cooking, over {HOT_TYRE_C}."
+            )
         else:
             hottest = WHEEL_NAMES[temps.index(max(temps))]
             words += f" Hottest the {hottest}. Nothing cooking."
@@ -503,7 +927,11 @@ class Answers:
         return f"Fronts {left[0]} and {left[1]} percent left, rears {left[2]} and {left[3]}. Worst the {worst}."
 
     def compound(self, race):
-        return f"{race.me.compound}." if race.me.compound else "The game doesn't say the compound."
+        return (
+            f"{race.me.compound}."
+            if race.me.compound
+            else "The game doesn't say the compound."
+        )
 
     def brakes(self, race):
         b = race.me.brake_temps
@@ -514,7 +942,13 @@ class Answers:
     def damage(self, race):
         me = race.me
         hit = sum(1 for d in me.dents if d)
-        words = "No damage." if hit == 0 else "Damage in one place on the car." if hit == 1 else f"Damage in {hit} places around the car."
+        words = (
+            "No damage."
+            if hit == 0
+            else "Damage in one place on the car."
+            if hit == 1
+            else f"Damage in {hit} places around the car."
+        )
         if me.detached:
             words += " Something's come off."
         if me.overheating:
@@ -522,15 +956,29 @@ class Answers:
         return words
 
     def engine(self, race):
-        return "Engine's overheating. Short-shift and get air to it." if race.me.overheating else "Engine's fine."
+        return (
+            "Engine's overheating. Short-shift and get air to it."
+            if race.me.overheating
+            else "Engine's fine."
+        )
 
     def weather(self, race):
         s = race.session
-        rain = "Dry." if s.raining < 0.05 else f"Raining, {round(s.raining * 100)} percent."
+        rain = (
+            "Dry."
+            if s.raining < 0.05
+            else f"Raining, {round(s.raining * 100)} percent."
+        )
         words = f"Air {round(s.ambient_temp)}, track {round(s.track_temp)}. {rain}"
         if s.wetness >= 0.05:
             words += f" Track {round(s.wetness * 100)} percent wet."
-        grip = {0: "Green track", 1: "Low rubber", 2: "Medium rubber", 3: "High rubber", 4: "Full rubber"}.get(s.grip_level)
+        grip = {
+            0: "Green track",
+            1: "Low rubber",
+            2: "Medium rubber",
+            3: "High rubber",
+            4: "Full rubber",
+        }.get(s.grip_level)
         if grip:
             words += f" {grip}."
         return words + " No forecast in the data."
@@ -549,7 +997,9 @@ class Answers:
         return words
 
     def sectors(self, race):
-        timed = [r for r in getattr(self.strategist, "lap_records", []) if r.get("sectors_s")]
+        timed = [
+            r for r in getattr(self.strategist, "lap_records", []) if r.get("sectors_s")
+        ]
         if not timed:
             return "No full lap with sectors timed yet."
         last = timed[-1]["sectors_s"]
@@ -559,7 +1009,10 @@ class Answers:
 
     def class_standing(self, race):
         me = race.me
-        mine = sorted([me.place] + [o.place for o in race.opponents if o.car_class == me.car_class])
+        mine = sorted(
+            [me.place]
+            + [o.place for o in race.opponents if o.car_class == me.car_class]
+        )
         return f"P{mine.index(me.place) + 1} in class, of {len(mine)}. P{me.place} overall."
 
     def class_position(self, race):
@@ -569,20 +1022,32 @@ class Answers:
         me = race.me
         cars = [(o.place, o) for o in race.opponents]
         overall = min(cars, key=lambda c: c[0]) if cars else None
-        in_class = [(o.place, o) for o in race.opponents if o.car_class == me.car_class and o.place < me.place]
+        in_class = [
+            (o.place, o)
+            for o in race.opponents
+            if o.car_class == me.car_class and o.place < me.place
+        ]
         if not in_class:
             words = "You're leading your class."
         else:
             place, car = min(in_class, key=lambda c: c[0])
             gap = round(me.time_behind_leader - car.time_behind_leader, 1)
             words = f"Class leader is P{place}, a {car.car_model or car.car_name}, {gap} up the road."
-        if overall is not None and overall[0] < me.place and overall[1].car_class != me.car_class:
+        if (
+            overall is not None
+            and overall[0] < me.place
+            and overall[1].car_class != me.car_class
+        ):
             words += f" Overall it's a {overall[1].car_class}."
         return words
 
     def fastest_lap(self, race):
         me = race.me
-        same = [o.best_lap for o in race.opponents if o.car_class == me.car_class and o.best_lap > 0]
+        same = [
+            o.best_lap
+            for o in race.opponents
+            if o.car_class == me.car_class and o.best_lap > 0
+        ]
         if me.best_lap > 0:
             same.append(me.best_lap)
         if not same:
@@ -590,12 +1055,22 @@ class Answers:
         best = min(same)
         words = f"Fastest in class {lap_text(best)}."
         if me.best_lap > 0:
-            words += " That's yours." if me.best_lap == best else f" Yours {lap_text(me.best_lap)}."
+            words += (
+                " That's yours."
+                if me.best_lap == best
+                else f" Yours {lap_text(me.best_lap)}."
+            )
         return words
 
     def penalty(self, race):
         n = race.me.penalties
-        return "No penalty." if n == 0 else f"{n} penalty to serve." if n == 1 else f"{n} penalties to serve."
+        return (
+            "No penalty."
+            if n == 0
+            else f"{n} penalty to serve."
+            if n == 1
+            else f"{n} penalties to serve."
+        )
 
     def track_limits(self, race):
         steps, limit = race.me.track_limit_steps, race.session.limit_steps_per_penalty
@@ -605,12 +1080,20 @@ class Answers:
 
     def settings(self, race):
         me = race.me
-        bias = f"Bias {round(me.brake_bias_rear * 100, 1)} rear. " if me.brake_bias_rear else ""
+        bias = (
+            f"Bias {round(me.brake_bias_rear * 100, 1)} rear. "
+            if me.brake_bias_rear
+            else ""
+        )
         return f"{bias}TC {me.tc}, ABS {me.abs}, map {me.motor_map}."
 
     def fuel_usage(self, race):
         words = f"{round(race.me.fuel, 1)} litres in."
-        used = [r["fuel_used"] for r in getattr(self.strategist, "lap_records", []) if r.get("fuel_used")]
+        used = [
+            r["fuel_used"]
+            for r in getattr(self.strategist, "lap_records", [])
+            if r.get("fuel_used")
+        ]
         if used:
             words += f" Using {round(used[-1], 1)} a lap."
         else:

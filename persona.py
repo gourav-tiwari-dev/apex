@@ -8,6 +8,7 @@ The persona is Gourav's own July design (notion_apex.md section 13), with one ch
 made on 23 Sep 2026: aggressive but TIMED. It never tells him to back down from racing, it
 tells him WHERE the move works, because hasty moves in close racing cost him safety rating.
 """
+
 import os
 import re
 import time
@@ -18,8 +19,8 @@ from openai import OpenAI
 load_dotenv()
 
 MODEL = "deepseek-v4-flash"
-MAX_WORDS = 12            # the prompt asks for 10; the gate allows a little slack, never more
-FAILURES_TO_OPEN = 3      # consecutive LLM failures before the circuit opens
+MAX_WORDS = 12  # the prompt asks for 10; the gate allows a little slack, never more
+FAILURES_TO_OPEN = 3  # consecutive LLM failures before the circuit opens
 CIRCUIT_COOLDOWN_S = 120
 
 PERSONA = """You are APEX, Gourav's race engineer, on the team radio during a race.
@@ -71,13 +72,43 @@ Examples of the voice:
 "Fuel's fine. Push, mate. No fucking saving."
 """
 
-CLEAN_RULE = "\nThis is a recording for other people: NO swearing at all. Keep the attitude."
+CLEAN_RULE = (
+    "\nThis is a recording for other people: NO swearing at all. Keep the attitude."
+)
 
-BANNED = ["think", "maybe", "try", "consider", "perhaps", "you should", "i think",
-          "good luck", "stay safe", "manage", "back off"]
-LABELS = ["flag_once", "executable", "physics_abort", "race_engineer", "spotter",
-          "strategist", "racecraft"]
-PROFANITY = ["fuck", "fucking", "shit", "damn", "hell", "bastard", "bloody", "crap", "ass"]
+BANNED = [
+    "think",
+    "maybe",
+    "try",
+    "consider",
+    "perhaps",
+    "you should",
+    "i think",
+    "good luck",
+    "stay safe",
+    "manage",
+    "back off",
+]
+LABELS = [
+    "flag_once",
+    "executable",
+    "physics_abort",
+    "race_engineer",
+    "spotter",
+    "strategist",
+    "racecraft",
+]
+PROFANITY = [
+    "fuck",
+    "fucking",
+    "shit",
+    "damn",
+    "hell",
+    "bastard",
+    "bloody",
+    "crap",
+    "ass",
+]
 ACKNOWLEDGEMENTS = ["copy", "understood", "roger"]
 # other drivers are real people: the radio never guesses their gender (23 Sep 2026, the model
 # called a rival "her" from the name alone, even when told not to)
@@ -85,11 +116,35 @@ GENDERED = ["he", "she", "him", "her", "his", "hers"]
 
 
 NUMBER_WORDS = {
-    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
-    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
-    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
-    "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100,
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+    "hundred": 100,
 }
 
 
@@ -177,7 +232,9 @@ def gate(line, call, clean=False):
     for value in call.facts.values():
         if isinstance(value, str):
             for word in value.lower().split():
-                numbers_part = re.sub(r"\b" + re.escape(word) + r"\b", " ", numbers_part)
+                numbers_part = re.sub(
+                    r"\b" + re.escape(word) + r"\b", " ", numbers_part
+                )
     for number in numbers_in(numbers_part):
         if not number_is_backed(number, call.facts):
             return False, f"invented number: {number:g}"
@@ -192,7 +249,9 @@ CLEAN_KINDS = {"GAP_REPORT", "QUALI_LAP", "TRACK_LIMITS", "PENALTY", "PACE_TARGE
 def facts_text(call, clean=False):
     parts = [f"tell him: {call.conclusion}"]
     if not clean and call.kind not in CLEAN_KINDS:
-        parts.append("swear in this line: YES, one full swear word, aimed at the situation or the other car")
+        parts.append(
+            "swear in this line: YES, one full swear word, aimed at the situation or the other car"
+        )
     for name, value in call.facts.items():
         parts.append(f"{name}: {value}")
     return "\n".join(parts)
@@ -207,9 +266,12 @@ class Persona:
 
     def llm(self):
         if self.client is None:
-            self.client = OpenAI(base_url="https://aicredits.in/v1",
-                                 api_key=os.environ["AICREDITS_API_KEY"],
-                                 timeout=4, max_retries=0)
+            self.client = OpenAI(
+                base_url="https://aicredits.in/v1",
+                api_key=os.environ["AICREDITS_API_KEY"],
+                timeout=4,
+                max_retries=0,
+            )
         return self.client
 
     def online(self):
@@ -235,8 +297,10 @@ class Persona:
         try:
             response = self.llm().chat.completions.create(
                 model=MODEL,
-                messages=[{"role": "system", "content": self.system_prompt()},
-                          {"role": "user", "content": facts_text(call, self.clean)}],
+                messages=[
+                    {"role": "system", "content": self.system_prompt()},
+                    {"role": "user", "content": facts_text(call, self.clean)},
+                ],
                 max_tokens=60,
                 # thinking OFF: measured 23 Sep, thinking was 96% of a live line's tokens
                 extra_body={"thinking": {"type": "disabled"}},
@@ -245,7 +309,9 @@ class Persona:
             self.failures += 1
             if self.failures >= FAILURES_TO_OPEN:
                 self.circuit_open_since = time.perf_counter()
-                print(f"[radio: LLM offline after {self.failures} failures, template lines only]")
+                print(
+                    f"[radio: LLM offline after {self.failures} failures, template lines only]"
+                )
             print(f"[radio: LLM call failed: {error.__class__.__name__}]")
             return None, 0, 0, time.perf_counter() - started
         self.failures = 0

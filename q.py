@@ -1,4 +1,5 @@
 """Scratch query runner:  python q.py "SELECT ..." """
+
 import sqlite3, sys
 
 conn = sqlite3.connect("apex.db")

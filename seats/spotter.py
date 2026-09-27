@@ -5,17 +5,20 @@ how far to my side, how far ahead or behind. A car overlapping me in length and 
 one lane over is "alongside". Calls are urgent and come from the voice bank, so they
 start in 0.01 ms.
 """
+
 from radio import Call, SPOTTER
 
-CAR_LENGTH_M = 4.7            # a GT3 is about 4.6-4.7 m long
-LANE_MIN_M = 1.2              # closer sideways than this is not alongside, it is in line
-LANE_MAX_M = 6.0              # further than this is two lanes away
-CLEAR_AFTER_S = 0.4           # a side must stay empty this long before "clear"
-CALL_TTL_S = 1.0              # a spotter call even a second late is wrong
+CAR_LENGTH_M = 4.7  # a GT3 is about 4.6-4.7 m long
+LANE_MIN_M = 1.2  # closer sideways than this is not alongside, it is in line
+LANE_MAX_M = 6.0  # further than this is two lanes away
+CLEAR_AFTER_S = 0.4  # a side must stay empty this long before "clear"
+CALL_TTL_S = 1.0  # a spotter call even a second late is wrong
 # v3 (24 Sep): 17 of 34 spotter lines that night were "Clear", mostly after a car that only
 # brushed past. Real spotters (NASA Speed News guide, iRacing's spotter) say "clear" to end a
 # real overlap and repeat "still there" every few seconds while it lasts.
-CLEAR_NEEDS_ALONGSIDE_S = 1.0 # a car alongside for less than this passed by: no "clear"
+CLEAR_NEEDS_ALONGSIDE_S = (
+    1.0  # a car alongside for less than this passed by: no "clear"
+)
 STILL_THERE_EVERY_S = 4.0
 # His call, live 25 Sep: "fix that damn spotter, it cuts all the radio calls - I know who is on my
 # right or left". Side-by-side calls (car left/right, still there, clear, three wide) are OFF: he
@@ -45,8 +48,8 @@ def side_and_overlap(my_pos, my_ori, car):
 
 
 MOVING_KMH = 30.0
-GREEN = 5                     # mGamePhase: racing. The formation lap (3) runs at 70-75 km/h in
-                              # a tight line, and "car left" there is pure noise (24 Sep)
+GREEN = 5  # mGamePhase: racing. The formation lap (3) runs at 70-75 km/h in
+# a tight line, and "car left" there is pure noise (24 Sep)
 
 
 def on_track(moment):
@@ -83,15 +86,23 @@ class Spotter:
         self.left = False
         self.right = False
         self.three_wide = False
-        self.empty_since = None      # when both sides last became empty
+        self.empty_since = None  # when both sides last became empty
         self.alongside_since = None  # when this overlap began
-        self.last_said_at = None     # the last spotter line, for "still there"
+        self.last_said_at = None  # the last spotter line, for "still there"
         self.still_every = STILL_THERE_EVERY_S
 
     def call(self, kind, text, now):
         self.last_said_at = now
-        return Call(seat="spotter", kind=kind, sim_time=now, priority=SPOTTER, ttl=CALL_TTL_S,
-                    conclusion=text, template=text, urgent=True)
+        return Call(
+            seat="spotter",
+            kind=kind,
+            sim_time=now,
+            priority=SPOTTER,
+            ttl=CALL_TTL_S,
+            conclusion=text,
+            template=text,
+            urgent=True,
+        )
 
     def update(self, moment):
         now = moment.now
@@ -108,7 +119,9 @@ class Spotter:
         calls = []
 
         if left and right and not self.three_wide:
-            calls.append(self.call("THREE_WIDE", "Three wide. You're in the middle.", now))
+            calls.append(
+                self.call("THREE_WIDE", "Three wide. You're in the middle.", now)
+            )
             self.three_wide = True
         elif left and not self.left and not right:
             calls.append(self.call("CAR_LEFT", "Car left.", now))
@@ -121,7 +134,11 @@ class Spotter:
             # someone is beside me: remember which side, and cancel any pending "clear"
             if self.alongside_since is None:
                 self.alongside_since = now
-            elif not calls and now - (self.last_said_at or self.alongside_since) >= self.still_every:
+            elif (
+                not calls
+                and now - (self.last_said_at or self.alongside_since)
+                >= self.still_every
+            ):
                 calls.append(self.call("STILL_THERE", "Still there.", now))
                 self.still_every = min(self.still_every * 2, STILL_THERE_MAX_S)
             self.left = left

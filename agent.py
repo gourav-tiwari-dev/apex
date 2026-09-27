@@ -21,6 +21,7 @@ How it stays honest:
     answer gets one rewrite with the reason; a second refusal is replaced by an honest
     "no clean answer" line.
 """
+
 import json
 import math
 import os
@@ -29,30 +30,55 @@ import threading
 import time
 from queue import Queue, Empty
 
-from persona import MODEL, BANNED, PROFANITY, GENDERED, numbers_in, number_is_backed, words_to_digits, has_phrase
+from persona import (
+    MODEL,
+    BANNED,
+    PROFANITY,
+    GENDERED,
+    numbers_in,
+    number_is_backed,
+    words_to_digits,
+    has_phrase,
+)
 from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go
 from seats.strategist import fine_margin
 import race_tools
 from orders import current_plan
 
-MAX_ROUNDS = 4                 # tool rounds before it must answer
+MAX_ROUNDS = 4  # tool rounds before it must answer
 # asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
 # and rewritten, and the rewrite lost the swearing and cost a whole extra round
 MAX_WORDS = 55
-ANSWER_TTL_S = 30.0            # an answer about the race 30 s ago is out of date
+ANSWER_TTL_S = 30.0  # an answer about the race 30 s ago is out of date
 MAX_TOKENS = 1500
 # 24 Sep: the provider went erratic - three identical calls took 60 s (timed out), 26 s, 1.3 s -
 # and an answer came 38 s after the question. On track that is worse than no answer, so each
 # model call gets 10 s, and past that the team's own call is said at once (see fallback()).
 MODEL_TIMEOUT_S = 10
-FOLLOW_UP_WINDOW_S = 60.0     # a question within a minute of the last one may be a follow-up
-FOLLOW_UP_EXCHANGES = 3       # v3 5b: "and what about the one behind?" can lean on 3 exchanges
+FOLLOW_UP_WINDOW_S = (
+    60.0  # a question within a minute of the last one may be a follow-up
+)
+FOLLOW_UP_EXCHANGES = (
+    3  # v3 5b: "and what about the one behind?" can lean on 3 exchanges
+)
 
 # v3 5b: explain mode. "What's the plan?" or "why?" deserves more than 35 words, and he said
 # he can wait for it: a longer answer and 20 s per model call instead of 10.
-EXPLAIN_WORDS = ("explain", "why", "walk me through", "whats the plan", "what is the plan", "the plan",
-                 "strategy", "tell me more", "in detail", "break it down", "go through", "talk me through")
+EXPLAIN_WORDS = (
+    "explain",
+    "why",
+    "walk me through",
+    "whats the plan",
+    "what is the plan",
+    "the plan",
+    "strategy",
+    "tell me more",
+    "in detail",
+    "break it down",
+    "go through",
+    "talk me through",
+)
 MAX_WORDS_EXPLAIN = 110
 HEAVY_TIMEOUT_S = 20
 # he drives by feel, so no speeds on the radio - unless he asks for one (v3 5b)
@@ -199,113 +225,188 @@ FORMAT: the FIRST line is for the pit wall and is never read out:
 Then a new line, then the spoken answer."""
 
 CLEAN_RULE = "OVERRIDE: stay clean. No swearing at all in this answer, whatever the examples say."
-VOICE_REMINDER = ("Answer ONLY this question, in Max's voice: blunt, 'mate', and SWEAR in this answer "
-                  "(fuck, fucking, shit, bloody), aimed at the situation or the other cars, never at Gourav. "
-                  "About 35 words.")
+VOICE_REMINDER = (
+    "Answer ONLY this question, in Max's voice: blunt, 'mate', and SWEAR in this answer "
+    "(fuck, fucking, shit, bloody), aimed at the situation or the other cars, never at Gourav. "
+    "About 35 words."
+)
 VOICE_REMINDER_CLEAN = "Answer ONLY this question, in Max's voice: blunt, 'mate', no swearing. About 35 words."
 # 25 Sep bank run: "the car behind is 0.7 a lap quicker" was tacked onto ~45 of 78 answers
 # (tyres, ABS, sectors, history) although rule 7 forbids it. The rule now sits next to the
 # question, and code refuses the answer when it happens anyway.
-NO_TACK_ON = ("Do NOT mention the car ahead or behind unless the question is about them or a car is "
-              "within 1 second (IN A FIGHT).")
+NO_TACK_ON = (
+    "Do NOT mention the car ahead or behind unless the question is about them or a car is "
+    "within 1 second (IN A FIGHT)."
+)
 
 TOOLS = [
-    {"name": "race_picture",
-     "description": "ALREADY SENT with the question; call it only to refresh. "
-                    "The race right now: session, laps to go, his place, his last and best lap, "
-                    "the same-class cars just ahead and behind with gaps, their last laps and how "
-                    "the gaps changed over the last lap, flags, and whether the radio is on quiet.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "driver",
-     "description": "One other driver: place, gap to him, last and best lap, pace difference per "
-                    "lap, corners where they are quicker or slower than him, and the history "
-                    "between them (this race and past races).",
-     "parameters": {"type": "object", "properties": {
-         "who": {"type": "string", "description": "'ahead', 'behind', or the driver's name"}},
-         "required": ["who"]}},
-    {"name": "my_habits",
-     "description": "What team memory knows about Gourav from past races: habits by corner, lap 1, "
-                    "pass attempts and how they ended, clean-race record. Every fact is measured.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "corner",
-     "description": "One corner: his time there against his own best and the fastest car, the one "
-                    "thing to change, and his history there.",
-     "parameters": {"type": "object", "properties": {
-         "name": {"type": "string", "description": "the corner's name"}},
-         "required": ["name"]}},
-    {"name": "car",
-     "description": "His car in full: fuel litres and spare at the flag, virtual energy, battery, tyre "
-                    "compound, temperatures (average and inner/centre/outer), pressures, wear, brake "
-                    "temperatures, damage, brake bias, TC, ABS, motor map, anti-roll bars, track-limit "
-                    "steps against the penalty limit, penalties, pit stops.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "standings",
-     "description": "Every car in order: overall and class position, class, car model, gap to the "
-                    "leader or laps down, best and last lap, pit stops. His row says you.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "session",
-     "description": "Track, session, phase, time left, laps to go, air and track temperature, rain, "
-                    "wetness, grip, yellow flags, blue flag for him.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "lap_history",
-     "description": "His laps this session: times, sectors, fuel used per lap, valid or not, best, "
-                    "average and spread of the last 3, best sectors and the best possible lap.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "race_events",
-     "description": "What happened to him this session: offs, spins, contacts, lock-ups, track "
-                    "limits, pass attempts and how they ended, the last lines the radio said.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "setup",
-     "description": "His in-car settings now (brake bias, TC, ABS, motor map) and the setup "
-                    "engineer's advice from this session's evidence.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "strategy",
-     "description": "The plan, worked out by code: fuel or energy to the flag, whether the car "
-                    "ahead can be caught, whether the car behind is coming, tyres, and the corners "
-                    "where the time is. Use it for 'what's the plan', push or save, what to do now.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "knowledge",
-     "description": "Rules and know-how: flags, track limits, penalties, safety and driver rank, "
-                    "starts, safety car, tyres, car balance fixes, in-car settings, tow, what Apex "
-                    "can and cannot see. Facts marked UNVERIFIED are not confirmed.",
-     "parameters": {"type": "object", "properties": {
-         "topic": {"type": "string", "description": "what he asked about, in a few words"}},
-         "required": ["topic"]}},
-    {"name": "calculator",
-     "description": "Arithmetic: + - * / ** %, brackets, min max round abs ceil floor. Use it for "
-                    "every sum instead of working it out yourself.",
-     "parameters": {"type": "object", "properties": {
-         "expression": {"type": "string", "description": "e.g. (242.1 - 240.5) * 3"}},
-         "required": ["expression"]}},
-    {"name": "remind_me",
-     "description": "Set a reminder the radio says at the start of a later lap, e.g. 'box this lap' "
-                    "or 'check fuel'. Only when he asks for a reminder.",
-     "parameters": {"type": "object", "properties": {
-         "lap": {"type": "integer", "description": "the lap number to say it on"},
-         "what": {"type": "string", "description": "the reminder, a few words"}},
-         "required": ["lap", "what"]}},
-    {"name": "database",
-     "description": "LAST RESORT, for past races only: one read-only SQL SELECT over apex.db. Tables: "
-                    "sessions(id, started_at, track, session_type, final_place, grid, car_class, car_model), "
-                    "events(session_id, kind, sim_time, lap_count, corner, other_car), "
-                    "radio_log(session_id, sim_time, seat, kind, status, line), "
-                    "pass_attempts(session_id, driver, corner, lap_count, outcome), "
-                    "rivals_seen(session_id, driver, car_class, best_lap, final_place), "
-                    "profile_facts(kind, track, subject, summary). session_type 10-13 = race.",
-     "parameters": {"type": "object", "properties": {
-         "sql": {"type": "string", "description": "one SELECT, at most 30 rows come back"}},
-         "required": ["sql"]}},
-    {"name": "track_ahead",
-     "description": "The next corners from where he is now, in order, with the distance to each, "
-                    "and whether the cars around him are quicker or slower there.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {
+        "name": "race_picture",
+        "description": "ALREADY SENT with the question; call it only to refresh. "
+        "The race right now: session, laps to go, his place, his last and best lap, "
+        "the same-class cars just ahead and behind with gaps, their last laps and how "
+        "the gaps changed over the last lap, flags, and whether the radio is on quiet.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "driver",
+        "description": "One other driver: place, gap to him, last and best lap, pace difference per "
+        "lap, corners where they are quicker or slower than him, and the history "
+        "between them (this race and past races).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "who": {
+                    "type": "string",
+                    "description": "'ahead', 'behind', or the driver's name",
+                }
+            },
+            "required": ["who"],
+        },
+    },
+    {
+        "name": "my_habits",
+        "description": "What team memory knows about Gourav from past races: habits by corner, lap 1, "
+        "pass attempts and how they ended, clean-race record. Every fact is measured.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "corner",
+        "description": "One corner: his time there against his own best and the fastest car, the one "
+        "thing to change, and his history there.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "the corner's name"}
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "car",
+        "description": "His car in full: fuel litres and spare at the flag, virtual energy, battery, tyre "
+        "compound, temperatures (average and inner/centre/outer), pressures, wear, brake "
+        "temperatures, damage, brake bias, TC, ABS, motor map, anti-roll bars, track-limit "
+        "steps against the penalty limit, penalties, pit stops.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "standings",
+        "description": "Every car in order: overall and class position, class, car model, gap to the "
+        "leader or laps down, best and last lap, pit stops. His row says you.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "session",
+        "description": "Track, session, phase, time left, laps to go, air and track temperature, rain, "
+        "wetness, grip, yellow flags, blue flag for him.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "lap_history",
+        "description": "His laps this session: times, sectors, fuel used per lap, valid or not, best, "
+        "average and spread of the last 3, best sectors and the best possible lap.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "race_events",
+        "description": "What happened to him this session: offs, spins, contacts, lock-ups, track "
+        "limits, pass attempts and how they ended, the last lines the radio said.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "setup",
+        "description": "His in-car settings now (brake bias, TC, ABS, motor map) and the setup "
+        "engineer's advice from this session's evidence.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "strategy",
+        "description": "The plan, worked out by code: fuel or energy to the flag, whether the car "
+        "ahead can be caught, whether the car behind is coming, tyres, and the corners "
+        "where the time is. Use it for 'what's the plan', push or save, what to do now.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "knowledge",
+        "description": "Rules and know-how: flags, track limits, penalties, safety and driver rank, "
+        "starts, safety car, tyres, car balance fixes, in-car settings, tow, what Apex "
+        "can and cannot see. Facts marked UNVERIFIED are not confirmed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "what he asked about, in a few words",
+                }
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "calculator",
+        "description": "Arithmetic: + - * / ** %, brackets, min max round abs ceil floor. Use it for "
+        "every sum instead of working it out yourself.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "e.g. (242.1 - 240.5) * 3",
+                }
+            },
+            "required": ["expression"],
+        },
+    },
+    {
+        "name": "remind_me",
+        "description": "Set a reminder the radio says at the start of a later lap, e.g. 'box this lap' "
+        "or 'check fuel'. Only when he asks for a reminder.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "lap": {
+                    "type": "integer",
+                    "description": "the lap number to say it on",
+                },
+                "what": {"type": "string", "description": "the reminder, a few words"},
+            },
+            "required": ["lap", "what"],
+        },
+    },
+    {
+        "name": "database",
+        "description": "LAST RESORT, for past races only: one read-only SQL SELECT over apex.db. Tables: "
+        "sessions(id, started_at, track, session_type, final_place, grid, car_class, car_model), "
+        "events(session_id, kind, sim_time, lap_count, corner, other_car), "
+        "radio_log(session_id, sim_time, seat, kind, status, line), "
+        "pass_attempts(session_id, driver, corner, lap_count, outcome), "
+        "rivals_seen(session_id, driver, car_class, best_lap, final_place), "
+        "profile_facts(kind, track, subject, summary). session_type 10-13 = race.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "sql": {
+                    "type": "string",
+                    "description": "one SELECT, at most 30 rows come back",
+                }
+            },
+            "required": ["sql"],
+        },
+    },
+    {
+        "name": "track_ahead",
+        "description": "The next corners from where he is now, in order, with the distance to each, "
+        "and whether the cars around him are quicker or slower there.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 
 CALL_WORDS = ("DEFEND", "LET BY", "ATTACK", "FOLLOW")
 OVERRIDE_REASONS = ("damage", "contact", "class", "tyres")
-HOT_TYRE_C = 105              # the strategist's "cooking" line
-OTHER_CLASS_NEAR_M = 400      # an other-class car this close behind is about to arrive
+HOT_TYRE_C = 105  # the strategist's "cooking" line
+OTHER_CLASS_NEAR_M = 400  # an other-class car this close behind is about to arrive
 
 
 FALLBACK_WARNINGS = {
@@ -316,8 +417,22 @@ FALLBACK_WARNINGS = {
 }
 
 
-FIGHT_WORDS = ("defend", "block", "div", "attack", "overtak", "pass", "hit", "let him", "let them",
-               "behind", "ahead", "aggress", "fight", "battle")
+FIGHT_WORDS = (
+    "defend",
+    "block",
+    "div",
+    "attack",
+    "overtak",
+    "pass",
+    "hit",
+    "let him",
+    "let them",
+    "behind",
+    "ahead",
+    "aggress",
+    "fight",
+    "battle",
+)
 
 
 def fallback(snapshot, question=""):
@@ -380,13 +495,13 @@ def lap_text(seconds):
         return None
     minutes = int(seconds // 60)
     rest = round(seconds - minutes * 60, 1)
-    if rest >= 60.0:               # 239.96 s is 4:00.0, not 3:60.0
+    if rest >= 60.0:  # 239.96 s is 4:00.0, not 3:60.0
         minutes += 1
         rest = round(rest - 60.0, 1)
     return f"{minutes}:{rest:04.1f}"
 
 
-NOT_A_FIGHT_S = 1.0     # further apart than this, nobody is diving at anybody yet
+NOT_A_FIGHT_S = 1.0  # further apart than this, nobody is diving at anybody yet
 
 
 def recent_lap(car):
@@ -404,8 +519,12 @@ def recent_lap(car):
 
 # From 278 fights on his four race tapes (tools/pass_study.py, 25 Sep): how often the car behind
 # got past within a lap, by how much quicker it was on the road. Recompute as tapes grow.
-PASS_ODDS = [(-99.0, "slower than you", 0.45), (-0.5, "about your pace", 0.55),
-             (0.5, "0.5 to 2 s a lap quicker", 0.81), (2.0, "2+ s a lap quicker", 0.86)]
+PASS_ODDS = [
+    (-99.0, "slower than you", 0.45),
+    (-0.5, "about your pace", 0.55),
+    (0.5, "0.5 to 2 s a lap quicker", 0.81),
+    (2.0, "2+ s a lap quicker", 0.86),
+]
 
 
 def pass_odds(quicker):
@@ -417,10 +536,14 @@ def pass_odds(quicker):
     return found[1], found[2]
 
 
-CONTACT_LET_BY_QUICKER_S = 0.5   # contact once + at least this much quicker: a let-by is fair
-CATCH_UPPER = 1.5     # field study (25 Sep): 20 of 21 sure forecasts were caught, the time was
-                      # off by a median 64%, and within 1.5x the forecast 95% of the time for
-                      # forecasts over a minute: say WHETHER and an upper bound, never "in 1.6 laps"
+CONTACT_LET_BY_QUICKER_S = (
+    0.5  # contact once + at least this much quicker: a let-by is fair
+)
+CATCH_UPPER = (
+    1.5  # field study (25 Sep): 20 of 21 sure forecasts were caught, the time was
+)
+# off by a median 64%, and within 1.5x the forecast 95% of the time for
+# forecasts over a minute: say WHETHER and an upper bound, never "in 1.6 laps"
 
 
 def catch_words(laps, to_go):
@@ -442,22 +565,35 @@ def pace_pair(car, theirs, source, mine, engineer, racecraft, model=None):
     two laps when it has them). The field study of his tapes: between fighting cars the gap moves
     ~1.2 s a lap for reasons that are not pace; with 2 laps of trend the direction was right ~80%.
     One lap = "not sure": it can inform, never decide a let-by. Then two posted laps. Else unknown."""
-    base = mine or engineer.my_lap or 240.0          # only the difference matters to the maths
+    base = mine or engineer.my_lap or 240.0  # only the difference matters to the maths
     if model is not None:
         found = model.quicker(car.id, "me")
         if found is not None:
             quicker, sure = found
-            how = ("measured on the road over the last 2 laps" if sure
-                   else "on the road over 1 lap only: NOT SURE yet, say so")
+            how = (
+                "measured on the road over the last 2 laps"
+                if sure
+                else "on the road over 1 lap only: NOT SURE yet, say so"
+            )
             return round(base - quicker, 2), base, sure, how
     quicker = None
     if racecraft is not None:
         quicker = racecraft.clock.pace_vs_me(car.id)
     if quicker is not None:
-        return round(base - quicker, 2), base, True, "measured on the road over the last lap"
+        return (
+            round(base - quicker, 2),
+            base,
+            True,
+            "measured on the road over the last lap",
+        )
     if theirs is not None and mine is not None:
         clean = source == "last lap"
-        return theirs, mine, clean, "from lap times" if clean else "from their best lap, their last not posted"
+        return (
+            theirs,
+            mine,
+            clean,
+            "from lap times" if clean else "from their best lap, their last not posted",
+        )
     return None, None, False, None
 
 
@@ -477,23 +613,31 @@ def race_maths(side, gap, their_lap, my_lap, laps_to_go):
     """The arithmetic, done by code so every answer uses the same numbers (on 24 Sep the model
     said "hunt Kossman" and "you won't catch him" a minute apart)."""
     maths = {}
-    per_lap = round(their_lap - my_lap, 2)          # > 0: I am quicker
+    per_lap = round(their_lap - my_lap, 2)  # > 0: I am quicker
     if side == "ahead":
         if laps_to_go:
             needed = gap / laps_to_go
-            maths["to_catch_by_the_flag"] = (f"find {round(needed, 1)} s a lap on them: "
-                                             f"a {lap_text(their_lap - needed)} lap, every lap")
+            maths["to_catch_by_the_flag"] = (
+                f"find {round(needed, 1)} s a lap on them: "
+                f"a {lap_text(their_lap - needed)} lap, every lap"
+            )
         if per_lap > 0:
             laps = round(gap / per_lap, 1)
-            maths["at_this_pace"] = (f"you reach them in about {laps} laps: "
-                                     + ("before the flag" if laps_to_go and laps <= laps_to_go else "not before the flag"))
+            maths["at_this_pace"] = f"you reach them in about {laps} laps: " + (
+                "before the flag"
+                if laps_to_go and laps <= laps_to_go
+                else "not before the flag"
+            )
         else:
             maths["at_this_pace"] = "you are not catching them"
     else:
         if per_lap < 0:
             laps = round(gap / -per_lap, 1)
-            maths["at_this_pace"] = (f"they reach you in about {laps} laps: "
-                                     + ("before the flag" if laps_to_go and laps <= laps_to_go else "not before the flag"))
+            maths["at_this_pace"] = f"they reach you in about {laps} laps: " + (
+                "before the flag"
+                if laps_to_go and laps <= laps_to_go
+                else "not before the flag"
+            )
             maths["to_keep_them_behind"] = f"lap {lap_text(their_lap)} or quicker"
         else:
             maths["at_this_pace"] = "they are not catching you"
@@ -509,7 +653,7 @@ def race_maths(side, gap, their_lap, my_lap, laps_to_go):
 # MEASURED on the road over a lap (was 1.0 s, from lap times); damage, contact, a faster class
 # and hot tyres stay the override reasons.
 LET_BY_QUICKER_S = 2.0
-ATTACK_QUICKER_S = 0.2        # this much quicker than the car ahead, in a fight: go
+ATTACK_QUICKER_S = 0.2  # this much quicker than the car ahead, in a fight: go
 
 
 def team_call(side, gap, their_lap, my_lap, laps_to_go, measured=True):
@@ -521,14 +665,27 @@ def team_call(side, gap, their_lap, my_lap, laps_to_go, measured=True):
     if side == "behind":
         if last_lap:
             return "DEFEND: last lap, every place counts. One line, no weaving, no moving in the braking zone."
-        if measured and their_lap is not None and my_lap is not None and my_lap - their_lap >= LET_BY_QUICKER_S:
+        if (
+            measured
+            and their_lap is not None
+            and my_lap is not None
+            and my_lap - their_lap >= LET_BY_QUICKER_S
+        ):
             quicker = round(my_lap - their_lap, 1)
-            return (f"LET BY: {quicker} s a lap quicker, it gets by anyway. Hold a predictable line, "
-                    "don't cover the inside, never lift in its path, then stay with it.")
+            return (
+                f"LET BY: {quicker} s a lap quicker, it gets by anyway. Hold a predictable line, "
+                "don't cover the inside, never lift in its path, then stay with it."
+            )
         return "DEFEND: similar pace, this place is yours to keep. One line into its strong corner, no weaving."
-    if their_lap is not None and my_lap is not None and their_lap - my_lap >= ATTACK_QUICKER_S:
-        return ("ATTACK: you are quicker. Set it up on the exit of a corner where you carry more speed "
-                "and pass into the next braking zone. One clean move, no lunge.")
+    if (
+        their_lap is not None
+        and my_lap is not None
+        and their_lap - my_lap >= ATTACK_QUICKER_S
+    ):
+        return (
+            "ATTACK: you are quicker. Set it up on the exit of a corner where you carry more speed "
+            "and pass into the next braking zone. One clean move, no lunge."
+        )
     return "FOLLOW: not quicker than this car. Stay close, pressure, wait for the mistake, no lunge."
 
 
@@ -559,6 +716,7 @@ def trend_words(side, shrink):
 
 def road_words(me, opponent):
     from race_state import same_lap
+
     if not same_lap(me, opponent):
         return "on a different lap"
     gap = round(me.time_behind_leader - opponent.time_behind_leader, 1)
@@ -569,38 +727,61 @@ def road_words(me, opponent):
 
 # ---- the snapshot: everything the tools can see, taken on the main thread when he asks ------
 
+
 class Snapshot:
     """Built by the race loop the moment he asks. Plain dicts only, so the agent's thread
     reads a still picture while the race moves on."""
 
-    def __init__(self, race, lap, lap_dist, corners, engineer, strategist, performance,
-                 racecraft, governor, habits, contacts_this_race, db_path=None, session_id=None, model=None):
-        self.model = model                 # the race model: the one picture (25 Sep)
-        self.quicker_by = {}               # "ahead" / "behind" -> s a lap that car is quicker than me
+    def __init__(
+        self,
+        race,
+        lap,
+        lap_dist,
+        corners,
+        engineer,
+        strategist,
+        performance,
+        racecraft,
+        governor,
+        habits,
+        contacts_this_race,
+        db_path=None,
+        session_id=None,
+        model=None,
+    ):
+        self.model = model  # the race model: the one picture (25 Sep)
+        self.quicker_by = {}  # "ahead" / "behind" -> s a lap that car is quicker than me
         self.corners_map = corners or []
         self.picture = self.race_picture(race, lap, engineer, governor, racecraft)
         self.lap = lap
         self.race = race
         self.db_path = db_path
         self.session_id = session_id
-        self.actions = []              # reminders he asked for; the race loop carries them out
+        self.actions = []  # reminders he asked for; the race loop carries them out
         self.standings = race_tools.standings(race)
         self.session = race_tools.session_info(race, self.picture.get("laps_to_go"))
         self.laps = race_tools.lap_history(list(getattr(strategist, "lap_records", [])))
-        self.drivers = self.every_driver(race, performance, racecraft, contacts_this_race, engineer)
+        self.drivers = self.every_driver(
+            race, performance, racecraft, contacts_this_race, engineer
+        )
         self.habits = habits
         self.corners = self.every_corner(performance)
         self.car_state = self.car(race, strategist)
         self.car_state.update(race_tools.full_car(race, strategist))
         self.ahead_of_me = self.track_ahead(lap_dist, corners, race, racecraft)
-        self.picture["other_class_cars_near"] = self.other_class_near(race, lap_dist, corners)
+        self.picture["other_class_cars_near"] = self.other_class_near(
+            race, lap_dist, corners
+        )
         # fights exist in races only: in qualifying the other cars are ghosts on the timing sheet, and
         # a "car within a second" made every answer need a DEFEND/ATTACK line (live 25 Sep: "qualifying
         # is fucked up" twice got "No clean answer on that one")
-        self.orders = None                     # his standing orders (set by the agent before it thinks)
+        self.orders = None  # his standing orders (set by the agent before it thinks)
         racing = self.picture.get("session") == "race"
-        self.team_calls = {side: self.picture[side]["team_call"] for side in ("ahead", "behind")
-                           if racing and self.picture.get(side) and self.picture[side].get("team_call")}
+        self.team_calls = {
+            side: self.picture[side]["team_call"]
+            for side in ("ahead", "behind")
+            if racing and self.picture.get(side) and self.picture[side].get("team_call")
+        }
         self.contacts_in_fight = 0
         self.history_in_fight = ""
         for side in self.team_calls:
@@ -610,16 +791,29 @@ class Snapshot:
 
     def other_class_near(self, race, lap_dist, corners):
         """Cars of another class just behind him on the road: the ones about to lap him."""
-        lengths = [c["end"] for c in corners or []] + [o.lap_dist for o in race.opponents] + [lap_dist]
+        lengths = (
+            [c["end"] for c in corners or []]
+            + [o.lap_dist for o in race.opponents]
+            + [lap_dist]
+        )
         lap_length = max(lengths) if lengths else 0
         near = []
         for opponent in race.opponents:
-            if opponent.car_class == race.me.car_class or opponent.in_pits or lap_length <= 0:
+            if (
+                opponent.car_class == race.me.car_class
+                or opponent.in_pits
+                or lap_length <= 0
+            ):
                 continue
             behind_m = (lap_dist - opponent.lap_dist) % lap_length
             if behind_m <= OTHER_CLASS_NEAR_M:
-                near.append({"driver": opponent.driver, "class": opponent.car_class,
-                             "metres_behind": round(behind_m)})
+                near.append(
+                    {
+                        "driver": opponent.driver,
+                        "class": opponent.car_class,
+                        "metres_behind": round(behind_m),
+                    }
+                )
         return near
 
     def override_evidence(self):
@@ -641,9 +835,15 @@ class Snapshot:
         orders = self.orders
         if orders is None:
             return True, "ok"
-        if call == "LET BY" and orders.get("fight") == "fight" and override not in ("damage", "tyres"):
-            return False, ("he gave a standing order: nobody gets past without a fight. Do not tell him to "
-                           "let it by; help him fight it cleanly (CALL: DEFEND)")
+        if (
+            call == "LET BY"
+            and orders.get("fight") == "fight"
+            and override not in ("damage", "tyres")
+        ):
+            return False, (
+                "he gave a standing order: nobody gets past without a fight. Do not tell him to "
+                "let it by; help him fight it cleanly (CALL: DEFEND)"
+            )
         return True, "ok"
 
     def check_call(self, call, override, question=None):
@@ -655,7 +855,10 @@ class Snapshot:
         if call is None and question is not None and not about_the_fight(question):
             return True, "ok"
         if call is None:
-            return False, "start with the CALL line (CALL: DEFEND / LET BY / ATTACK / FOLLOW), then the answer"
+            return (
+                False,
+                "start with the CALL line (CALL: DEFEND / LET BY / ATTACK / FOLLOW), then the answer",
+            )
         if call in team_words and override is None:
             return True, "ok"
         # live 25 Sep: "that Mercedes has hit you once and it's 1.9 s a lap SLOWER, let it go".
@@ -665,32 +868,56 @@ class Snapshot:
         if call == "LET BY":
             quicker = self.quicker_by.get("behind")
             if quicker is not None and quicker < 0:
-                return False, (f"the car behind is {-quicker:.1f} s a lap SLOWER: never let a slower car by. "
-                               "Defend one line, or follow the team call")
-            if override == "contact" and self.contacts_in_fight < 2 and (quicker is None or quicker < CONTACT_LET_BY_QUICKER_S):
-                return False, ("one contact is not a reason to give the place to a car that is not clearly quicker: "
-                               "defend, give it room, one line")
+                return False, (
+                    f"the car behind is {-quicker:.1f} s a lap SLOWER: never let a slower car by. "
+                    "Defend one line, or follow the team call"
+                )
+            if (
+                override == "contact"
+                and self.contacts_in_fight < 2
+                and (quicker is None or quicker < CONTACT_LET_BY_QUICKER_S)
+            ):
+                return False, (
+                    "one contact is not a reason to give the place to a car that is not clearly quicker: "
+                    "defend, give it room, one line"
+                )
         supported = self.override_evidence()
         if override in supported:
             return True, "ok"
         if not supported:
-            return False, (f"the team call is {' / '.join(sorted(team_words))} and the data supports no "
-                           "override (no damage, no contact history, no other class near, tyres fine): follow it")
-        return False, (f"the team call is {' / '.join(sorted(team_words))}; an override needs a reason the "
-                       f"data supports, and it supports only: {', '.join(sorted(supported))}")
+            return False, (
+                f"the team call is {' / '.join(sorted(team_words))} and the data supports no "
+                "override (no damage, no contact history, no other class near, tyres fine): follow it"
+            )
+        return False, (
+            f"the team call is {' / '.join(sorted(team_words))}; an override needs a reason the "
+            f"data supports, and it supports only: {', '.join(sorted(supported))}"
+        )
 
     def race_picture(self, race, lap, engineer, governor, racecraft=None):
         me = race.me
         session = race.session
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, self.model)
-        picture = {"session": {10: "race", 11: "race", 12: "race", 13: "race"}.get(session.session, "practice or qualifying"),
-                   "lap": lap, "place": me.place,
-                   "laps_to_go": engineer.to_go_at_line if engineer.to_go_at_line is not None
-                   else laps_to_go(race, me.last_lap if me.last_lap > 0 else None, self.model),
-                   "my_last_lap": lap_text(me.last_lap), "my_best_lap": lap_text(me.best_lap),
-                   "time_left_s": round(session.time_remaining) if session.time_remaining > 0 else None,
-                   "quiet_until_lap": governor.quiet_until_lap}
-        for side, car, gap in (("ahead", ahead, gap_ahead), ("behind", behind, gap_behind)):
+        picture = {
+            "session": {10: "race", 11: "race", 12: "race", 13: "race"}.get(
+                session.session, "practice or qualifying"
+            ),
+            "lap": lap,
+            "place": me.place,
+            "laps_to_go": engineer.to_go_at_line
+            if engineer.to_go_at_line is not None
+            else laps_to_go(race, me.last_lap if me.last_lap > 0 else None, self.model),
+            "my_last_lap": lap_text(me.last_lap),
+            "my_best_lap": lap_text(me.best_lap),
+            "time_left_s": round(session.time_remaining)
+            if session.time_remaining > 0
+            else None,
+            "quiet_until_lap": governor.quiet_until_lap,
+        }
+        for side, car, gap in (
+            ("ahead", ahead, gap_ahead),
+            ("behind", behind, gap_behind),
+        ):
             if car is None or gap is None:
                 picture[side] = None
                 continue
@@ -707,37 +934,62 @@ class Snapshot:
             mine = my_pace(me, engineer)
             if theirs is not None:
                 entry["their_lap"] = f"{lap_text(theirs)} ({source})"
-            theirs, mine, measured, how = pace_pair(car, theirs, source, mine, engineer, racecraft, self.model)
+            theirs, mine, measured, how = pace_pair(
+                car, theirs, source, mine, engineer, racecraft, self.model
+            )
             if theirs is not None and mine is not None:
-                self.quicker_by[side] = round(mine - theirs, 2)      # + = that car is quicker than me
+                self.quicker_by[side] = round(
+                    mine - theirs, 2
+                )  # + = that car is quicker than me
             if theirs is not None and mine is not None:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
-                entry["race_maths"] = race_maths(side, round(gap, 1), theirs, mine, picture["laps_to_go"])
+                entry["race_maths"] = race_maths(
+                    side, round(gap, 1), theirs, mine, picture["laps_to_go"]
+                )
             else:
-                entry["their_pace"] = "not known yet: no lap measured on the road or posted. Say so, never guess it."
-            call = team_call(side, round(gap, 1), theirs, mine, picture["laps_to_go"], measured)
-            if side == "behind" and theirs is not None and mine is not None and gap < 1.5:
+                entry["their_pace"] = (
+                    "not known yet: no lap measured on the road or posted. Say so, never guess it."
+                )
+            call = team_call(
+                side, round(gap, 1), theirs, mine, picture["laps_to_go"], measured
+            )
+            if (
+                side == "behind"
+                and theirs is not None
+                and mine is not None
+                and gap < 1.5
+            ):
                 words, share = pass_odds(mine - theirs)
-                entry["pass_odds_from_his_races"] = (f"in fights on his tapes, cars {words} got past within a lap "
-                                                     f"{round(share * 100)}% of the time")
+                entry["pass_odds_from_his_races"] = (
+                    f"in fights on his tapes, cars {words} got past within a lap "
+                    f"{round(share * 100)}% of the time"
+                )
             if call is not None:
                 entry["team_call"] = call
             elif side == "behind":
                 # 25 Sep bank run: a car 1.7 s back, 0.7 s a lap quicker, got "don't fight it,
                 # let it go" five times. The team's rule for when it arrives is decided now.
-                entry["team_call_when_it_reaches_you"] = team_call(side, NOT_A_FIGHT_S / 2, theirs, mine,
-                                                                   picture["laps_to_go"])
+                entry["team_call_when_it_reaches_you"] = team_call(
+                    side, NOT_A_FIGHT_S / 2, theirs, mine, picture["laps_to_go"]
+                )
             if gap >= NOT_A_FIGHT_S:
-                entry["fight"] = f"not a fight yet: {round(gap, 1)} s is more than {NOT_A_FIGHT_S:g} s"
+                entry["fight"] = (
+                    f"not a fight yet: {round(gap, 1)} s is more than {NOT_A_FIGHT_S:g} s"
+                )
             else:
-                entry["fight"] = f"IN A FIGHT NOW: {round(gap, 1)} s, within {NOT_A_FIGHT_S:g} s"
+                entry["fight"] = (
+                    f"IN A FIGHT NOW: {round(gap, 1)} s, within {NOT_A_FIGHT_S:g} s"
+                )
             picture[side] = entry
         if self.model is not None:
             self.picture_laps_to_go = picture.get("laps_to_go")
             picture["field_around_you"] = self.field(race)
             picture["battles_near_you"] = self.battles_near(race)
-            pitted = [f"P{self.model.car(key).place}" for _, key in self.model.pitting_near()
-                      if self.model.car(key) is not None]
+            pitted = [
+                f"P{self.model.car(key).place}"
+                for _, key in self.model.pitting_near()
+                if self.model.car(key) is not None
+            ]
             if pitted:
                 picture["just_pitted_near_you"] = pitted
         return picture
@@ -750,7 +1002,11 @@ class Snapshot:
         sure = "sure, 2 laps" if t["sure"] else "1 lap only, NOT sure"
         if amount < 0.1:
             return f"gap steady ({sure})"
-        who = "the car behind is catching" if t["closing_per_lap"] > 0 else "the gap is growing"
+        who = (
+            "the car behind is catching"
+            if t["closing_per_lap"] > 0
+            else "the gap is growing"
+        )
         return f"{who} {amount:.1f} s a lap ({sure})"
 
     def field(self, race):
@@ -762,11 +1018,17 @@ class Snapshot:
                 continue
             ahead = o.place < me.place
             gap = self.model.gap(o.id, "me") if ahead else self.model.gap("me", o.id)
-            row = {"place": o.place, "side": "ahead" if ahead else "behind",
-                   "gap_s": gap, "car": o.car_model or o.car_name}
+            row = {
+                "place": o.place,
+                "side": "ahead" if ahead else "behind",
+                "gap_s": gap,
+                "car": o.car_model or o.car_name,
+            }
             to_go = self.picture_laps_to_go
             if ahead:
-                row["trend"] = self.trend_words(o.id, "me").replace("the car behind is", "you are")
+                row["trend"] = self.trend_words(o.id, "me").replace(
+                    "the car behind is", "you are"
+                )
                 catch = self.model.catch("me", o.id)
                 if catch is not None:
                     row["you_catch_it"] = catch_words(catch[1], to_go)
@@ -783,8 +1045,15 @@ class Snapshot:
         places["me"] = race.me.place
         out = []
         for front, back, gap in self.model.battles():
-            if front in places and back in places and min(abs(places[front] - race.me.place),
-                                                          abs(places[back] - race.me.place)) <= 4:
+            if (
+                front in places
+                and back in places
+                and min(
+                    abs(places[front] - race.me.place),
+                    abs(places[back] - race.me.place),
+                )
+                <= 4
+            ):
                 who = [("you" if k == "me" else f"P{places[k]}") for k in (front, back)]
                 out.append(f"{who[0]} and {who[1]}, {gap} s apart")
         return out[:5]
@@ -796,14 +1065,20 @@ class Snapshot:
         for opponent in race.opponents:
             if opponent.car_class != me.car_class:
                 continue
-            entry = {"driver": opponent.driver, "place": opponent.place,
-                     "car": opponent.car_model or opponent.car_name,
-                     "last_lap": lap_text(opponent.last_lap), "best_lap": lap_text(opponent.best_lap),
-                     "in_pits": opponent.in_pits,
-                     "where": road_words(me, opponent)}
+            entry = {
+                "driver": opponent.driver,
+                "place": opponent.place,
+                "car": opponent.car_model or opponent.car_name,
+                "last_lap": lap_text(opponent.last_lap),
+                "best_lap": lap_text(opponent.best_lap),
+                "in_pits": opponent.in_pits,
+                "where": road_words(me, opponent),
+            }
             theirs, source = recent_lap(opponent)
             mine = my_pace(me, engineer)
-            theirs, mine, _, how = pace_pair(opponent, theirs, source, mine, engineer, racecraft, self.model)
+            theirs, mine, _, how = pace_pair(
+                opponent, theirs, source, mine, engineer, racecraft, self.model
+            )
             if theirs is not None and mine is not None:
                 entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
             else:
@@ -813,16 +1088,26 @@ class Snapshot:
             # named for what they measure: speed carried through the middle, NOT braking (24 Sep:
             # "corners_they_are_quicker" came back as "quicker in every braking zone")
             if self.model is None or not self.corners_map:
-                entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge <= -3.0)
-                entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(c for c, edge in edges.items() if edge >= 3.0)
+                entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(
+                    c for c, edge in edges.items() if edge <= -3.0
+                )
+                entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(
+                    c for c, edge in edges.items() if edge >= 3.0
+                )
             entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
-            entry["pass_attempts_this_race"] = [a[4] for a in racecraft.attempts if a[0] == key]
+            entry["pass_attempts_this_race"] = [
+                a[4] for a in racecraft.attempts if a[0] == key
+            ]
             entry["history"] = racecraft.rivals.get(key)
             if self.model is not None and self.corners_map:
                 # seconds THEY gain on you through each corner, from the road (race model)
                 gains = self.model.corner_gains(opponent.id, "me", self.corners_map)
-                entry["corners_where_they_gain_time_s"] = {c: g for c, g in gains.items() if g >= 0.1}
-                entry["corners_where_you_gain_time_s"] = {c: -g for c, g in gains.items() if g <= -0.1}
+                entry["corners_where_they_gain_time_s"] = {
+                    c: g for c, g in gains.items() if g >= 0.1
+                }
+                entry["corners_where_you_gain_time_s"] = {
+                    c: -g for c, g in gains.items() if g <= -0.1
+                }
             drivers[opponent.driver.lower()] = entry
             if opponent is ahead:
                 drivers["ahead"] = entry
@@ -842,10 +1127,12 @@ class Snapshot:
             measured = performance.balance.corner_balance(corner)
             if measured is not None:
                 from balance import describe
+
                 entry["balance"] = describe(measured)
             if corner in rival:
                 gap, _, fastest, (change, lengths) = rival[corner]
                 from seats.performance import advice_text
+
                 entry["fastest_car"] = fastest["driver"]
                 entry["fastest_gains_s"] = gap
                 entry["what_to_change"] = advice_text(change, lengths)
@@ -854,14 +1141,22 @@ class Snapshot:
 
     def car(self, race, strategist):
         me = race.me
-        state = {"fuel": strategist.fuel_now,
-                 "tyre_temps_c": [round(sum(z) / len(z)) for z in me.tyre_temps if z and min(z) > -200],
-                 "damage": sum(me.dents) > 0,
-                 "tyres_overheating": any(round(sum(z) / len(z)) > HOT_TYRE_C for z in me.tyre_temps
-                                          if z and min(z) > -200) or bool(me.overheating),
-                 "track_limit_steps": me.track_limit_steps,
-                 "penalty_at_steps": race.session.limit_steps_per_penalty,
-                 "penalties": me.penalties}
+        state = {
+            "fuel": strategist.fuel_now,
+            "tyre_temps_c": [
+                round(sum(z) / len(z)) for z in me.tyre_temps if z and min(z) > -200
+            ],
+            "damage": sum(me.dents) > 0,
+            "tyres_overheating": any(
+                round(sum(z) / len(z)) > HOT_TYRE_C
+                for z in me.tyre_temps
+                if z and min(z) > -200
+            )
+            or bool(me.overheating),
+            "track_limit_steps": me.track_limit_steps,
+            "penalty_at_steps": race.session.limit_steps_per_penalty,
+            "penalties": me.penalties,
+        }
         return state
 
     def track_ahead(self, lap_dist, corners, race, racecraft):
@@ -885,7 +1180,9 @@ class Snapshot:
                     continue
                 edge = racecraft.edges_against(racecraft_key(car)).get(name)
                 if edge is not None and abs(edge) >= 3.0:
-                    entry[side] = "you are quicker here" if edge > 0 else "they are quicker here"
+                    entry[side] = (
+                        "you are quicker here" if edge > 0 else "they are quicker here"
+                    )
             result.append(entry)
         return result
 
@@ -899,14 +1196,20 @@ class Snapshot:
         if isinstance(fuel, dict):
             spare, what = fuel["spare_laps"], fuel["limit"]
             if spare < 0:
-                plan.append(f"SAVE {what}: {-spare} laps short at the flag. Lift and coast before the longest "
-                            "braking zones until it is back above zero.")
-            elif spare < fine_margin(fuel.get("laps_left") or 99.0):      # the strategist's own line
+                plan.append(
+                    f"SAVE {what}: {-spare} laps short at the flag. Lift and coast before the longest "
+                    "braking zones until it is back above zero."
+                )
+            elif spare < fine_margin(
+                fuel.get("laps_left") or 99.0
+            ):  # the strategist's own line
                 plan.append(f"{what} is tight: {spare} laps spare. No wasted laps.")
             else:
                 plan.append(f"{what} is no limit: {spare} laps spare. Push.")
         else:
-            plan.append("fuel to the flag: not known yet (needs 2 laps measured at the line)")
+            plan.append(
+                "fuel to the flag: not known yet (needs 2 laps measured at the line)"
+            )
         for side in ("ahead", "behind"):
             car = self.picture.get(side)
             if not car:
@@ -915,22 +1218,40 @@ class Snapshot:
             reach = maths.get("at_this_pace", "")
             if car.get("team_call"):
                 plan.append(f"car {side}, {car['gap_s']} s: {car['team_call']}")
-            elif side == "ahead" and "before the flag" in reach and "reach them" in reach:
+            elif (
+                side == "ahead" and "before the flag" in reach and "reach them" in reach
+            ):
                 plan.append(f"PUSH: the car ahead, {car['gap_s']} s up, {reach}.")
-            elif side == "behind" and "before the flag" in reach and "reach you" in reach:
-                plan.append(f"DEFEND LATER: the car behind, {car['gap_s']} s back, {reach}. "
-                            f"Keep it behind with a {maths.get('to_keep_them_behind', 'quicker')} lap.")
+            elif (
+                side == "behind" and "before the flag" in reach and "reach you" in reach
+            ):
+                plan.append(
+                    f"DEFEND LATER: the car behind, {car['gap_s']} s back, {reach}. "
+                    f"Keep it behind with a {maths.get('to_keep_them_behind', 'quicker')} lap."
+                )
             else:
-                plan.append(f"car {side}, {car['gap_s']} s: {reach or car.get('their_pace', 'pace not known')}")
+                plan.append(
+                    f"car {side}, {car['gap_s']} s: {reach or car.get('their_pace', 'pace not known')}"
+                )
         if self.car_state.get("tyres_overheating"):
-            plan.append("TYRES are cooking (over 105 C): smoother, less sliding, or the pace goes.")
-        losing = sorted((entry for entry in self.corners.values() if entry.get("fastest_gains_s")),
-                        key=lambda entry: -entry["fastest_gains_s"])[:2]
-        where = [f"{entry['corner']}: the fastest car gains {entry['fastest_gains_s']} s. {entry.get('what_to_change', '')}".strip()
-                 for entry in losing]
-        return {"laps_to_go": self.picture.get("laps_to_go"), "place": self.picture.get("place"),
-                "plan_in_order": plan, "where_the_time_is": where or ["not measured yet"],
-                "his_habits": (self.habits or [])[:2]}
+            plan.append(
+                "TYRES are cooking (over 105 C): smoother, less sliding, or the pace goes."
+            )
+        losing = sorted(
+            (entry for entry in self.corners.values() if entry.get("fastest_gains_s")),
+            key=lambda entry: -entry["fastest_gains_s"],
+        )[:2]
+        where = [
+            f"{entry['corner']}: the fastest car gains {entry['fastest_gains_s']} s. {entry.get('what_to_change', '')}".strip()
+            for entry in losing
+        ]
+        return {
+            "laps_to_go": self.picture.get("laps_to_go"),
+            "place": self.picture.get("place"),
+            "plan_in_order": plan,
+            "where_the_time_is": where or ["not measured yet"],
+            "his_habits": (self.habits or [])[:2],
+        }
 
     def remind(self, arguments):
         try:
@@ -939,11 +1260,15 @@ class Snapshot:
             return {"error": "lap must be a lap number"}
         what = str(arguments.get("what", "")).strip()
         if lap <= self.lap or not what:
-            return {"error": f"the reminder needs a lap after this one (this is lap {self.lap}) and words"}
+            return {
+                "error": f"the reminder needs a lap after this one (this is lap {self.lap}) and words"
+            }
         to_go = self.picture.get("laps_to_go")
         if to_go and lap > self.lap + to_go - 1:
             # 25 Sep bank run: "reminder set for lap 10" in a race that ends on lap 6
-            return {"error": f"the race ends on lap {self.lap + to_go - 1}: there is no lap {lap}"}
+            return {
+                "error": f"the race ends on lap {self.lap + to_go - 1}: there is no lap {lap}"
+            }
         self.actions.append({"remind_lap": lap, "what": what[:80]})
         return {"ok": f"reminder set for lap {lap}: {what[:80]}"}
 
@@ -962,10 +1287,13 @@ class Snapshot:
             events = race_tools.race_events(self.db_path, self.session_id)
             # the other car in a contact, as its place now (never a name): "who hit me?"
             from race_state import identity
+
             places = {identity(o): f"P{o.place}" for o in self.race.opponents}
             for contact in events.get("contacts", []):
                 if contact.get("other_car"):
-                    contact["other_car"] = places.get(contact["other_car"], "a car no longer in the race")
+                    contact["other_car"] = places.get(
+                        contact["other_car"], "a car no longer in the race"
+                    )
             return events
         if name == "setup":
             return race_tools.setup_advice(self.db_path, self.session_id, self.race)
@@ -990,7 +1318,9 @@ class Snapshot:
             for key, entry in self.drivers.items():
                 if who and (who in key or key in who):
                     return entry
-            return {"error": f"no driver '{who}' in your class; ask for 'ahead', 'behind' or a name from race_picture"}
+            return {
+                "error": f"no driver '{who}' in your class; ask for 'ahead', 'behind' or a name from race_picture"
+            }
         if name == "corner":
             wanted = str(arguments.get("name", "")).lower().strip()
             for key, entry in self.corners.items():
@@ -998,15 +1328,22 @@ class Snapshot:
                     return entry
             # a misheard name ("four chickens" for Ford Chicanes, 24 Sep) is still that corner
             import difflib
-            close = difflib.get_close_matches(wanted, list(self.corners), n=1, cutoff=0.55)
+
+            close = difflib.get_close_matches(
+                wanted, list(self.corners), n=1, cutoff=0.55
+            )
             if close:
                 return dict(self.corners[close[0]], heard_as=wanted)
-            return {"error": f"no data for corner '{wanted}'", "known": sorted(self.corners)}
+            return {
+                "error": f"no data for corner '{wanted}'",
+                "known": sorted(self.corners),
+            }
         return {"error": f"no tool {name}"}
 
 
 def racecraft_key(opponent):
     from race_state import identity
+
     return identity(opponent)
 
 
@@ -1026,6 +1363,7 @@ def without_empty(value):
 
 # ---- the gate for agent answers --------------------------------------------------------------
 
+
 def asks_to_explain(question):
     heard = " " + re.sub(r"[^a-z0-9 ]+", " ", question.lower().replace("'", "")) + " "
     return any(" " + words + " " in heard for words in EXPLAIN_WORDS)
@@ -1036,17 +1374,67 @@ def asks_about_speed(question):
     return any(words in lowered for words in SPEED_WORDS)
 
 
-NEIGHBOUR_WORDS = ("car behind", "car ahead", "one behind", "car in front", "the fucker behind")
-ABOUT_NEIGHBOURS = ("behind", "ahead", "in front", "gap", "catch", "defend", "attack", "pass", "fight", "hit",
-                    "dive", "diving", "him", "he ", "car", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9",
-                    "strategy", "plan", "position", "place", "push", "update", "lost it", "doing ok", "move",
-                    "what the fuck", "straights", "every lap", "last lap", "risk")
+NEIGHBOUR_WORDS = (
+    "car behind",
+    "car ahead",
+    "one behind",
+    "car in front",
+    "the fucker behind",
+)
+ABOUT_NEIGHBOURS = (
+    "behind",
+    "ahead",
+    "in front",
+    "gap",
+    "catch",
+    "defend",
+    "attack",
+    "pass",
+    "fight",
+    "hit",
+    "dive",
+    "diving",
+    "him",
+    "he ",
+    "car",
+    "p1",
+    "p2",
+    "p3",
+    "p4",
+    "p5",
+    "p6",
+    "p7",
+    "p8",
+    "p9",
+    "strategy",
+    "plan",
+    "position",
+    "place",
+    "push",
+    "update",
+    "lost it",
+    "doing ok",
+    "move",
+    "what the fuck",
+    "straights",
+    "every lap",
+    "last lap",
+    "risk",
+)
 
 
 # a plan, a place or a strategy may bring in the cars around him, but it is not a fight to call.
 # Live 27 Sep, formation lap: "What's the plan for this race?" was refused for having no CALL line
 # ("plan" is one of ABOUT_NEIGHBOURS) and he got "No clean answer on that one"
-PLANNING_WORDS = ("strategy", "plan", "position", "place", "update", "every lap", "last lap")
+PLANNING_WORDS = (
+    "strategy",
+    "plan",
+    "position",
+    "place",
+    "update",
+    "every lap",
+    "last lap",
+)
 
 
 def about_the_fight(question):
@@ -1054,7 +1442,9 @@ def about_the_fight(question):
     their start ("he" is not inside "the", "div" still finds "diving")."""
     words = "".join(c if c.isalnum() else " " for c in question.lower()).split()
     text = " " + " ".join(words)
-    fight_words = [word for word in ABOUT_NEIGHBOURS if word not in PLANNING_WORDS] + list(FIGHT_WORDS)
+    fight_words = [
+        word for word in ABOUT_NEIGHBOURS if word not in PLANNING_WORDS
+    ] + list(FIGHT_WORDS)
     return any(" " + word.strip() in text for word in fight_words)
 
 
@@ -1070,13 +1460,46 @@ def tacked_on(question, text, in_fight):
     return any(word in said for word in NEIGHBOUR_WORDS)
 
 
-FUEL_QUESTION = ("fuel", "energy", "pit", "box", "stop", "make it", "tank", "litre", "liter", "refuel")
-NO_STOP_WORDS = ("no need to pit", "no stop", "don't need to pit", "dont need to pit", "no need to box",
-                 "you'll make it", "you will make it", "enough fuel", "fuel's fine", "fuel is fine")
+FUEL_QUESTION = (
+    "fuel",
+    "energy",
+    "pit",
+    "box",
+    "stop",
+    "make it",
+    "tank",
+    "litre",
+    "liter",
+    "refuel",
+)
+NO_STOP_WORDS = (
+    "no need to pit",
+    "no stop",
+    "don't need to pit",
+    "dont need to pit",
+    "no need to box",
+    "you'll make it",
+    "you will make it",
+    "enough fuel",
+    "fuel's fine",
+    "fuel is fine",
+)
 
 
-CATCHING_WORDS = ("catching you", "closing on you", "closing you", "reeling you in", "on you by", "coming at you")
-DROPPING_WORDS = ("dropping back", "falling back", "pulling away from you", "not catching you")
+CATCHING_WORDS = (
+    "catching you",
+    "closing on you",
+    "closing you",
+    "reeling you in",
+    "on you by",
+    "coming at you",
+)
+DROPPING_WORDS = (
+    "dropping back",
+    "falling back",
+    "pulling away from you",
+    "not catching you",
+)
 
 
 def trend_honest(text, picture):
@@ -1089,14 +1512,22 @@ def trend_honest(text, picture):
         trend = row.get("trend", "")
         if "sure, 2 laps" not in trend:
             continue
-        nearest = min((r for r in picture["field_around_you"] if r.get("side") == "behind"),
-                      key=lambda r: r["place"])
+        nearest = min(
+            (r for r in picture["field_around_you"] if r.get("side") == "behind"),
+            key=lambda r: r["place"],
+        )
         if row is not nearest:
             continue
         if "growing" in trend and any(w in said for w in CATCHING_WORDS):
-            return False, f"the road says the car behind is NOT catching ({trend}): don't say it is"
+            return (
+                False,
+                f"the road says the car behind is NOT catching ({trend}): don't say it is",
+            )
         if "catching" in trend and any(w in said for w in DROPPING_WORDS):
-            return False, f"the road says the car behind IS catching ({trend}): don't say it isn't"
+            return (
+                False,
+                f"the road says the car behind IS catching ({trend}): don't say it isn't",
+            )
     return True, "ok"
 
 
@@ -1109,40 +1540,70 @@ def fuel_honest(question, text, picture):
     said = text.lower()
     verdict = picture.get("verdict") if isinstance(picture, dict) else None
     if verdict == "box" and not any(w in said for w in ("box", "pit")):
-        return False, "the fuel verdict is BOX THIS LAP (car tool, fuel_at_the_flag): say it first"
-    if verdict == "save" and not any(w in said for w in ("lift", "coast", "save", "short")):
-        return False, "the fuel verdict is SHORT: lift and coast every braking zone, say it first"
+        return (
+            False,
+            "the fuel verdict is BOX THIS LAP (car tool, fuel_at_the_flag): say it first",
+        )
+    if verdict == "save" and not any(
+        w in said for w in ("lift", "coast", "save", "short")
+    ):
+        return (
+            False,
+            "the fuel verdict is SHORT: lift and coast every braking zone, say it first",
+        )
     if verdict in ("box", "save") and any(w in said for w in NO_STOP_WORDS):
         return False, "that contradicts the fuel verdict: he does NOT make it as he is"
     if verdict is None and any(w in said for w in NO_STOP_WORDS):
-        return False, "fuel usage is not measured yet: say it is not known and to check the screen, never 'no need to pit'"
+        return (
+            False,
+            "fuel usage is not measured yet: say it is not known and to check the screen, never 'no need to pit'",
+        )
     return True, "ok"
 
 
-PRONOUNS = [(r"\bhe's\b", "it's"), (r"\bshe's\b", "it's"), (r"\bhe\b", "it"), (r"\bshe\b", "it"),
-            (r"\bhim\b", "it"), (r"\bhis\b", "its"), (r"\bhers\b", "its"), (r"\bher\b", "its")]
+PRONOUNS = [
+    (r"\bhe's\b", "it's"),
+    (r"\bshe's\b", "it's"),
+    (r"\bhe\b", "it"),
+    (r"\bshe\b", "it"),
+    (r"\bhim\b", "it"),
+    (r"\bhis\b", "its"),
+    (r"\bhers\b", "its"),
+    (r"\bher\b", "its"),
+]
 
 
 def neutral_pronouns(text):
     """Other drivers are "it" (the car), never he/she. Rewritten in code: on 25 Sep two answers
     were refused for "he" and each refusal cost a whole extra model round."""
     for pattern, word in PRONOUNS:
-        text = re.sub(pattern, lambda m: word.capitalize() if m.group(0)[0].isupper() else word, text,
-                      flags=re.IGNORECASE)
+        text = re.sub(
+            pattern,
+            lambda m: word.capitalize() if m.group(0)[0].isupper() else word,
+            text,
+            flags=re.IGNORECASE,
+        )
     return text
 
 
-def check_answer(text, known_numbers, clean=False, names=(), max_words=MAX_WORDS, speeds_ok=False):
+def check_answer(
+    text, known_numbers, clean=False, names=(), max_words=MAX_WORDS, speeds_ok=False
+):
     """(ok, reason). known_numbers: every number the tools returned or he said.
     names: the other drivers in this race; none may be said (v3, 24 Sep)."""
     if not text or not text.strip():
         return False, "empty"
     lowered = text.lower()
     for name in names:
-        parts = [name.lower()] + [part for part in name.lower().split() if len(part) >= 4]
+        parts = [name.lower()] + [
+            part for part in name.lower().split() if len(part) >= 4
+        ]
         for part in parts:
             if has_phrase(lowered, part):
-                return False, "says a driver's name: say the car ahead, the car behind, or its position"
+                return (
+                    False,
+                    "says a driver's name: say the car ahead, the car behind, or its position",
+                )
     if len(text.split()) > max_words:
         return False, f"too long: keep it to about {round(max_words * 0.65)} words"
     if "?" in text:
@@ -1153,7 +1614,10 @@ def check_answer(text, known_numbers, clean=False, names=(), max_words=MAX_WORDS
         return False, "says a speed; use time, gaps, laps or car lengths"
     for word in GENDERED:
         if has_phrase(lowered, word):
-            return False, f"uses '{word}' for a real person; use their name or 'the car behind'"
+            return (
+                False,
+                f"uses '{word}' for a real person; use their name or 'the car behind'",
+            )
     for phrase in BANNED:
         if has_phrase(lowered, phrase):
             return False, f"banned word '{phrase}'"
@@ -1177,6 +1641,7 @@ def numbers_seen(*texts):
 
 # ---- the agent -------------------------------------------------------------------------------
 
+
 class RaceAgent:
     """Runs on its own thread. ask() returns at once; finished() hands back the answer Calls
     and the cost of every model call, for the race loop to put on air and log."""
@@ -1185,8 +1650,10 @@ class RaceAgent:
         self.budget = budget
         self.clean = clean
         self.thinking = thinking
-        self.exchanges = []         # the last questions and answers, for follow-ups
-        self.orders = None          # his standing orders (orders.StandingOrders), set by the race loop
+        self.exchanges = []  # the last questions and answers, for follow-ups
+        self.orders = (
+            None  # his standing orders (orders.StandingOrders), set by the race loop
+        )
         # live 24 Sep: the first question timed out on a cold connection (TLS, DNS) while the
         # provider was fine a minute later. One tiny call at startup opens it before he asks.
         if client is None:
@@ -1200,17 +1667,26 @@ class RaceAgent:
         if self.client is None:
             from openai import OpenAI
             from dotenv import load_dotenv
+
             load_dotenv(".env")
-            self.client = OpenAI(base_url="https://aicredits.in/v1",
-                                 api_key=os.environ["AICREDITS_API_KEY"], timeout=MODEL_TIMEOUT_S, max_retries=0)
+            self.client = OpenAI(
+                base_url="https://aicredits.in/v1",
+                api_key=os.environ["AICREDITS_API_KEY"],
+                timeout=MODEL_TIMEOUT_S,
+                max_retries=0,
+            )
         return self.client
 
     def warm_up(self):
         try:
-            self.connect().chat.completions.create(model=MODEL, messages=[{"role": "user", "content": "ok"}],
-                                                   max_tokens=1, extra_body={"thinking": {"type": "disabled"}})
+            self.connect().chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "user", "content": "ok"}],
+                max_tokens=1,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
         except Exception:
-            pass                       # a failed warm-up changes nothing: the first question retries
+            pass  # a failed warm-up changes nothing: the first question retries
 
     def ask(self, question, snapshot, sim_time):
         self.jobs.put((question, snapshot, sim_time, time.perf_counter()))
@@ -1227,7 +1703,10 @@ class RaceAgent:
             after = exchange["sim_time"]
         if not recent:
             return ""
-        lines = [f'he asked "{e["question"]}" and you answered "{e["answer"]}"' for e in recent]
+        lines = [
+            f'he asked "{e["question"]}" and you answered "{e["answer"]}"'
+            for e in recent
+        ]
         return "Earlier on the radio, oldest first: " + "; then ".join(lines) + "."
 
     def finished(self):
@@ -1244,28 +1723,64 @@ class RaceAgent:
             try:
                 answer, info = self.think(question, snapshot, self.earlier(sim_time))
             except Exception as error:
-                answer, info = "Lost the data on that one. Ask me again.", {"error": error.__class__.__name__, "costs": []}
+                answer, info = (
+                    "Lost the data on that one. Ask me again.",
+                    {"error": error.__class__.__name__, "costs": []},
+                )
             info["seconds"] = round(time.perf_counter() - asked_at, 2)
-            self.exchanges = (self.exchanges + [{"question": question, "answer": answer, "sim_time": sim_time}])[-FOLLOW_UP_EXCHANGES:]
-            call = Call(seat="race_engineer", kind="ANSWER_AGENT", sim_time=sim_time,
-                        priority=RACE_CONTROL, ttl=ANSWER_TTL_S, conclusion=answer, template=answer,
-                        facts={"heard": question, "tools": info.get("tools", []), "rounds": info.get("rounds"),
-                               "seconds": info["seconds"], "refused": info.get("refused"),
-                               "call": info.get("call"), "override": info.get("override")},
-                        asked=True, phrase=False)
-            self.results.put({"call": call, "costs": info.get("costs", []), "actions": list(snapshot.actions),
-                              "orders": info.get("orders", [])})
+            self.exchanges = (
+                self.exchanges
+                + [{"question": question, "answer": answer, "sim_time": sim_time}]
+            )[-FOLLOW_UP_EXCHANGES:]
+            call = Call(
+                seat="race_engineer",
+                kind="ANSWER_AGENT",
+                sim_time=sim_time,
+                priority=RACE_CONTROL,
+                ttl=ANSWER_TTL_S,
+                conclusion=answer,
+                template=answer,
+                facts={
+                    "heard": question,
+                    "tools": info.get("tools", []),
+                    "rounds": info.get("rounds"),
+                    "seconds": info["seconds"],
+                    "refused": info.get("refused"),
+                    "call": info.get("call"),
+                    "override": info.get("override"),
+                },
+                asked=True,
+                phrase=False,
+            )
+            self.results.put(
+                {
+                    "call": call,
+                    "costs": info.get("costs", []),
+                    "actions": list(snapshot.actions),
+                    "orders": info.get("orders", []),
+                }
+            )
 
     def model_turn(self, messages, timeout=MODEL_TIMEOUT_S):
         started = time.perf_counter()
         response = self.connect().chat.completions.create(
-            model=MODEL, messages=messages, max_tokens=MAX_TOKENS, timeout=timeout,
+            model=MODEL,
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+            timeout=timeout,
             tools=[{"type": "function", "function": tool} for tool in TOOLS],
-            extra_body={"thinking": {"type": "enabled" if self.thinking else "disabled"}})
+            extra_body={
+                "thinking": {"type": "enabled" if self.thinking else "disabled"}
+            },
+        )
         usage = response.usage
         cost = self.budget.charge(usage.prompt_tokens, usage.completion_tokens)
-        spent = {"tokens_in": usage.prompt_tokens, "tokens_out": usage.completion_tokens,
-                 "seconds": round(time.perf_counter() - started, 3), "cost_rs": round(cost, 5)}
+        spent = {
+            "tokens_in": usage.prompt_tokens,
+            "tokens_out": usage.completion_tokens,
+            "seconds": round(time.perf_counter() - started, 3),
+            "cost_rs": round(cost, 5),
+        }
         return response.choices[0].message, spent
 
     def think(self, question, snapshot, earlier=""):
@@ -1273,9 +1788,12 @@ class RaceAgent:
         # coach after 7 answers in a live race). Every call is still charged and logged.
         system = AGENT_PROMPT + ("\n" + CLEAN_RULE if self.clean else "")
         if snapshot.picture.get("session") == "race":
-            snapshot.picture["plan_now"] = current_plan(self.orders, snapshot.car_state.get("fuel_at_the_flag"),
-                                                        bool(snapshot.car_state.get("damage")),
-                                                        snapshot.picture.get("laps_to_go"))
+            snapshot.picture["plan_now"] = current_plan(
+                self.orders,
+                snapshot.car_state.get("fuel_at_the_flag"),
+                bool(snapshot.car_state.get("damage")),
+                snapshot.picture.get("laps_to_go"),
+            )
         picture = json.dumps(without_empty(snapshot.picture))
         # the voice goes right next to the question: in the system prompt alone it got lost
         # (1 answer in 4 swore on 24 Sep), the same lesson as the persona's per-line flag
@@ -1285,7 +1803,10 @@ class RaceAgent:
         timeout = HEAVY_TIMEOUT_S if explain else MODEL_TIMEOUT_S
         speeds_ok = asks_about_speed(question)
         if explain:
-            voice = voice.replace("About 35 words.", "He asked for the reasons: up to about 70 words, the reasons in order.")
+            voice = voice.replace(
+                "About 35 words.",
+                "He asked for the reasons: up to about 70 words, the reasons in order.",
+            )
         if speeds_ok:
             voice += " He asked about speed: speeds in km/h are allowed in this answer."
         if not snapshot.team_calls:
@@ -1293,15 +1814,30 @@ class RaceAgent:
         # live 25 Sep: 25 model calls for 7 answers - nearly every answer first asked for the cars
         # ahead/behind and his habits, a whole extra round (2-8 s, ~Rs 0.25). They go with the
         # question now; the tools stay for everything else.
-        near = {side: without_empty(snapshot.drivers[side]) for side in ("ahead", "behind") if side in snapshot.drivers}
+        near = {
+            side: without_empty(snapshot.drivers[side])
+            for side in ("ahead", "behind")
+            if side in snapshot.drivers
+        }
         habits = (snapshot.habits or [])[:3]
         snapshot.orders = self.orders
         standing = self.orders.for_coach() if self.orders is not None else {}
-        given = json.dumps({"driver_ahead": near.get("ahead"), "driver_behind": near.get("behind"), "his_habits": habits,
-                            **standing})
-        messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})"
-                                                f"\n(Already given, no need to call driver or my_habits for these: {given})\n\n{voice}"}]
+        given = json.dumps(
+            {
+                "driver_ahead": near.get("ahead"),
+                "driver_behind": near.get("behind"),
+                "his_habits": habits,
+                **standing,
+            }
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})"
+                f"\n(Already given, no need to call driver or my_habits for these: {given})\n\n{voice}",
+            },
+        ]
         costs = []
         tools_used = ["race_picture"]
         tool_texts_given = [given]
@@ -1313,8 +1849,13 @@ class RaceAgent:
                 message, spent = self.model_turn(messages, timeout)
             except Exception as error:
                 # slow or down: the decision still gets through, from code
-                return fallback(snapshot, question), {"costs": costs, "tools": tools_used, "rounds": None,
-                                            "refused": f"model {error.__class__.__name__}", "call": "TEAM"}
+                return fallback(snapshot, question), {
+                    "costs": costs,
+                    "tools": tools_used,
+                    "rounds": None,
+                    "refused": f"model {error.__class__.__name__}",
+                    "call": "TEAM",
+                }
             costs.append(spent)
             if message.tool_calls and round_number <= MAX_ROUNDS:
                 messages.append(message.model_dump(exclude_none=True))
@@ -1323,35 +1864,74 @@ class RaceAgent:
                         arguments = json.loads(tool_call.function.arguments or "{}")
                     except json.JSONDecodeError:
                         arguments = {}
-                    result = json.dumps(without_empty(snapshot.run_tool(tool_call.function.name, arguments)))
+                    result = json.dumps(
+                        without_empty(
+                            snapshot.run_tool(tool_call.function.name, arguments)
+                        )
+                    )
                     tools_used.append(tool_call.function.name)
                     tool_texts.append(result)
-                    messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result,
+                        }
+                    )
                 continue
             raw = message.content or ""
             given_orders, raw = split_orders(raw)
-            call, override, text = split_call(raw)                 # the CALL line is never spoken
-            text = neutral_pronouns(text)     # a free fix instead of a paid rewrite round (25 Sep)
+            call, override, text = split_call(raw)  # the CALL line is never spoken
+            text = neutral_pronouns(
+                text
+            )  # a free fix instead of a paid rewrite round (25 Sep)
             ok, reason = snapshot.check_call(call, override, question)
             if ok:
-                ok, reason = check_answer(text, numbers_seen(question, *tool_texts), self.clean,
-                                          snapshot.driver_names(), max_words, speeds_ok)
+                ok, reason = check_answer(
+                    text,
+                    numbers_seen(question, *tool_texts),
+                    self.clean,
+                    snapshot.driver_names(),
+                    max_words,
+                    speeds_ok,
+                )
             if ok:
-                ok, reason = fuel_honest(question, text, snapshot.car_state.get("fuel_at_the_flag"))
+                ok, reason = fuel_honest(
+                    question, text, snapshot.car_state.get("fuel_at_the_flag")
+                )
             if ok:
                 ok, reason = trend_honest(text, snapshot.picture)
             if ok and tacked_on(question, text, bool(snapshot.team_calls)):
-                ok, reason = False, ("it talks about the car ahead or behind, but he did not ask about them "
-                                     "and nobody is within a second: answer only his question")
+                ok, reason = (
+                    False,
+                    (
+                        "it talks about the car ahead or behind, but he did not ask about them "
+                        "and nobody is within a second: answer only his question"
+                    ),
+                )
             if ok:
                 ok, reason = snapshot.check_orders(call, override)
             if ok:
-                return text, {"costs": costs, "tools": tools_used, "rounds": round_number, "refused": refused,
-                              "call": call, "override": override, "orders": given_orders}
+                return text, {
+                    "costs": costs,
+                    "tools": tools_used,
+                    "rounds": round_number,
+                    "refused": refused,
+                    "call": call,
+                    "override": override,
+                    "orders": given_orders,
+                }
             if refused is not None:
-                break                   # one rewrite only
+                break  # one rewrite only
             refused = reason
             messages.append({"role": "assistant", "content": raw})
-            messages.append({"role": "user", "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {voice}"})
-        return ("No clean answer on that one, mate. Ask it another way.",
-                {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {voice}",
+                }
+            )
+        return (
+            "No clean answer on that one, mate. Ask it another way.",
+            {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused},
+        )

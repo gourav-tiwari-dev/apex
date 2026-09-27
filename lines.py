@@ -10,10 +10,21 @@ are part of the voice, and not every line needs a flourish.
 """
 
 CLOSERS = {
-    "CATCHING": [("Keep fucking pushing.", "Keep pushing."), ("", ""), ("Go and get it, mate.", "Go and get it, mate.")],
-    "PACE_TARGET": [("Simple as that.", "Simple as that."), ("", ""), ("Fucking do it.", "Do it.")],
-    "THREAT_BEHIND": [("Don't give them a fucking sniff.", "Don't give them a sniff."), ("", ""),
-                      ("Head down, mate.", "Head down, mate.")],
+    "CATCHING": [
+        ("Keep fucking pushing.", "Keep pushing."),
+        ("", ""),
+        ("Go and get it, mate.", "Go and get it, mate."),
+    ],
+    "PACE_TARGET": [
+        ("Simple as that.", "Simple as that."),
+        ("", ""),
+        ("Fucking do it.", "Do it."),
+    ],
+    "THREAT_BEHIND": [
+        ("Don't give them a fucking sniff.", "Don't give them a sniff."),
+        ("", ""),
+        ("Head down, mate.", "Head down, mate."),
+    ],
     "GAP_GROWING": [("", ""), ("Lovely.", "Lovely.")],
     "GAP_REPORT": [("", "")],
     "FUEL": [("", ""), ("No bullshit, that's the number.", "That's the number.")],
@@ -24,7 +35,9 @@ CLOSERS = {
     "PRAISE": [("Fucking lovely.", "Lovely."), ("Simply lovely.", "Simply lovely.")],
     "LOCKUP": [("", ""), ("Bloody hell.", "Careful.")],
     "OFF_TRACK": [("", ""), ("Reset. Next corner.", "Reset. Next corner.")],
-    "SPIN": [("", "")],     # a safety call: "wait for the traffic, then rejoin", nothing added
+    "SPIN": [
+        ("", "")
+    ],  # a safety call: "wait for the traffic, then rejoin", nothing added
     "DAMAGE": [("", "")],
     "SETTLED": [("Now we fucking race.", "Now we race."), ("Let's go.", "Let's go.")],
     "ATTACK_PLAN": [("", ""), ("Patience, mate.", "Patience, mate.")],
@@ -37,7 +50,7 @@ CLOSERS = {
 class MaxLines:
     def __init__(self, clean=False):
         self.clean = clean
-        self.turn = {}             # kind -> how many closers have been used
+        self.turn = {}  # kind -> how many closers have been used
 
     def line(self, call):
         """The words to say for a call that is not phrased by the model."""

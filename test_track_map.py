@@ -29,7 +29,9 @@ def test_learner_rebuilds_the_hand_measured_monza_map():
     lap = 0
     for frame in ReplaySource(None, ELEVEN_LAPS):
         lap = counter.update(frame)
-        learner.add(lap, distance.update(frame), frame.brake, frame.throttle, frame.accel_lat)
+        learner.add(
+            lap, distance.update(frame), frame.brake, frame.throttle, frame.accel_lat
+        )
 
     learned = borrow_names(learner.corners(lap), MONZA_CORNERS)
 
@@ -47,13 +49,15 @@ def test_a_new_track_is_learned_while_driving_and_saved(tmp_path, monkeypatch):
     with gzip.open(ELEVEN_LAPS, "rt") as source, gzip.open(tape, "wt") as out:
         out.write(json.dumps(asdict(snapshot)) + "\n")
         for number, line in enumerate(source):
-            if number > 62000:      # the out-lap + about 5 laps
+            if number > 62000:  # the out-lap + about 5 laps
                 break
             out.write(line)
 
     db_path = str(tmp_path / "test.db")
     monkeypatch.setattr(track_map, "MAPS_FOLDER", str(tmp_path / "maps"))
-    monkeypatch.setattr(live_telemetry, "connect_db", lambda: memory.connect_db(db_path))
+    monkeypatch.setattr(
+        live_telemetry, "connect_db", lambda: memory.connect_db(db_path)
+    )
 
     live_telemetry.run_session(True, None, tape, out_loud=False, persona=FakePersona())
 
@@ -63,6 +67,8 @@ def test_a_new_track_is_learned_while_driving_and_saved(tmp_path, monkeypatch):
     assert saved[0]["name"] == "Turn 1"
     # once the map was learned, events got tagged with the new corners
     conn = memory.connect_db(db_path)
-    tagged = conn.execute("SELECT COUNT(*) FROM events WHERE corner LIKE 'Turn %'").fetchone()[0]
+    tagged = conn.execute(
+        "SELECT COUNT(*) FROM events WHERE corner LIKE 'Turn %'"
+    ).fetchone()[0]
     conn.close()
     assert tagged > 0

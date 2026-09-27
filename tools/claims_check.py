@@ -9,6 +9,7 @@
 
 Usage: claims_check.py [TAPE ...]   (default: every race tape in tools/tapes.py)
 Exit code 0 = no false claim."""
+
 import collections
 import json
 import os
@@ -64,30 +65,48 @@ def main():
             if kind in HIS_PLACE_KINDS:
                 for number, in_class in PLACE_WORD.findall(line):
                     places_checked += 1
-                    around = places_between(race_snapshots, when - PLACE_WITHIN_S, when + PLACE_WITHIN_S,
-                                            in_class=bool(in_class))
+                    around = places_between(
+                        race_snapshots,
+                        when - PLACE_WITHIN_S,
+                        when + PLACE_WITHIN_S,
+                        in_class=bool(in_class),
+                    )
                     if around and int(number) not in around:
-                        false_claims.append(f"{tape} {when:.1f}s {kind}: said P{number}{in_class}, tape had "
-                                            f"{sorted(around)}: {line!r}")
+                        false_claims.append(
+                            f"{tape} {when:.1f}s {kind}: said P{number}{in_class}, tape had "
+                            f"{sorted(around)}: {line!r}"
+                        )
             if kind in ("LAST_LAP", "FLAG_LAST_LAP") and finish_laps is not None:
                 last_laps_checked += 1
                 before = [s for s in race_snapshots if s.sim_time <= when]
                 if before:
                     laps_done = before[-1].me.laps
                     if finish_laps - laps_done != 1:
-                        false_claims.append(f"{tape} {when:.1f}s {kind}: 'last lap' with {finish_laps - laps_done} "
-                                            f"laps still to drive (laps done {laps_done}, flag at {finish_laps})")
+                        false_claims.append(
+                            f"{tape} {when:.1f}s {kind}: 'last lap' with {finish_laps - laps_done} "
+                            f"laps still to drive (laps done {laps_done}, flag at {finish_laps})"
+                        )
             if kind == "FUEL" and facts.get("verdict"):
                 fuel_said.append((when, facts["verdict"]))
         for (t1, v1), (t2, v2) in zip(fuel_said, fuel_said[1:]):
-            flipped = (v1 in GOOD_FUEL and v2 in BAD_FUEL) or (v1 in BAD_FUEL and v2 in GOOD_FUEL)
+            flipped = (v1 in GOOD_FUEL and v2 in BAD_FUEL) or (
+                v1 in BAD_FUEL and v2 in GOOD_FUEL
+            )
             if flipped and t2 - t1 < FLIP_FLOP_S:
-                false_claims.append(f"{tape} {t2:.1f}s FUEL flip-flop: {v1} at {t1:.0f}s, {v2} at {t2:.0f}s")
-        minutes = (race_snapshots[-1].sim_time - race_snapshots[0].sim_time) / 60 if race_snapshots else 0
+                false_claims.append(
+                    f"{tape} {t2:.1f}s FUEL flip-flop: {v1} at {t1:.0f}s, {v2} at {t2:.0f}s"
+                )
+        minutes = (
+            (race_snapshots[-1].sim_time - race_snapshots[0].sim_time) / 60
+            if race_snapshots
+            else 0
+        )
         top = ", ".join(f"{kind} {count}" for kind, count in kinds.most_common(3))
         per_minute = len(spoken) / minutes if minutes else 0
-        print(f"{tape}: {len(spoken)} lines ({per_minute:.1f}/min; most: {top}), his places checked "
-              f"{places_checked}, last laps checked {last_laps_checked}, fuel verdicts {len(fuel_said)}")
+        print(
+            f"{tape}: {len(spoken)} lines ({per_minute:.1f}/min; most: {top}), his places checked "
+            f"{places_checked}, last laps checked {last_laps_checked}, fuel verdicts {len(fuel_said)}"
+        )
     if not false_claims:
         print("PASS")
         return 0

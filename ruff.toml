@@ -1,0 +1,31 @@
+# One formatter and one lint config for Apex: the refactor's readability contract (27 Sep 2026).
+# The sources behind each rule are in RESUME_V3.md ("THE REFACTOR").
+#   format:  ruff format $(git ls-files '*.py')
+#   check:   ruff check $(git ls-files '*.py')
+line-length = 88                  # Black / ruff default; line length predicts readability (Buse & Weimer 2010)
+target-version = "py312"
+
+[lint]
+preview = true                    # PLR1702 (nesting) is a preview rule
+select = [
+    "E", "W",                     # pycodestyle
+    "F",                          # pyflakes: unused imports and names
+    "N",                          # full-word, conventional names
+    "D100", "D101", "D102", "D103",   # docstrings on modules and public functions and classes
+    "PLR0913",                    # at most 5 parameters
+    "PLR0915",                    # at most 50 statements a function
+    "PLR1702",                    # at most 3 nested blocks
+    "PLR2004",                    # no bare magic numbers: name them, say where they come from
+    "E731",                       # no lambda given a name
+    "ERA001",                     # no commented-out code
+]
+
+[lint.pylint]
+max-args = 5
+max-statements = 50
+max-nested-blocks = 3
+
+[lint.per-file-ignores]
+# tests and the study tools read like scripts; the contract is for the code that runs in a race
+"test_*.py" = ["D", "PLR", "N802", "E731", "ERA001"]
+"tools/*.py" = ["D", "PLR", "ERA001"]

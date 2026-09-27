@@ -13,6 +13,7 @@ taken at record time, so the races he drives later cannot move the baseline.
 
 A structure-only commit must print IDENTICAL for every tape. A labelled behaviour fix is expected to
 show differences: they are listed, then recorded again as the new baseline."""
+
 import contextlib
 import io
 import json
@@ -37,6 +38,7 @@ SHOWN_DIFFERENCES = 5
 
 class NoModel:
     """No language model in a replay: every line comes from code."""
+
     clean = False
 
     def online(self):
@@ -50,15 +52,24 @@ def replay_one(tape):
     """What the radio did on one tape: (radio rows, event hash)."""
     import live_telemetry
     import memory
-    database = os.path.join(tempfile.gettempdir(), f"apex_lock_{os.path.basename(tape)}.db")
+
+    database = os.path.join(
+        tempfile.gettempdir(), f"apex_lock_{os.path.basename(tape)}.db"
+    )
     shutil.copy(GOLDEN_DB, database)
     live_telemetry.connect_db = lambda db_path=None: memory.connect_db(database)
     with contextlib.redirect_stdout(io.StringIO()):
-        session_id = live_telemetry.run_session(True, None, tape, out_loud=False, persona=NoModel())
+        session_id = live_telemetry.run_session(
+            True, None, tape, out_loud=False, persona=NoModel()
+        )
     connection = sqlite3.connect(database)
-    rows = connection.execute(f"select {COLUMNS} from radio_log where session_id=? order by sim_time, id",
-                              (session_id,)).fetchall()
-    event_hash = connection.execute("select event_hash from sessions where id=?", (session_id,)).fetchone()[0]
+    rows = connection.execute(
+        f"select {COLUMNS} from radio_log where session_id=? order by sim_time, id",
+        (session_id,),
+    ).fetchall()
+    event_hash = connection.execute(
+        "select event_hash from sessions where id=?", (session_id,)
+    ).fetchone()[0]
     connection.close()
     return [list(row) for row in rows], event_hash
 
@@ -112,7 +123,7 @@ def check():
         with open(golden_file, encoding="utf-8") as f:
             golden = json.load(f)
         rows, event_hash = result
-        rows = json.loads(json.dumps(rows))             # the same types as the saved ones
+        rows = json.loads(json.dumps(rows))  # the same types as the saved ones
         if rows == golden["rows"] and event_hash == golden["event_hash"]:
             print(f"{tape}: IDENTICAL ({len(rows)} radio rows)")
             continue

@@ -5,15 +5,28 @@ from radio import Call, PERFORMANCE
 
 
 def call(kind="OFF_TRACK", facts=None):
-    return Call(seat="performance", kind=kind, sim_time=0.0, priority=PERFORMANCE, ttl=6.0,
-                conclusion="ran wide", facts=facts or {})
+    return Call(
+        seat="performance",
+        kind=kind,
+        sim_time=0.0,
+        priority=PERFORMANCE,
+        ttl=6.0,
+        conclusion="ran wide",
+        facts=facts or {},
+    )
 
 
 def test_the_two_bugs_from_the_july_persona_test_are_caught_in_code():
     # 1. the label printed as a spoken prefix
-    assert gate("FLAG_ONCE: cold fronts, brake 8m earlier", call()) [0] is False
+    assert gate("FLAG_ONCE: cold fronts, brake 8m earlier", call())[0] is False
     # 2. a line longer than the limit
-    assert gate("one two three four five six seven eight nine ten eleven twelve thirteen", call())[0] is False
+    assert (
+        gate(
+            "one two three four five six seven eight nine ten eleven twelve thirteen",
+            call(),
+        )[0]
+        is False
+    )
 
 
 def test_banned_words_are_refused():
@@ -28,7 +41,10 @@ def test_back_off_is_only_allowed_for_physics_abort():
 
 def test_numbers_must_come_from_the_facts():
     facts = {"corner": "T11 Parabolica", "speed_kmh": 170, "gap_s": 0.3}
-    assert gate("Wide at T11 Parabolica, 170. Fix it.", call(facts=facts)) == (True, "ok")
+    assert gate("Wide at T11 Parabolica, 170. Fix it.", call(facts=facts)) == (
+        True,
+        "ok",
+    )
     assert gate("3 tenths back. Hold it.", call(facts=facts)) == (True, "ok")
     assert gate("Wide at 185. Fix it.", call(facts=facts))[0] is False
 
@@ -59,7 +75,9 @@ class FakeClient:
         self.sent.append(kwargs)
         if self.fail:
             raise TimeoutError("slow network")
-        choice = SimpleNamespace(message=SimpleNamespace(content=self.reply), finish_reason=self.finish)
+        choice = SimpleNamespace(
+            message=SimpleNamespace(content=self.reply), finish_reason=self.finish
+        )
         usage = SimpleNamespace(prompt_tokens=180, completion_tokens=12)
         return SimpleNamespace(choices=[choice], usage=usage)
 
@@ -73,7 +91,9 @@ def test_the_model_is_asked_with_thinking_off():
 
 
 def test_a_line_cut_off_by_the_token_limit_is_never_used():
-    line, _, _, _ = Persona(client=FakeClient(reply="Wide at", finish="length")).phrase(call())
+    line, _, _, _ = Persona(client=FakeClient(reply="Wide at", finish="length")).phrase(
+        call()
+    )
     assert line is None
 
 
@@ -93,6 +113,7 @@ def test_spelled_out_numbers_are_checked_too():
 
 def test_the_model_is_told_the_message_not_asked_to_invent_one():
     from persona import facts_text
+
     text = facts_text(call(facts={"gap_s": 0.3}))
     assert text.startswith("tell him: ")
     assert "gap_s: 0.3" in text
@@ -101,7 +122,10 @@ def test_the_model_is_told_the_message_not_asked_to_invent_one():
 def test_the_radio_never_guesses_a_rivals_gender():
     assert gate("Take her into Parabolica.", call())[0] is False
     assert gate("His tyres are gone. Go.", call())[0] is False
-    assert gate("Take Ann into Parabolica.", call(facts={"driver": "Ann"})) == (True, "ok")
+    assert gate("Take Ann into Parabolica.", call(facts={"driver": "Ann"})) == (
+        True,
+        "ok",
+    )
 
 
 def test_censored_swearing_is_refused_because_it_would_be_read_aloud():

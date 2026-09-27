@@ -2,6 +2,7 @@
 Usage: field_study.py [laps|pace|battles|catches|end] ...   (default: all)
 
 Every car on the tape counts, not just him: 19-24 GT3s a race, four races."""
+
 import bisect
 import collections
 import math
@@ -18,11 +19,13 @@ class Road:
 
     def __init__(self):
         self.lap_length = 0.0
-        self.trails = collections.defaultdict(lambda: ([], []))   # car key -> (distances, times)
+        self.trails = collections.defaultdict(
+            lambda: ([], [])
+        )  # car key -> (distances, times)
         self.wraps = {}
         self.last_dist = {}
-        self.info = {}                                            # car key -> latest Opponent/Me
-        self.pits = collections.defaultdict(list)                 # car key -> times in the pits
+        self.info = {}  # car key -> latest Opponent/Me
+        self.pits = collections.defaultdict(list)  # car key -> times in the pits
 
     def see(self, snap):
         cars = [("me", snap.me, None)] + [(o.id, o, o.lap_dist) for o in snap.opponents]
@@ -33,7 +36,7 @@ class Road:
             return
         for key, car, dist in cars:
             if key == "me":
-                continue                        # my lap distance is in the frames, not scoring
+                continue  # my lap distance is in the frames, not scoring
             self.info[key] = car
             if car.in_pits:
                 self.pits[key].append(snap.sim_time)
@@ -47,11 +50,13 @@ class Road:
                 elif d > ds[-1] + self.lap_length / 2:
                     d -= self.lap_length
             if ds and d <= ds[-1]:
-                if d < ds[-1] - 500:            # a reset (teleport to the pits): start again
-                    ds.clear(); ts.clear()
+                if d < ds[-1] - 500:  # a reset (teleport to the pits): start again
+                    ds.clear()
+                    ts.clear()
                 else:
                     continue
-            ds.append(d); ts.append(snap.sim_time)
+            ds.append(d)
+            ts.append(snap.sim_time)
 
     def time_at(self, key, d):
         ds, ts = self.trails[key]
@@ -65,7 +70,7 @@ class Road:
 
 def load(tape):
     road = Road()
-    posted = collections.defaultdict(dict)          # car key -> {laps done: posted last lap}
+    posted = collections.defaultdict(dict)  # car key -> {laps done: posted last lap}
     for snap in snapshots(tape):
         road.see(snap)
         for o in snap.opponents:
@@ -100,15 +105,20 @@ def study_laps():
                 if real and 200 < lap < 400:
                     errors.append(min(abs(lap - p) for p in real))
     errors.sort()
-    print(f"laps from the road vs posted: {len(errors)} laps, median error {statistics.median(errors):.3f} s, "
-          f"90% under {errors[int(len(errors) * 0.9)]:.3f} s, worst {errors[-1]:.2f} s")
+    print(
+        f"laps from the road vs posted: {len(errors)} laps, median error {statistics.median(errors):.3f} s, "
+        f"90% under {errors[int(len(errors) * 0.9)]:.3f} s, worst {errors[-1]:.2f} s"
+    )
 
 
 def replay(tape, every=None):
     """Replays a tape into a RaceModel; calls every(model, snap) after each snapshot."""
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from race_model import RaceModel
-    length = max(max([o.lap_dist for o in snap.opponents] + [0.0]) for snap in snapshots(tape))
+
+    length = max(
+        max([o.lap_dist for o in snap.opponents] + [0.0]) for snap in snapshots(tape)
+    )
     model = RaceModel(lap_length=length)
     for snap in snapshots(tape):
         model.see_race(snap, snap.sim_time)
@@ -122,7 +132,7 @@ def study_pace():
     Baseline: its last lap (what Apex used). Clean laps only (within 5% of its median, no pit)."""
     model_err, last_err, available = [], [], [0, 0]
     for tape in RACE_TAPES:
-        crossings = collections.defaultdict(list)          # key -> [(time, pace then)]
+        crossings = collections.defaultdict(list)  # key -> [(time, pace then)]
         seen = {}
 
         def every(model, snap):
@@ -134,7 +144,12 @@ def study_pace():
                     continue
                 lap_no = int(car.distance // L)
                 if seen.get(key) is not None and lap_no > seen[key]:
-                    crossings[key].append((car.trail.time_at(lap_no * L) or snap.sim_time, model.pace(key)))
+                    crossings[key].append(
+                        (
+                            car.trail.time_at(lap_no * L) or snap.sim_time,
+                            model.pace(key),
+                        )
+                    )
                 seen[key] = lap_no
 
         model = replay(tape, every)
@@ -153,10 +168,12 @@ def study_pace():
                     model_err.append(abs(pace - nxt))
                     if abs(prev - typical) <= 0.05 * typical:
                         last_err.append(abs(prev - nxt))
-    print(f"D2 pace vs next clean lap: model median error {statistics.median(model_err):.3f} s "
-          f"(90% {sorted(model_err)[int(len(model_err) * 0.9)]:.2f}) on {len(model_err)} laps; "
-          f"last-lap baseline {statistics.median(last_err):.3f} s on {len(last_err)}; "
-          f"model had a pace for {available[0]} of {available[1]} laps")
+    print(
+        f"D2 pace vs next clean lap: model median error {statistics.median(model_err):.3f} s "
+        f"(90% {sorted(model_err)[int(len(model_err) * 0.9)]:.2f}) on {len(model_err)} laps; "
+        f"last-lap baseline {statistics.median(last_err):.3f} s on {len(last_err)}; "
+        f"model had a pace for {available[0]} of {available[1]} laps"
+    )
 
 
 STUDIES = {"laps": study_laps, "pace": study_pace}

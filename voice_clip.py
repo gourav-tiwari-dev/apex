@@ -11,6 +11,7 @@ condition for cloning: "it won't be used anywhere, just my laptop for my racing"
 Cloning works best from clean speech: one person, no music, no engine noise. The team-radio
 sound is added back afterwards by a filter, so an interview is a better source than radio.
 """
+
 import argparse
 import os
 import wave
@@ -23,7 +24,7 @@ OUT_FILE = os.path.join(OUT_DIR, "engineer.wav")
 RATE = 24000
 LONGEST_S = 15.0
 SHORTEST_S = 10.0
-TARGET_RMS = 0.1              # about -20 dBFS: loud enough, far from clipping
+TARGET_RMS = 0.1  # about -20 dBFS: loud enough, far from clipping
 GOOD_SPEECH_SHARE = 0.8
 
 
@@ -46,7 +47,9 @@ def best_window(segments):
                 break
             spoken += min(s_end, end) - s_start
             words.append(text)
-        last_end = min(end, max(s_end for s_start, s_end, _ in segments[index:] if s_start < end))
+        last_end = min(
+            end, max(s_end for s_start, s_end, _ in segments[index:] if s_start < end)
+        )
         length = last_end - start
         if length < SHORTEST_S:
             continue
@@ -58,8 +61,8 @@ def best_window(segments):
 
 def save(path, start, end):
     audio = decode_audio(path, sampling_rate=RATE)
-    clip = audio[int(start * RATE):int(end * RATE)]
-    rms = float(numpy.sqrt(numpy.mean(clip ** 2))) or 1e-9
+    clip = audio[int(start * RATE) : int(end * RATE)]
+    rms = float(numpy.sqrt(numpy.mean(clip**2))) or 1e-9
     clip = clip * (TARGET_RMS / rms)
     peak = float(numpy.abs(clip).max())
     if peak > 0.95:
@@ -76,7 +79,9 @@ def save(path, start, end):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("source")
-    parser.add_argument("--start", type=float, help="seconds into the file to start the clip")
+    parser.add_argument(
+        "--start", type=float, help="seconds into the file to start the clip"
+    )
     args = parser.parse_args()
 
     print("Finding the speech...")
@@ -86,18 +91,31 @@ def main():
     if args.start is not None:
         inside = [s for s in segments if args.start <= s[0] < args.start + LONGEST_S]
         spoken = sum(min(e, args.start + LONGEST_S) - s for s, e, _ in inside)
-        window = (args.start, args.start + LONGEST_S, spoken / LONGEST_S, " ".join(t for _, _, t in inside))
+        window = (
+            args.start,
+            args.start + LONGEST_S,
+            spoken / LONGEST_S,
+            " ".join(t for _, _, t in inside),
+        )
     else:
         window = best_window(segments)
         if window is None:
-            raise SystemExit(f"No {SHORTEST_S:g} s stretch of speech in {total:.0f} s of audio. Try a longer file.")
+            raise SystemExit(
+                f"No {SHORTEST_S:g} s stretch of speech in {total:.0f} s of audio. Try a longer file."
+            )
     start, end, share, words = window
     peak = save(args.source, start, end)
-    print(f"Saved {OUT_FILE}: {start:.1f}-{end:.1f} s of {total:.0f} s, speech {share:.0%} of it")
-    print(f"It says: \"{words}\"")
+    print(
+        f"Saved {OUT_FILE}: {start:.1f}-{end:.1f} s of {total:.0f} s, speech {share:.0%} of it"
+    )
+    print(f'It says: "{words}"')
     if share < GOOD_SPEECH_SHARE:
-        print("Warning: lots of pauses in it. A stretch where he talks without stopping clones better.")
-    print("Check it is only his voice (no interviewer, no music). If not, rerun with --start SECONDS.")
+        print(
+            "Warning: lots of pauses in it. A stretch where he talks without stopping clones better."
+        )
+    print(
+        "Check it is only his voice (no interviewer, no music). If not, rerun with --start SECONDS."
+    )
 
 
 if __name__ == "__main__":

@@ -165,7 +165,9 @@ def test_api():
     print("Test API - Read")
     version = info.data.generic.gameVersion
     track = info.data.scoring.scoringInfo.mTrackName.decode()
-    vehicle = info.data.telemetry.telemInfo[info.data.telemetry.playerVehicleIdx].mVehicleName.decode()
+    vehicle = info.data.telemetry.telemInfo[
+        info.data.telemetry.playerVehicleIdx
+    ].mVehicleName.decode()
     total = info.data.scoring.scoringInfo.mNumVehicles
     print(f"version: {version if version else 'not running'}")
     print(f"track name: {track if version else 'not running'}")
@@ -178,6 +180,3 @@ def test_api():
 
 if __name__ == "__main__":
     test_api()
-
-
-
