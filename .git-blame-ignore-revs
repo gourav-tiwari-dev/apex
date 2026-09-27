@@ -1,0 +1,6 @@
+# Commits that only reformat code. git blame skips them, so every line still points at
+# the commit that really wrote it. GitHub reads this file by itself; locally run once:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Refactor step 0b: formatting only (ruff format), 27 Sep 2026
+083eb37a1caf882d1fae01b5ffcd6a3b4f30fa8f
