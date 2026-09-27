@@ -24,3 +24,7 @@ voice_samples/
 voice_ref/
 .sovits/
 voice_server.log
+
+# refactor behaviour lock: a copy of apex.db and the replays' radio (27 Sep)
+golden/
+.devtools/
