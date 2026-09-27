@@ -152,6 +152,42 @@ def test_no_closing_call_on_the_games_own_gap():
     assert "CLOSING_ON" not in kinds(step(seat, 100.0, opponents=[rival(4, 7.0, car_id=5)]))
 
 
+def test_no_alarm_for_a_car_dropping_back_from_right_behind():
+    # replays of 23 and 25 Sep (27 Sep): a car that was on him, or had just passed him, came back out
+    # to the alarm's window and the 10 s rate, still leaning on the closer gaps, said "closing fast"
+    seat = seat_with_gaps(behind=0.6)
+    seat.clock.closing_rate = lambda car_id, now: 0.06
+    seat.clock.history[9] = [(97.0, 0.1)]                   # 3 s ago it was right on his gearbox
+    assert "CLOSING_ALARM" not in kinds(step(seat, 100.0, opponents=[rival(6, 8.9, car_id=9)]))
+    arriving = seat_with_gaps(behind=0.6)
+    arriving.clock.closing_rate = lambda car_id, now: 0.06
+    arriving.clock.history[9] = [(97.0, 1.1)]               # coming down from further back
+    assert "CLOSING_ALARM" in kinds(step(arriving, 100.0, opponents=[rival(6, 8.9, car_id=9)]))
+
+
+def test_closing_is_judged_on_the_lap_once_there_is_a_lap_of_it():
+    # replays of the 7 race tapes (27 Sep): the 10 s rate said "closing fast" about cars 2.3 to 3.8 s a
+    # lap SLOWER (the gap breathes inside a lap); 10 of 24 calls never came within 0.3 s in a lap
+    slower = seat_with_gaps(behind=0.9)
+    slower.clock.closing_rate = lambda car_id, now: 0.06
+    slower.clock.pace_vs_me = lambda car_id: -2.3
+    assert "CLOSING_ALARM" not in kinds(step(slower, 100.0, opponents=[rival(6, 8.9, car_id=9)]))
+    quicker = seat_with_gaps(behind=1.2)
+    quicker.clock.closing_rate = lambda car_id, now: 0.0         # flat over 10 s, quicker on the lap
+    quicker.clock.pace_vs_me = lambda car_id: 0.8
+    alarm = [c for c in step(quicker, 100.0, opponents=[rival(6, 8.8, car_id=9)]) if c.kind == "CLOSING_ALARM"]
+    assert alarm and alarm[0].facts["pace_closing_s_per_lap"] == 0.8
+
+
+def test_closing_on_the_car_ahead_needs_it_slower_on_the_lap():
+    getting_away = seat_closing_on()
+    getting_away.clock.pace_vs_me = lambda car_id: 2.8           # the car ahead is quicker
+    assert "CLOSING_ON" not in kinds(step(getting_away, 100.0, opponents=[rival(4, 7.0, car_id=5)]))
+    catching = seat_closing_on()
+    catching.clock.pace_vs_me = lambda car_id: -0.9              # it is slower: I am closing
+    assert "CLOSING_ON" in kinds(step(catching, 100.0, opponents=[rival(4, 7.0, car_id=5)]))
+
+
 def pass_sequence(seat, gap_after=0.3):
     step(seat, 100.0, lap=3, opponents=[rival(4, 7.7, car_id=5)])                 # it's ahead
     seat.clock.gap_behind = lambda car_id, now: gap_after

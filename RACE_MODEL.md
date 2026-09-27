@@ -208,3 +208,24 @@ places, when among the GT3s he races he was P18, P11 and P7.
 Built: race_state.said_place / class_place / multiclass. Multiclass: "Settled. P18 in class, up six.", "P11 in
 class.", "Chequered flag. P7 in class.", the place gift, "P5's in the pits" by class place; "what position?"
 answers "P7 in class, of 25. P43 overall." One-class races say exactly what they said before.
+
+## 27 Sep (auto loop): gaps against the tape, and "closing fast" judged on the lap
+Gap truth (tools/gap_truth.py): every gap said, against the same-point gap from positions (0.3 s + 15%).
+45/52 before -> 55/55. The wrong ones: a lap length guessed from the farthest car (joined mid-race, 24 Sep:
+"Car behind, 1.5 seconds, closing fast" with the car 5.1 s back), a learned length that grew under the trails
+(23 Sep), and a car in the pit lane (25 Sep night: "Closing fast on the car ahead. 1.5 seconds.", then "Car
+ahead's pitting." 4 s later). Pit-lane cars report lap distances past the line (13,748 m, the lap is 13,624).
+Closing calls on all 7 race tapes (alarm study, scratch): 26 said, 8 got within 0.3 s in the next minute.
+Three were cars dropping back (on him, or just past him, then out to 0.5 s): the 10 s rate still leaned on the
+closer gaps. The rest mostly measured the breathing: at Le Mans the gap moves +-0.5 s inside a lap (tow,
+braking), so a 10 s slope of 0.02 s/s is noise; some calls came on cars 2.3-3.8 s a lap SLOWER.
+How others do it:
+- Crew Chief (CrewChiefV4 Events/Timings.cs): samples the gap at sector boundaries (or set gap points) and
+  says it is decreasing only after three samples in a row fall (compared at 0.1 s).
+- iRacedeck issue #933 (github.com/niklam/iracedeck/issues/933): same-point crossing-time gap; the trend is
+  the gap now against the gap one lap ago at the same place; callouts on lap-over-lap samples, a 30 s cooldown.
+Scored offline on the 7 tapes (true = within 0.3 s inside a lap; arrivals = cars from >=1.5 s to <=0.3 s):
+  10 s rate >= 0.02 (before)               24 calls, 58% true, gradual arrivals warned 9/10
+  lap pace >= 0.5 s/lap (median of 8)      14 calls, 93% true, 7/10 (misses the first lap: no pace yet)
+  lap pace when known, else the 10 s rate  22 calls, 77% true, 9/10   <- built
+Sudden arrivals (from 3-7 s to on him in seconds: a car slowing to pit, a neighbour swap) are not warnable.

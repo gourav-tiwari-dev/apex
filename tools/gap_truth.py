@@ -4,7 +4,9 @@ The truth is the same-point gap from positions only (not the game's gap fields: 
 the positions by up to 2 s on 25 Sep night, measured at the timing points):
 - a car BEHIND: seconds since he was where it is now (his car frames)
 - a car AHEAD: seconds since it was where he is now (its positions, 5 a second, interpolated)
-The car is the nearest of his class on the road that side. A said gap is right within 0.3 s + 15%.
+The car is the nearest of his class on the road that side that is also on that side in the race (the
+radio's car ahead is the car ahead in the race: 25 Sep 14:41, 722 s, the car he had just passed sat
+1 m up the road beside him). A said gap is right within 0.3 s + 15%.
 A crossing inside a jump of the scoring is not timed: 23 Sep, 1239-1241 s, a car's position stood
 still for 2.2 s then jumped 188 m in 0.2 s, and a straight line across the jump made 0.84 s of a
 gap that its speed either side puts at 1.4 s.
@@ -100,6 +102,8 @@ def main():
                 for car in snap.opponents:
                     if car.in_pits or car.car_class != snap.me.car_class:
                         continue
+                    if (side == "ahead") != (car.place < snap.me.place):
+                        continue                # beside him on the road, the other side in the race
                     rel = (car.lap_dist - me_d + length / 2) % length - length / 2
                     if side == "ahead" and 0 < rel <= LOOK_M and (best is None or rel < best[0]):
                         best = (rel, car)

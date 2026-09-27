@@ -279,6 +279,13 @@ class TrackClock:
         while samples and now - samples[0][0] > CLOSING_WINDOW_S:
             samples.pop(0)
 
+    def closest_lately(self, car_id, now):
+        """The smallest same-point gap to this car over the last CLOSING_WINDOW_S, or None."""
+        recent = [gap for t, gap in self.history.get(car_id, []) if now - t <= CLOSING_WINDOW_S]
+        if not recent:
+            return None
+        return min(recent)
+
     def closing_rate(self, car_id, now):
         """Seconds of gap lost per second (positive = the gap is shrinking), fitted over the
         last CLOSING_WINDOW_S, or None without enough samples. Samples stop coming when the

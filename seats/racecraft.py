@@ -55,6 +55,7 @@ RESET_TTL_S = 15.0
 ALARM_MAX_GAP_S = 1.5
 ALARM_MIN_GAP_S = 0.5
 ALARM_MIN_RATE = 0.02         # s of gap gone per s, over the last 10 s: 5 of 8 came true
+ALARM_MIN_PACE_S = 0.5        # s a lap closing on the lap-level pace, once there is a lap of it
 ALARM_REARM_GAP_S = 2.0
 ALARM_TTL_S = 4.0
 
@@ -458,12 +459,32 @@ class Racecraft:
                 continue                # the game's gap: the rate is fitted on same-point gaps only
             if car.in_pits or car.pit_state != 0:
                 continue                # a car pitting is not a car closing (PITS_AHEAD says it)
+            # a car that was already on him (or just passed) and is dropping back is not closing: the
+            # 10 s rate still leans on the older, closer gaps. Replays of 23 and 25 Sep (27 Sep):
+            # "Closing fast on the car ahead" 2 s after that car passed him, and at 0.19 -> 0.51 s
+            closest = self.clock.closest_lately(car.id, now)
+            if closest is not None and closest < ALARM_MIN_GAP_S:
+                continue
+            # closing is judged on the lap once there is a lap of both trails: at Le Mans the gap
+            # breathes +-0.5 s inside a lap, and a 10 s rate measures the breathing. Replays of the 7
+            # race tapes (27 Sep): 10 of 24 closing calls never came within 0.3 s in a lap (one on a
+            # car 2.3 s a lap slower); on the lap pace 5 of 22, with the same 9 of 10 arrivals warned.
+            # Crew Chief likewise trends the gap over sectors, and iRacedeck against one lap ago
             rate = self.clock.closing_rate(car.id, now)
-            if rate is None or rate < ALARM_MIN_RATE:
+            quicker = self.clock.pace_vs_me(car.id)          # s a lap that car is quicker than me
+            if quicker is not None:
+                per_lap = quicker if side == "behind" else -quicker
+                if per_lap < ALARM_MIN_PACE_S:
+                    continue
+            elif rate is None or rate < ALARM_MIN_RATE:
                 continue
             said.add(car.id)
-            facts = {"gap_s": gap, "closing_s_per_s": round(rate, 3),
-                     "predicted_catch_s": round((gap - ON_YOU_S) / rate, 1)}
+            facts = {"gap_s": gap}
+            if quicker is not None:
+                facts["pace_closing_s_per_lap"] = round(per_lap, 2)
+            if rate is not None and rate > 0:
+                facts["closing_s_per_s"] = round(rate, 3)
+                facts["predicted_catch_s"] = round((gap - ON_YOU_S) / rate, 1)
             found = self.clock.catch_point(car.id, point, gap)
             if found is not None and corners:
                 facts["predicted_corner_lap_model"] = self.clock.corner_at_or_after(found[0], corners)
