@@ -91,12 +91,21 @@ class Trail:
             del self.time[:cut]
 
 
+LENGTH_GREW_M = 5.0           # a learned lap length growing by more than this resets the trails
+
+
 class TrackClock:
     def __init__(self, lap_length=None):
         # the track's length when the session gives it (25 Sep); else the longest lap distance
         # seen, which grows early on (and a growing length shifts every trail: 12,792 -> 13,622 m)
         self.lap_length = lap_length
         self.fixed_length = lap_length is not None
+        # a learned length is only trusted once a car has been seen crossing the line: before that
+        # it is the farthest distance so far, too short, and every trail is off by laps x the
+        # shortfall (replay of 24 Sep, joined mid-race: 8,168 m growing to 8,809 against 13,621, and
+        # "Car behind, 1.5 seconds, closing fast" with the car 5.1 s back, 27 Sep). No trails till then
+        self.length_known = lap_length is not None
+        self.last_seen = {}            # car id -> its lap distance last snapshot, to see it cross the line
         self.mine = Trail()
         self.theirs = {}               # car id -> Trail
         self.history = {}              # car id -> [(sim time, gap)] for the closing rate
@@ -112,15 +121,23 @@ class TrackClock:
         given = getattr(race.session, "lap_length", None)
         if given and given > 1000 and not self.fixed_length:
             self.lap_length, self.fixed_length = given, True
+            self.length_known = True
         if not self.fixed_length:
             for opponent in race.opponents:
                 if self.lap_length is None or opponent.lap_dist > self.lap_length:
+                    grew = self.lap_length is not None and opponent.lap_dist - self.lap_length > LENGTH_GREW_M
                     self.lap_length = opponent.lap_dist
+                    if grew and self.length_known:
+                        self.forget_trails()        # built on the shorter length: they no longer match
+                before = self.last_seen.get(opponent.id)
+                if before is not None and self.lap_length and opponent.lap_dist < before - self.lap_length / 2:
+                    self.length_known = True        # it crossed the line: the lap has been seen whole
+                self.last_seen[opponent.id] = opponent.lap_dist
         if self.my_laps is None:
             self.my_laps = race.me.laps
         elif self.lap_length and self.last_my_lap_dist is not None:
             self.follow_game_laps(race.me.laps)
-        if self.lap_length is None:
+        if self.lap_length is None or not self.length_known:
             return
         for opponent in race.opponents:
             if opponent.in_pits:
@@ -159,15 +176,30 @@ class TrackClock:
             return
         if self.last_my_lap_dist is not None and lap_dist < self.last_my_lap_dist - self.lap_length / 2:
             self.my_laps += 1               # I crossed the line
+            self.length_known = True
         self.last_my_lap_dist = lap_dist
         if lap_dist > self.lap_length and not self.fixed_length:
+            grew = lap_dist - self.lap_length > LENGTH_GREW_M
             self.lap_length = lap_dist
+            if grew and self.length_known:
+                self.forget_trails()
+        if not self.length_known:
+            return                          # no trail on a lap length that is still a guess
         distance = self.my_laps * self.lap_length + lap_dist
         self.mine.add(distance, now)
         keep_from = distance - KEEP_LAPS * self.lap_length
         self.mine.trim(keep_from)
         for trail in self.theirs.values():
             trail.trim(keep_from - self.lap_length)
+
+    def forget_trails(self):
+        """A learned lap length grew: every distance so far was counted on the old one. Replay of
+        23 Sep (27 Sep): the first crossing came at the start, the length still ~100 m short, and
+        closing calls said 1.3 s for a car 3.4 s up the road once the length crept up."""
+        self.mine = Trail()
+        self.theirs = {}
+        self.history.clear()
+        self.profile.clear()
 
     def my_distance(self):
         if not self.mine.distance:
@@ -247,10 +279,13 @@ class TrackClock:
         while samples and now - samples[0][0] > CLOSING_WINDOW_S:
             samples.pop(0)
 
-    def closing_rate(self, car_id):
+    def closing_rate(self, car_id, now):
         """Seconds of gap lost per second (positive = the gap is shrinking), fitted over the
-        last CLOSING_WINDOW_S, or None without enough samples."""
-        samples = self.history.get(car_id, [])
+        last CLOSING_WINDOW_S, or None without enough samples. Samples stop coming when the
+        same-point gap does (the car went into the pits): old ones are not a rate for now. Replay of
+        25 Sep night (27 Sep): a rate 12 s old and the game's gap to a car in the pit lane made
+        "Closing fast on the car ahead. 1.5 seconds.", then "Car ahead's pitting." 4 s later."""
+        samples = [(t, gap) for t, gap in self.history.get(car_id, []) if now - t <= CLOSING_WINDOW_S]
         if len(samples) < MIN_CLOSING_SAMPLES or samples[-1][0] - samples[0][0] < CLOSING_WINDOW_S / 2:
             return None
         count = len(samples)

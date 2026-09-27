@@ -2,6 +2,7 @@
 from dataclasses import replace
 
 from seats.track_awareness import TrackAwareness
+from gaps import TrackClock
 from test_racecraft import rival, CORNERS
 from test_seats import moment, race, kinds
 
@@ -22,7 +23,7 @@ def car(car_id, lap_dist, speed=250.0, place=20, behind_leader=30.0, car_class="
 def seat():
     s = TrackAwareness()
     s.lap_length = 5800.0
-    s.clock.lap_length = 5800.0
+    s.clock = TrackClock(5800.0)          # a known lap, as the session gives it
     return s
 
 

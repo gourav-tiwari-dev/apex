@@ -312,6 +312,7 @@ class Racecraft:
         else:
             gap = self.clock.gap_behind(car.id, now)
         if gap is None:
+            self.gap_points[side] = None       # the game's estimate: no same-point gap to build on
             return game_gap
         if side == "ahead":
             point = self.clock.my_distance()
@@ -452,14 +453,18 @@ class Racecraft:
                 said.discard(car.id)
             if car.id in said or not ALARM_MIN_GAP_S <= gap <= ALARM_MAX_GAP_S:
                 continue
-            rate = self.clock.closing_rate(car.id)
+            point = self.gap_points.get(side)
+            if point is None:
+                continue                # the game's gap: the rate is fitted on same-point gaps only
+            if car.in_pits or car.pit_state != 0:
+                continue                # a car pitting is not a car closing (PITS_AHEAD says it)
+            rate = self.clock.closing_rate(car.id, now)
             if rate is None or rate < ALARM_MIN_RATE:
                 continue
             said.add(car.id)
             facts = {"gap_s": gap, "closing_s_per_s": round(rate, 3),
                      "predicted_catch_s": round((gap - ON_YOU_S) / rate, 1)}
-            point = self.gap_points.get(side)
-            found = self.clock.catch_point(car.id, point, gap) if point is not None else None
+            found = self.clock.catch_point(car.id, point, gap)
             if found is not None and corners:
                 facts["predicted_corner_lap_model"] = self.clock.corner_at_or_after(found[0], corners)
                 facts["closing_per_lap_s"] = round(found[1], 2)
@@ -655,7 +660,7 @@ class Racecraft:
             if opponent.car_class != me.car_class or opponent.place != me.place + 1:
                 continue
             gap = self.clock.gap_behind(opponent.id, now)
-            rate = self.clock.closing_rate(opponent.id)
+            rate = self.clock.closing_rate(opponent.id, now)
             if gap is not None and gap <= THIRD_CAR_GAP_S and rate is not None and rate > 0:
                 coming = opponent
         if coming is None:

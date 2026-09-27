@@ -25,36 +25,36 @@ def drive(model, seconds, cars, my_speed=50.0, my_start=0.0, step=0.2):
 
 
 def test_the_gap_is_measured_where_both_cars_passed():
-    model = drive(RaceModel(), 60, {3: (100.0, 50.0)})            # 100 m ahead at the same speed
+    model = drive(RaceModel(LAP), 60, {3: (100.0, 50.0)})            # 100 m ahead at the same speed
     assert abs(model.gap(3, ME) - 2.0) < 0.05
 
 
 def test_a_trend_is_sure_only_with_two_laps_of_road():
-    model = drive(RaceModel(), 15, {3: (200.0, 48.0)})            # under a lap driven: no trend
+    model = drive(RaceModel(LAP), 15, {3: (200.0, 48.0)})            # under a lap driven: no trend
     assert model.trend(3, ME) is None
-    model = drive(RaceModel(), 25, {3: (200.0, 48.0)})             # one lap: a trend, NOT sure
+    model = drive(RaceModel(LAP), 25, {3: (200.0, 48.0)})             # one lap: a trend, NOT sure
     assert model.trend(3, ME)["sure"] is False
-    model = drive(RaceModel(), 50, {3: (200.0, 48.0)})             # ~2 laps of history
+    model = drive(RaceModel(LAP), 50, {3: (200.0, 48.0)})             # ~2 laps of history
     t = model.trend(3, ME)
     assert t is not None and t["closing_per_lap"] > 0 and t["sure"]
 
 
 def test_a_catch_is_forecast_only_when_the_trend_is_sure_and_closing():
-    model = drive(RaceModel(), 50, {3: (300.0, 48.0)})
+    model = drive(RaceModel(LAP), 50, {3: (300.0, 48.0)})
     found = model.catch(ME, 3)
     assert found is not None and found[1] > 0
     assert model.catch(3, ME) is None                             # it is not catching me
 
 
 def test_a_battle_needs_a_second_or_less_held_for_eight_seconds():
-    model = drive(RaceModel(), 30, {3: (20.0, 50.0), 4: (400.0, 50.0)})
+    model = drive(RaceModel(LAP), 30, {3: (20.0, 50.0), 4: (400.0, 50.0)})
     battles = model.battles()
     assert any(front == 3 and back == ME for front, back, _ in battles)
     assert not any(4 in (front, back) for front, back, _ in battles)
 
 
 def test_corner_gains_come_from_the_time_through_the_corner():
-    model = drive(RaceModel(), 80, {3: (100.0, 50.0)}, my_speed=50.0)
+    model = drive(RaceModel(LAP), 80, {3: (100.0, 50.0)}, my_speed=50.0)
     corner = [{"name": "T1", "start": 200.0, "end": 400.0}]
     gains = model.corner_gains(ME, 3, corner)
     assert abs(gains["T1"]) < 0.05                                # same speed: nobody gains
