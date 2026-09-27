@@ -8,8 +8,8 @@ It only ever repeats a team-memory fact, and every fact already carries its evid
 """
 
 from radio import Call, MEMORY
+from game.constants import FORMATION_LAP
 
-FORMATION = 3
 REMIND_BEFORE_M = 400.0
 RECALL_TTL_S = 15.0
 # live 25 Sep: his team memory has a habit at nearly every corner, and "you've had trouble there"
@@ -35,7 +35,7 @@ class MemoryRecall:
             self.lap_one is not None
             and not self.lap_one_said
             and race is not None
-            and race.session.game_phase == FORMATION
+            and race.session.game_phase == FORMATION_LAP
         ):
             self.lap_one_said = True
             calls.append(

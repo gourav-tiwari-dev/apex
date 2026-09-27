@@ -20,6 +20,7 @@ from track_map import corner_at
 from race_state import identity
 from seats.spotter import CAR_LENGTH_M
 from balance import BalanceMeter, FIX
+from game.constants import QUALIFYING_SESSIONS
 
 # the kinds said on the radio. HARD_BRAKING, CORNER_ENTRY and THROTTLE_LIFT are recorded, never
 # said: v1's "coasting" is any throttle under 50% with no brake, which is correct part-throttle
@@ -43,7 +44,6 @@ STALE_AFTER_S = 6.0  # v1's STALE_THRESHOLD: advice about a corner 6 s ago is us
 LAPS_FOR_A_REFERENCE = 2  # one lap of another car is not a reference
 MAX_PRAISE_PER_SESSION = 2
 CORNER_CALL_TTL_S = 15.0
-QUALIFYING = range(5, 9)
 
 # what is worth a call. A corner's time moves a tenth lap to lap on its own, so against his
 # own best only a bigger drop counts; against another car a tenth a lap is real time.
@@ -618,7 +618,7 @@ class PerformanceEngineer:
             and self.best_lap_seen is not None
             and best < self.best_lap_seen
             and self.praise_given < MAX_PRAISE_PER_SESSION
-            and moment.session_type not in QUALIFYING
+            and moment.session_type not in QUALIFYING_SESSIONS
         ):
             gain = round(self.best_lap_seen - best, 2)
             self.praise_given += 1

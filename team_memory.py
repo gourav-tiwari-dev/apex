@@ -1,3 +1,5 @@
+from game.constants import RACE_SESSIONS
+
 """TEAM MEMORY: what Apex knows about how Gourav drives, across every drive.
 
 His rules (notion_apex.md section 8.1, and "don't make stuff up on ur own"):
@@ -13,7 +15,6 @@ cache: safe to delete, and the next build puts it back.
 HABIT_MIN = 3
 HABIT_MIN_DRIVES = 2
 INCIDENT_KINDS = ("OFF_TRACK", "SPIN", "LOCKUP")
-RACE_SESSIONS = (10, 11, 12, 13)
 # GUESSED: sessions recorded before v2 have no track name; all of them were driven at Monza
 LEGACY_TRACK = "Monza"
 

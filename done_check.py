@@ -21,6 +21,7 @@ import sys
 from datetime import datetime
 
 from memory import connect_db
+from game.constants import GREEN_FLAG, RACE_SESSIONS
 
 SEATS = [
     "race_engineer",
@@ -33,9 +34,6 @@ SEATS = [
 ]
 NOT_REAL = {"RADIO_CHECK"}
 BETWEEN_SESSIONS = {"setup"}
-RACE = range(10, 14)
-QUALIFYING = range(5, 9)
-GREEN = 5
 COST_CAP_RS = 5.0
 
 CHECKS_TABLE = """
@@ -65,9 +63,9 @@ def check(conn, session_id, answers):
     ).fetchone()
 
     problems = []
-    if session_type not in RACE:
+    if session_type not in RACE_SESSIONS:
         problems.append("not a race session")
-    if first_phase is None or first_phase >= GREEN:
+    if first_phase is None or first_phase >= GREEN_FLAG:
         problems.append("Apex was not on before the green flag")
     if end_reason != "session_over":
         problems.append(

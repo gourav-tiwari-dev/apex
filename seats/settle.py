@@ -15,8 +15,9 @@ When it settles, the engineer says ONE summary line, in code's own words.
 """
 
 from radio import Call, ENGINEER
-from race_state import same_class_neighbours, YELLOW_FLAG, said_place, class_place
-from seats.spotter import sides_taken, GREEN
+from race_state import same_class_neighbours, said_place, class_place
+from seats.spotter import sides_taken
+from game.constants import GREEN_FLAG, RACE_SESSIONS, SAFETY_CAR, SECTOR_YELLOW
 
 # GUESSED, then checked on the 24 Sep lap 1s (see test_settle.py): 15 s with nobody
 # alongside and nobody swapping places around him
@@ -28,8 +29,6 @@ CHAOS_MAX_S = 60.0
 NEIGHBOUR_PLACES = 2
 # a brawl that never calms still hands over to the engineer after this many laps of chaos
 SETTLE_WITHIN_LAPS = 2
-RACE_SESSIONS = (10, 11, 12, 13)
-FULL_COURSE_YELLOW = 6
 SUMMARY_TTL_S = 20.0
 
 PLACE_WORDS = {
@@ -71,7 +70,7 @@ def neighbourhood(race):
 
 def yellow_anywhere(session):
     for flag in session.sector_flags:
-        if flag == YELLOW_FLAG:
+        if flag == SECTOR_YELLOW:
             return True
     return False
 
@@ -98,11 +97,13 @@ class RaceSettle:
             return []
         phase = race.session.game_phase
         went_green = (
-            phase == GREEN and self.last_phase is not None and self.last_phase != GREEN
+            phase == GREEN_FLAG
+            and self.last_phase is not None
+            and self.last_phase != GREEN_FLAG
         )
         # 24 Sep: Apex was restarted mid lap 1 (P24) and would have counted it as settled
         joined_on_lap_1 = (
-            self.last_phase is None and phase == GREEN and race.me.laps == 0
+            self.last_phase is None and phase == GREEN_FLAG and race.me.laps == 0
         )
         if (went_green or joined_on_lap_1) and self.is_race(moment):
             # lights out, or a restart after a full-course yellow: chaos until proven calm
@@ -111,7 +112,7 @@ class RaceSettle:
             self.last_neighbourhood = None
             self.chaos_lap = moment.lap_count
             self.chaos_since = moment.now
-            if self.place_at_start is None or self.last_phase != FULL_COURSE_YELLOW:
+            if self.place_at_start is None or self.last_phase != SAFETY_CAR:
                 self.place_at_start = race.me.place
                 self.class_place_at_start = class_place(
                     race, race.me.place, race.me.car_class

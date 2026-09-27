@@ -12,17 +12,20 @@ from race_state import (
     identity,
     same_class_neighbours,
     laps_to_go,
-    YELLOW_FLAG,
     said_place,
     class_place,
 )
+from game.constants import (
+    BLUE_FLAG,
+    FORMATION_LAP,
+    GREEN_FLAG,
+    RACE_SESSIONS,
+    SAFETY_CAR,
+    SECTOR_YELLOW,
+    SESSION_OVER,
+)
 
-FORMATION = 3  # mGamePhase values
-GREEN = 5
-SAFETY_CAR = 6
-FLAG = 8  # the leader has taken the chequered flag
-BLUE_FLAG = 6  # mFlag value
-# mSectorFlag: 1 is a local yellow, nothing else is (race_state.YELLOW_FLAG, measured on all 5
+# mSectorFlag: 1 is a local yellow, nothing else is (game.constants.SECTOR_YELLOW, measured on all 5
 # race tapes 26 Sep). The 23 Sep note "1 (and sometimes 3)" was wrong about 3: it shows before
 # the race and when the clock runs out, and said "Yellow flag" at the end of the 25 Sep night
 # race. Yellows last 10-20 s. Only the yellow in my sector or the next matters.
@@ -55,7 +58,6 @@ REPORT_TTL_S = 20.0  # a gap report can wait for a straight, but not for ever
 # the race picture at the line (24 Sep: "I got no data of other cars, like the car behind is
 # closing in, or I'm closing on the next car, keep going" and "the lap times I need to catch
 # the next guy", "at this pace the next battle is on lap 5 or 6")
-RACE_SESSIONS = range(10, 14)
 WATCH_GAP_S = 8.0  # further than this, a car is not a target yet
 FIGHT_GAP_S = 0.8  # closer than this, the spotter and racecraft have it
 TREND_S_PER_LAP = 0.1  # a tenth a lap is a trend; less is noise
@@ -180,7 +182,7 @@ class RaceEngineer:
         speed = moment.frame.speed_kmh
         if speed > CRAWLING_KMH:
             self.asked_if_ok = False  # racing again: the next incident may ask again
-        stopped = speed < STOPPED_KMH and not me.in_pits and phase == GREEN
+        stopped = speed < STOPPED_KMH and not me.in_pits and phase == GREEN_FLAG
         after_incident = (
             self.incident_at is not None and now - self.incident_at < AFTER_INCIDENT_S
         )
@@ -222,7 +224,7 @@ class RaceEngineer:
 
         # the start (E1)
         phase = session.game_phase
-        if phase == FORMATION and not self.formation_called:
+        if phase == FORMATION_LAP and not self.formation_called:
             self.formation_called = True
             calls.append(
                 spoken(
@@ -233,15 +235,20 @@ class RaceEngineer:
                     template="Formation lap. Heat in the tyres, heat in the brakes.",
                 )
             )
-        if phase == GREEN and self.phase is not None and self.phase < GREEN:
+        if phase == GREEN_FLAG and self.phase is not None and self.phase < GREEN_FLAG:
             calls.append(urgent("LIGHTS_OUT", "Lights out. Go.", now))
         if phase == SAFETY_CAR and self.phase != SAFETY_CAR:
             calls.append(urgent("SAFETY_CAR", "Safety car. Safety car.", now))
-        if phase == GREEN and self.phase == SAFETY_CAR:
+        if phase == GREEN_FLAG and self.phase == SAFETY_CAR:
             calls.append(urgent("GREEN", "Green, green, green.", now))
         # the end: the leader's flag makes this my last lap, unless the lap count already said so
         in_race = moment.session_type in RACE_SESSIONS
-        if in_race and phase == FLAG and me.finish_status == 0 and not self.flag_called:
+        if (
+            in_race
+            and phase == SESSION_OVER
+            and me.finish_status == 0
+            and not self.flag_called
+        ):
             self.flag_called = True
             already_told = self.to_go_at_line is not None and self.to_go_at_line <= 1
             if not already_told:
@@ -279,7 +286,7 @@ class RaceEngineer:
         self.blue_flag = me.flag == BLUE_FLAG
         calls.extend(self.after_a_crash(moment, me, phase, now))
         yellow_sectors = [
-            i for i, flag in enumerate(session.sector_flags) if flag == YELLOW_FLAG
+            i for i, flag in enumerate(session.sector_flags) if flag == SECTOR_YELLOW
         ]
         here, next_one = (
             FLAG_SLOT.get(me.sector),
@@ -300,7 +307,7 @@ class RaceEngineer:
         if (
             yellow_now
             and not self.yellow
-            and phase == GREEN
+            and phase == GREEN_FLAG
             and not own_yellow
             and not recent
         ):
@@ -369,7 +376,9 @@ class RaceEngineer:
 
         # who is catching whom, and the lap times that matter, at every line in a race
         racing = (
-            moment.session_type in RACE_SESSIONS and phase == GREEN and not me.in_pits
+            moment.session_type in RACE_SESSIONS
+            and phase == GREEN_FLAG
+            and not me.in_pits
         )
         if moment.lap_wrapped:
             from seats.strategist import measured_lap

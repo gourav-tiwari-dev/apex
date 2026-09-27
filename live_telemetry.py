@@ -37,7 +37,7 @@ from seats.performance import PerformanceEngineer
 from seats import Moment
 from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer
-from seats.strategist import Strategist, RACE_SESSIONS, GREEN_PHASE
+from seats.strategist import Strategist
 from seats.racecraft import Racecraft
 from seats.memory_recall import MemoryRecall
 from answers import Answers, needs_agent, intent_of, fix_mishearing, garbled, is_mark
@@ -60,6 +60,7 @@ from track_map import (
     save_map,
     TURNING,
 )
+from game.constants import GREEN_FLAG, RACE_SESSIONS, SESSION_OVER
 
 
 @dataclass
@@ -965,8 +966,7 @@ class Recorder:
         self.writer_thread.join()
 
 
-GAME_PHASE_OVER = 8  # mGamePhase: the session has finished
-# Phase 8 comes when the LEADER takes the flag. On 23 Sep Apex stopped right there, with
+# SESSION_OVER (phase 8) comes when the LEADER takes the flag. On 23 Sep Apex stopped right there, with
 # Gourav still 400 m from his own finish line: every non-leader lost the end of the race.
 # So Apex waits for my own car to finish, then leaves the engineer time to call the result.
 FINISHED_GRACE_S = 10.0
@@ -1204,7 +1204,7 @@ def run_session(
                 and source.race is not None
                 and source.race.me is not None
             ):
-                green = source.race.session.game_phase == GREEN_PHASE
+                green = source.race.session.game_phase == GREEN_FLAG
                 lap_count = lap_counter.race_lap(
                     source.race.me.laps, frame.elapsed_time, green
                 )
@@ -1249,7 +1249,7 @@ def run_session(
                 last_limit_steps = me.track_limit_steps
                 final_place = me.place
                 last_opponents = source.race.opponents
-                if source.race.session.game_phase == GREEN_PHASE:
+                if source.race.session.game_phase == GREEN_FLAG:
                     car_settings = (me.tc, me.abs, me.brake_bias_rear, me.motor_map)
             track_learner.add(own_laps, real_lap_distance, frame.brake, frame.accel_lat)
             if learning_track and lap_counter.wrapped:
@@ -1513,9 +1513,9 @@ def run_session(
             # the session ends itself: no Ctrl+C needed at the chequered flag. Only a session
             # Apex saw running: started on a results screen, it would end, restart and end again
             if source.race is not None:
-                if source.race.session.game_phase < GAME_PHASE_OVER:
+                if source.race.session.game_phase < SESSION_OVER:
                     saw_running = True
-                if source.race.session.game_phase == GAME_PHASE_OVER and saw_running:
+                if source.race.session.game_phase == SESSION_OVER and saw_running:
                     if flag_seen_at is None:
                         flag_seen_at = frame.elapsed_time
                     me = source.race.me

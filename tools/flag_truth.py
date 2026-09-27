@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES, snapshots
-from race_state import YELLOW_FLAG
+from game.constants import SECTOR_YELLOW
 from seats.race_engineer import FLAG_SLOT, NEXT_SECTOR
 
 SLOW_KMH = 60.0
@@ -47,7 +47,7 @@ def sector_of(car, track):
 def yellow_slots_of(snap):
     slots = []
     for slot, flag in enumerate(snap.session.sector_flags):
-        if flag == YELLOW_FLAG:
+        if flag == SECTOR_YELLOW:
             slots.append(slot)
     return slots
 

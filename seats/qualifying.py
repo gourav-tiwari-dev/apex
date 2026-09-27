@@ -9,10 +9,8 @@ other drivers are only on the timing sheet, so a "car ahead" there is a ghost.
 """
 
 from radio import Call, ENGINEER
+from game.constants import GREEN_FLAG, QUALIFYING_SESSIONS, SESSION_OVER
 
-QUALI_SESSIONS = range(5, 9)
-GREEN = 5
-FLAG_OUT = 8  # clock ran out: the lap he is on still counts, and is often the one
 TTL_S = 12.0
 
 
@@ -44,9 +42,14 @@ class QualifyingEngineer:
 
     def update(self, moment):
         race = moment.race
-        if race is None or race.me is None or moment.session_type not in QUALI_SESSIONS:
+        if (
+            race is None
+            or race.me is None
+            or moment.session_type not in QUALIFYING_SESSIONS
+        ):
             return []
-        if race.session.game_phase not in (GREEN, FLAG_OUT):
+        # after the clock runs out the lap he is on still counts, and is often the one
+        if race.session.game_phase not in (GREEN_FLAG, SESSION_OVER):
             return []
         me, now = race.me, moment.now
         calls = []

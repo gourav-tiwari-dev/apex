@@ -50,11 +50,7 @@ for tape in TAPES:
             for name, lo, hi in straights:
                 if lo <= f.lap_dist <= hi:
                     ahead, game_gap, _, _ = same_class_neighbours(r)
-                    gap = (
-                        clock.gap_ahead(ahead.id)
-                        if ahead is not None
-                        else None
-                    )
+                    gap = clock.gap_ahead(ahead.id) if ahead is not None else None
                     if gap is None and ahead is not None:
                         gap = game_gap
                     top = best.get(name)

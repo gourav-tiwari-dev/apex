@@ -11,8 +11,8 @@ from datetime import datetime
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
 from live_telemetry import LiveSource, Recorder
+from game.constants import SESSION_OVER
 
-SESSION_OVER = 8  # mGamePhase: the session has finished
 STATUS_EVERY_S = 10.0  # sim seconds between progress lines
 
 

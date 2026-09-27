@@ -24,9 +24,8 @@ import statistics
 from gaps import TrackClock
 from radio import Call, SPOTTER, RACECRAFT
 from seats.performance import tenths_words
+from game.constants import GREEN_FLAG, RACE_SESSIONS
 
-GREEN = 5
-RACE_SESSIONS = range(10, 14)
 
 LOOK_AHEAD_M = 600.0  # hazards this far up the road are worth a call (~8 s at 270 km/h)
 THREE_WIDE_LOOK_M = 400.0
@@ -214,7 +213,11 @@ class TrackAwareness:
                 self.lap_length = opponent.lap_dist
         if moment.frame.lap_dist > (self.lap_length or 0):
             self.lap_length = moment.frame.lap_dist
-        if race.session.game_phase != GREEN or race.me.in_pits or not self.lap_length:
+        if (
+            race.session.game_phase != GREEN_FLAG
+            or race.me.in_pits
+            or not self.lap_length
+        ):
             return []
         if moment.session_type is not None and moment.session_type not in RACE_SESSIONS:
             return []

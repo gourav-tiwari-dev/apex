@@ -7,6 +7,7 @@ start in 0.01 ms.
 """
 
 from radio import Call, SPOTTER
+from game.constants import GREEN_FLAG
 
 CAR_LENGTH_M = 4.7  # a GT3 is about 4.6-4.7 m long
 LANE_MIN_M = 1.2  # closer sideways than this is not alongside, it is in line
@@ -48,8 +49,6 @@ def side_and_overlap(my_pos, my_ori, car):
 
 
 MOVING_KMH = 30.0
-GREEN = 5  # mGamePhase: racing. The formation lap (3) runs at 70-75 km/h in
-# a tight line, and "car left" there is pure noise (24 Sep)
 
 
 def on_track(moment):
@@ -58,7 +57,9 @@ def on_track(moment):
     race = moment.race
     if race is not None and race.me is not None and race.me.in_pits:
         return False
-    if race is not None and race.session.game_phase != GREEN:
+    # racing only: the formation lap runs at 70-75 km/h in a tight line, and "car left"
+    # there is pure noise (24 Sep)
+    if race is not None and race.session.game_phase != GREEN_FLAG:
         return False
     return True
 

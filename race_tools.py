@@ -16,6 +16,7 @@ import os
 import re
 import sqlite3
 import statistics
+from game.constants import BLUE_FLAG, QUALIFYING_SESSIONS, RACE_SESSIONS, SECTOR_YELLOW
 
 WHEELS = ("front left", "front right", "rear left", "rear right")
 PHASES = {
@@ -177,14 +178,14 @@ def session_info(race, laps_to_go):
         "grip": GRIP.get(session.grip_level),
         "fixed_setup": session.fixed_setup,
         "yellow_anywhere": session.yellow_flag_state not in (0, -1)
-        or any(f == 1 for f in session.sector_flags),
-        "his_flag": "blue" if race.me.flag == 6 else "none",
+        or any(f == SECTOR_YELLOW for f in session.sector_flags),
+        "his_flag": "blue" if race.me.flag == BLUE_FLAG else "none",
     }
     if session.max_laps and session.max_laps < 10000:
         info["race_laps"] = session.max_laps
-    if 5 <= session.session <= 8:
+    if session.session in QUALIFYING_SESSIONS:
         info["qualifying"] = qualifying_picture(race)
-    if 10 <= session.session <= 13 and race.me.grid > 0:
+    if session.session in RACE_SESSIONS and race.me.grid > 0:
         info["his_grid_slot"] = race.me.grid
     return info
 

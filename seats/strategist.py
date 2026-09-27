@@ -9,6 +9,7 @@ import statistics
 
 from radio import Call, STRATEGY, ENGINEER
 from race_state import laps_to_go, leader_margin
+from game.constants import GREEN_FLAG, RACE_SESSIONS
 
 FIRST_CALL_AFTER_LAPS = 2  # need two measured laps before saying anything about fuel
 RECHECK_EVERY_LAPS = 3
@@ -18,8 +19,6 @@ SPARE_COMFORTABLE = 0.5  # laps of fuel spare above which it is simply "fine"
 TYRE_HOT_C = 105.0
 TYRE_NAMES = ["front left", "front right", "rear left", "rear right"]
 CALL_TTL_S = 25.0
-RACE_SESSIONS = range(10, 14)
-GREEN_PHASE = 5
 
 # Live 25 Sep: Apex was restarted mid-race, had no laps at the line, and so no fuel picture.
 # He had 0.6 laps of energy for 1.7 laps of race; the radio read out litres, the coach said
@@ -335,7 +334,7 @@ class Strategist:
             self.wraps -= 1  # rolled back over the line in a spin
         self.last_lap_dist = lap_dist
         me = race.me
-        if race.session.game_phase != GREEN_PHASE:
+        if race.session.game_phase != GREEN_FLAG:
             self.burn = []  # the formation lap burns at half pace: not race burn
             self.was_green = False
             return

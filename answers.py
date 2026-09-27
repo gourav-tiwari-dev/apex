@@ -15,6 +15,7 @@ import re
 from persona import words_to_digits
 from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go, multiclass
+from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW
 
 ANSWER_TTL_S = 10.0
 DEFAULT_QUIET_LAPS = 2
@@ -985,14 +986,16 @@ class Answers:
 
     def flags(self, race):
         s = race.session
-        yellow_sectors = [str(i + 1) for i, f in enumerate(s.sector_flags) if f == 1]
-        if s.game_phase == 6:
+        yellow_sectors = [
+            str(i + 1) for i, f in enumerate(s.sector_flags) if f == SECTOR_YELLOW
+        ]
+        if s.game_phase == SAFETY_CAR:
             words = "Full course yellow."
         elif yellow_sectors:
             words = f"Yellow in sector {' and '.join(yellow_sectors)}. Careful there, someone's in trouble."
         else:
             words = "No yellows."
-        if race.me.flag == 6:
+        if race.me.flag == BLUE_FLAG:
             words += " Blue flag for you: let it by on the exit."
         return words
 

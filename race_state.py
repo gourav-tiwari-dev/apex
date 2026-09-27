@@ -36,12 +36,6 @@ def kelvin_to_celsius(kelvin):
     return round(kelvin - 273.15, 1)
 
 
-# the sector flag that means a local yellow. Measured on all 5 race tapes (26 Sep): with 1 a
-# slow car sat in that sector 61.8% of the time, with 3 2.5% and with 11 (green) 1.7%. 3 shows
-# before the race and once the clock runs out, 2 when the session is over: neither is a yellow
-YELLOW_FLAG = 1
-
-
 @dataclass
 class Session:
     track: str

@@ -36,6 +36,7 @@ from seats.spotter import (
 from seats.performance import tenths_words
 from race_state import same_lap, identity, same_class_neighbours, said_place
 from gaps import TrackClock, ON_YOU_S
+from game.constants import GREEN_FLAG, RACE_SESSIONS
 
 FIGHT_GAP_S = 1.0  # a same-class car within a second ahead is a fight
 DEFEND_GAP_S = 0.8  # and this close behind
@@ -55,8 +56,6 @@ PLAN_TTL_S = 20.0
 PLAN_GAP_S = 60.0
 # live 24 Sep: "lost the place" was raised 30 times in 6 minutes of lap 1, the start shuffle
 LOST_PLACE_GAP_S = 60.0
-RACE_SESSIONS = range(10, 14)
-GREEN = 5
 RESET_TTL_S = 15.0
 
 # the closing alarm, scored on the 24 Sep tapes (see closing_calls): 10 s rate windows beat 20
@@ -435,7 +434,7 @@ class Racecraft:
         # fired 7 times in quali on 23 Sep. Fights and composure are for races.
         if moment.session_type is not None and moment.session_type not in RACE_SESSIONS:
             return []
-        if race.me.in_pits or race.session.game_phase != GREEN:
+        if race.me.in_pits or race.session.game_phase != GREEN_FLAG:
             return []
         # after a spin, or crawling: no racecraft (live 25 Sep, spun at Indianapolis, it kept saying
         # "mega defending" and "stay in the tow")

@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES, snapshots
-from seats.strategist import verdict_of, fine_margin, GREEN_PHASE
+from seats.strategist import verdict_of, fine_margin
+from game.constants import GREEN_FLAG
 
 NUMBER_OFF_LAPS = 0.15
 
@@ -34,7 +35,7 @@ def truth(tape):
         me = snap.me
         if me is None:
             continue
-        if snap.session.game_phase == GREEN_PHASE:
+        if snap.session.game_phase == GREEN_FLAG:
             green = True
         if not green:
             continue  # the formation lap, and a fuel set at the start

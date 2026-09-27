@@ -21,8 +21,7 @@ from radio import Call, MEMORY
 from seats.setup_engineer import advice_for
 from datetime import datetime
 from voice import Voice
-
-RACE_SESSIONS = range(10, 14)  # mSession 10-13 are race sessions
+from game.constants import RACE_SESSIONS
 
 
 def brief(conn):
