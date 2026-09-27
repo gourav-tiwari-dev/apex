@@ -53,6 +53,20 @@ def corner_at(corners, distance):
     return None
 
 
+class CornerMap:
+    """The corners of the track being driven, shared by the session and everything that names a
+    corner (the detectors, the corner stats). It starts on the Monza map, because old tapes carry
+    no track name; the session swaps in the track's own map once it knows the track, or the map it
+    learns from his laps (None while there is nothing to learn from yet)."""
+
+    def __init__(self, corners=MONZA_CORNERS):
+        self.corners = corners
+
+    def at(self, distance):
+        """The corner at this lap distance, or None (a straight, or no map yet)."""
+        return corner_at(self.corners, distance)
+
+
 def is_busy(brake, accel_lat):
     return brake > BRAKING or abs(accel_lat) >= TURNING
 

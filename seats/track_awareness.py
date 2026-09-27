@@ -21,6 +21,8 @@ import collections
 import math
 import statistics
 
+from track_map import corner_at
+
 from gaps import TrackClock
 from radio import Call, SPOTTER, RACECRAFT
 from words import tenths_words
@@ -254,8 +256,6 @@ class TrackAwareness:
 
     # ---- hazards ---------------------------------------------------------------------------
     def slow_or_stopped_ahead(self, race, moment, corners, now):
-        from live_telemetry import corner_at
-
         my_speed = moment.frame.speed_kmh
         if my_speed < 60:
             return []

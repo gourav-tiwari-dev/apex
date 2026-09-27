@@ -53,8 +53,7 @@ from race_state import (
     identity,
 )
 from track_map import (
-    MONZA_CORNERS,
-    corner_at,
+    CornerMap,
     corners_for_track,
     TrackMapLearner,
     save_map,
@@ -118,10 +117,6 @@ def slip_ratio(wheel_rotation, wheel_radius, car_speed_ms):
     # Compare against how fast the car is actually moving over the ground.
     return (wheel_surface_speed - car_speed_ms) / car_speed_ms
 
-
-# Corners come from track_map.py, the one place that decides where they are.
-# Monza uses the hand-measured windows; other tracks are learned from my laps.
-current_corners = MONZA_CORNERS
 
 radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
 
@@ -346,7 +341,8 @@ PEDAL_OFF = 0.05
 
 
 class CornerStats:
-    def __init__(self):
+    def __init__(self, corner_map=None):
+        self.corner_map = CornerMap() if corner_map is None else corner_map
         self.corner = None
         self.lap_count = None
         self.brake_onset = None
@@ -356,7 +352,7 @@ class CornerStats:
         self.prev_time = None
 
     def current_corner(self, real_lap_distance):
-        return corner_at(current_corners, real_lap_distance)
+        return self.corner_map.at(real_lap_distance)
 
     def update(self, frame, lap_count, real_lap_distance):
         now = self.current_corner(real_lap_distance)
@@ -440,7 +436,8 @@ class CornerStats:
 
 
 class Detector:
-    def __init__(self):
+    def __init__(self, corner_map=None):
+        self.corner_map = CornerMap() if corner_map is None else corner_map
         self.armed = False
         self.last_fire_time = 0.0
         self.consecutive_true = 0
@@ -448,7 +445,7 @@ class Detector:
         self.debounce_frames = 2
 
     def current_corner(self, frame):
-        return corner_at(current_corners, frame.lap_dist) or "the straight"
+        return self.corner_map.at(frame.lap_dist) or "the straight"
 
     def build_event(self, frame):
         return Event(
@@ -489,8 +486,8 @@ class Detector:
 
 
 class HardBrakingDetector(Detector):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, corner_map=None):
+        super().__init__(corner_map)
         self.kind = "HARD_BRAKING"
 
     def build_event(self, frame):
@@ -571,9 +568,9 @@ class LapDistance:
 
 
 class LockUpDetector(Detector):
-    def __init__(self, threshold=-0.3):
+    def __init__(self, corner_map=None, threshold=-0.3):
         self.threshold = threshold
-        super().__init__()
+        super().__init__(corner_map)
         self.kind = "LOCKUP"
 
     def build_event(self, frame):
@@ -598,8 +595,8 @@ class LockUpDetector(Detector):
 
 
 class ThrottleLift(Detector):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, corner_map=None):
+        super().__init__(corner_map)
         self.kind = "THROTTLE_LIFT"
         self.last_start_time = 0.0
         self.lifting = False
@@ -631,12 +628,13 @@ class ThrottleLift(Detector):
 
 
 class CornerEntryDetection:
-    def __init__(self):
+    def __init__(self, corner_map=None):
+        self.corner_map = CornerMap() if corner_map is None else corner_map
         self.previous_corner = None
 
     def update(self, frame):
         event = None
-        current_corner = corner_at(current_corners, frame.lap_dist)
+        current_corner = self.corner_map.at(frame.lap_dist)
 
         if current_corner is not None and current_corner != self.previous_corner:
             event = Event(
@@ -660,7 +658,8 @@ class ContactDetection:
     """An impact is when the game's last-impact time moves forward.
     With a car within 10 m it is CONTACT (and we know who), otherwise IMPACT (a wall)."""
 
-    def __init__(self):
+    def __init__(self, corner_map=None):
+        self.corner_map = CornerMap() if corner_map is None else corner_map
         self.last_seen = None
         self.first_frame = True
 
@@ -695,7 +694,7 @@ class ContactDetection:
         if previous is not None and frame.last_impact_time - previous < SAME_INCIDENT_S:
             return None
 
-        corner = corner_at(current_corners, frame.lap_dist) or "the straight"
+        corner = self.corner_map.at(frame.lap_dist) or "the straight"
         magnitude = frame.last_impact_magnitude
         other = self.nearest_car(frame, near)
         if other is None:
@@ -728,8 +727,8 @@ class ContactDetection:
 
 
 class OffTrackDetector(Detector):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, corner_map=None):
+        super().__init__(corner_map)
         self.kind = "OFF_TRACK"
 
     def build_event(self, frame):
@@ -763,8 +762,8 @@ SNAP_MARGIN = 0.1  # rad/s, so tiny wobbles on a straight never count
 
 
 class RearSnapDetector(Detector):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, corner_map=None):
+        super().__init__(corner_map)
         self.kind = "REAR_SNAP"
 
     def build_event(self, frame):
@@ -793,8 +792,8 @@ SPIN_THROTTLE = 0.5
 
 
 class WheelspinDetector(Detector):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, corner_map=None):
+        super().__init__(corner_map)
         self.kind = "WHEELSPIN"
 
     def build_event(self, frame):
@@ -846,8 +845,8 @@ class SpinDetector(Detector):
     pointing more than 90 degrees from where it is going. Old tapes without position keep the
     yaw rule."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, corner_map=None):
+        super().__init__(corner_map)
         self.kind = "SPIN"
         self.cooldown = 10.0  # one incident can swing past 90 degrees twice (25 Sep: 1045 and 1048 s)
         self.last_fire_time = -self.cooldown  # free to fire from the first second
@@ -887,7 +886,8 @@ class SlideCaughtDetector:
     straight without ever passing 90 (a spin). Fires on the save, so it is praise, not a
     warning. His words, 25 Sep: "tell me mate you caught a big moment", not "you spun"."""
 
-    def __init__(self):
+    def __init__(self, corner_map=None):
+        self.corner_map = CornerMap() if corner_map is None else corner_map
         self.kind = "SLIDE_CAUGHT"
         self.recent = []
         self.worst = None  # the biggest slide angle of the slide in progress
@@ -919,7 +919,7 @@ class SlideCaughtDetector:
             if frame.elapsed_time - self.last_fire_time < self.cooldown:
                 return None
             self.last_fire_time = frame.elapsed_time
-            corner = corner_at(current_corners, frame.lap_dist) or "the straight"
+            corner = self.corner_map.at(frame.lap_dist) or "the straight"
             return Event(
                 kind=self.kind,
                 sim_time=frame.elapsed_time,
@@ -1028,7 +1028,6 @@ def run_session(
     out_loud: speak through the speakers (default) or print lines (fast replays, tests).
     clean:    no swearing, for recordings other people will hear.
     persona:  who phrases the lines; tests pass a fake so no LLM call is ever made."""
-    global current_corners
     REPLAY = replay
     REPLAY_SPEED = replay_speed
     if out_loud is None:
@@ -1048,31 +1047,32 @@ def run_session(
         tele_recorder = Recorder(tape_out)
         print(f"Recording to {tape_out}")
 
-    spin_detector = SpinDetector()
+    # the corners of this track, for everything that names one. Old tapes carry no track
+    # name, so they keep the Monza map they were driven on
+    corner_map = CornerMap()
+    spin_detector = SpinDetector(corner_map)
     detectors = [
-        HardBrakingDetector(),
-        LockUpDetector(),
-        CornerEntryDetection(),
-        ThrottleLift(),
-        OffTrackDetector(),
+        HardBrakingDetector(corner_map),
+        LockUpDetector(corner_map),
+        CornerEntryDetection(corner_map),
+        ThrottleLift(corner_map),
+        OffTrackDetector(corner_map),
         spin_detector,
-        SlideCaughtDetector(),
-        RearSnapDetector(),
-        WheelspinDetector(),
+        SlideCaughtDetector(corner_map),
+        RearSnapDetector(corner_map),
+        WheelspinDetector(corner_map),
     ]
 
     lap_counter = LapCounter()
     lap_distance = LapDistance()
-    corner_stats = CornerStats()
+    corner_stats = CornerStats(corner_map)
 
-    # Old tapes carry no track name, so they keep the Monza map they were driven on.
-    current_corners = MONZA_CORNERS
     track = None
     session_type = None
     learning_track = False
     track_learner = TrackMapLearner()
 
-    contacts = ContactDetection()
+    contacts = ContactDetection(corner_map)
     # the result of the session, read from the race snapshots as they arrive
     grid = None
     final_place = None
@@ -1225,15 +1225,15 @@ def run_session(
                     me.car_class if me else None,
                     me.car_model if me else None,
                 )
-                current_corners = corners_for_track(track)
-                if talk is not None and current_corners:
-                    talk.set_track_words([c["name"] for c in current_corners])
+                corner_map.corners = corners_for_track(track)
+                if talk is not None and corner_map.corners:
+                    talk.set_track_words([c["name"] for c in corner_map.corners])
                 # team memory for this track: the habits worth a reminder
                 for habit in memory_facts(conn, "corner_habit", track) + memory_facts(
                     conn, "contact_corner", track
                 ):
                     recall.corner_habits.setdefault(habit["subject"], habit)
-                learning_track = current_corners is None
+                learning_track = corner_map.corners is None
                 if learning_track:
                     print(
                         f"[track: {track} - new track, learning its corners from your laps]"
@@ -1255,7 +1255,7 @@ def run_session(
             if learning_track and lap_counter.wrapped:
                 learned = track_learner.corners(own_laps)
                 if learned is not None:
-                    current_corners = learned
+                    corner_map.corners = learned
 
             stat = corner_stats.update(frame, lap_count, real_lap_distance)
             if stat:
@@ -1295,7 +1295,7 @@ def run_session(
                     if call is not None and governor.offer(call):
                         desk.prepare(call)
 
-            corner_now = corner_at(current_corners, real_lap_distance)
+            corner_now = corner_map.at(real_lap_distance)
             if source.new_race and source.race is not None:
                 model.see_race(source.race, frame.elapsed_time)
             model.see_me(frame.lap_dist, frame.elapsed_time)
@@ -1309,7 +1309,7 @@ def run_session(
                 corner=corner_now,
                 corner_stat=stat,
                 session_type=session_type,
-                corners=current_corners,
+                corners=corner_map.corners,
                 events=frame_events,
                 model=model,
             )
@@ -1405,7 +1405,7 @@ def run_session(
                             source.race,
                             lap_count,
                             real_lap_distance,
-                            current_corners,
+                            corner_map.corners,
                             engineer,
                             strategist,
                             performance,

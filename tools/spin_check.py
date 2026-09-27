@@ -14,18 +14,17 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import live_telemetry
 from live_telemetry import CarState, SpinDetector, SlideCaughtDetector
-from track_map import MONZA_CORNERS, corners_for_track
+from track_map import CornerMap, corners_for_track
 
 tapes = sys.argv[1:] or sorted(glob.glob("tape_2026092[3-5]_*.jsonl.gz"))
 for tape in tapes:
-    spin, slide = SpinDetector(), SlideCaughtDetector()
+    corner_map = CornerMap()
+    spin, slide = SpinDetector(corner_map), SlideCaughtDetector(corner_map)
     old_spins = 0
     old_armed = False
     found = []
     track_known = False
-    live_telemetry.current_corners = MONZA_CORNERS
     try:
         with gzip.open(tape, "rt") as f:
             for line in f:
@@ -36,7 +35,7 @@ for tape in tapes:
                     track_known = True
                     corners = corners_for_track(d["session"]["track"])
                     if corners is not None:
-                        live_telemetry.current_corners = corners
+                        corner_map.corners = corners
                 if d.get("t") in ("race", "near"):
                     continue
                 frame = CarState(**d)
