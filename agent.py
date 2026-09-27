@@ -24,14 +24,12 @@ How it stays honest:
 
 import json
 import math
-import os
 import re
 import threading
 import time
 from queue import Queue, Empty
 
 from persona import (
-    MODEL,
     BANNED,
     PROFANITY,
     GENDERED,
@@ -47,6 +45,7 @@ import race_tools
 from orders import current_plan
 from words import lap_text
 from race_model import CATCH_UPPER
+from llm import LIVE_MODEL, open_client
 
 MAX_ROUNDS = 4  # tool rounds before it must answer
 # asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
@@ -1636,22 +1635,13 @@ class RaceAgent:
 
     def connect(self):
         if self.client is None:
-            from openai import OpenAI
-            from dotenv import load_dotenv
-
-            load_dotenv(".env")
-            self.client = OpenAI(
-                base_url="https://aicredits.in/v1",
-                api_key=os.environ["AICREDITS_API_KEY"],
-                timeout=MODEL_TIMEOUT_S,
-                max_retries=0,
-            )
+            self.client = open_client(timeout=MODEL_TIMEOUT_S)
         return self.client
 
     def warm_up(self):
         try:
             self.connect().chat.completions.create(
-                model=MODEL,
+                model=LIVE_MODEL,
                 messages=[{"role": "user", "content": "ok"}],
                 max_tokens=1,
                 extra_body={"thinking": {"type": "disabled"}},
@@ -1735,7 +1725,7 @@ class RaceAgent:
     def model_turn(self, messages, timeout=MODEL_TIMEOUT_S):
         started = time.perf_counter()
         response = self.connect().chat.completions.create(
-            model=MODEL,
+            model=LIVE_MODEL,
             messages=messages,
             max_tokens=MAX_TOKENS,
             timeout=timeout,

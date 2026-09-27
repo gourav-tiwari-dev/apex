@@ -1,14 +1,11 @@
-import os, json, time, sys
-from dotenv import load_dotenv
-
-load_dotenv()
-from openai import OpenAI
+import json, time, sys
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
 from memory import latest_session_id, load_latest_contract, evaluate_contract, track_of
 from memory import reference_from_race, reference_from_self, save_radio
 from radio import Call, MEMORY
 from seats.setup_engineer import advice_for
 from tts import speak
+from llm import DEBRIEF_MODEL, open_client
 
 DEBRIEF_PROMPT = (
     "You are a race engineer debriefing your driver after a session. "
@@ -87,19 +84,14 @@ DEBRIEF_PROMPT = (
     "No praise, no greeting, no jargon."
 )
 
-client = OpenAI(
-    base_url="https://aicredits.in/v1",
-    api_key=os.environ["AICREDITS_API_KEY"],
-    timeout=120,
-    max_retries=0,
-)
+client = open_client(timeout=120)
 
 
 def ask_once(pack):
     text = ""
     finish = None
     stream = client.chat.completions.create(
-        model="deepseek-v4.1-flash",
+        model=DEBRIEF_MODEL,
         max_tokens=16000,
         stream=True,
         messages=[

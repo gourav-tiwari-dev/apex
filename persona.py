@@ -9,16 +9,10 @@ made on 23 Sep 2026: aggressive but TIMED. It never tells him to back down from 
 tells him WHERE the move works, because hasty moves in close racing cost him safety rating.
 """
 
-import os
 import re
 import time
+from llm import LIVE_MODEL, open_client
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
-load_dotenv()
-
-MODEL = "deepseek-v4-flash"
 MAX_WORDS = 12  # the prompt asks for 10; the gate allows a little slack, never more
 FAILURES_TO_OPEN = 3  # consecutive LLM failures before the circuit opens
 CIRCUIT_COOLDOWN_S = 120
@@ -266,12 +260,7 @@ class Persona:
 
     def llm(self):
         if self.client is None:
-            self.client = OpenAI(
-                base_url="https://aicredits.in/v1",
-                api_key=os.environ["AICREDITS_API_KEY"],
-                timeout=4,
-                max_retries=0,
-            )
+            self.client = open_client(timeout=4)
         return self.client
 
     def online(self):
@@ -296,7 +285,7 @@ class Persona:
         started = time.perf_counter()
         try:
             response = self.llm().chat.completions.create(
-                model=MODEL,
+                model=LIVE_MODEL,
                 messages=[
                     {"role": "system", "content": self.system_prompt()},
                     {"role": "user", "content": facts_text(call, self.clean)},
