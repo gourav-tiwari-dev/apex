@@ -16,6 +16,7 @@ from persona import words_to_digits
 from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go, multiclass
 from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW
+from words import lap_text
 
 ANSWER_TTL_S = 10.0
 DEFAULT_QUIET_LAPS = 2
@@ -684,15 +685,6 @@ def laps_asked(text):
 
 WHEEL_NAMES = ("front left", "front right", "rear left", "rear right")
 HOT_TYRE_C = 105  # the strategist's "cooking" line
-
-
-def lap_text(seconds):
-    minutes = int(seconds // 60)
-    rest = round(seconds - minutes * 60, 1)
-    if rest >= 60.0:
-        minutes += 1
-        rest = round(rest - 60.0, 1)
-    return f"{minutes}:{rest:04.1f}"
 
 
 class Answers:

@@ -11,9 +11,9 @@ from agent import (
     numbers_seen,
     pace_words,
     trend_words,
-    lap_text,
 )
 from answers import needs_agent
+from words import lap_text
 from radio import Budget, Governor
 from seats.performance import PerformanceEngineer
 from seats.race_engineer import RaceEngineer

@@ -10,16 +10,9 @@ other drivers are only on the timing sheet, so a "car ahead" there is a ghost.
 
 from radio import Call, ENGINEER
 from game.constants import GREEN_FLAG, QUALIFYING_SESSIONS, SESSION_OVER
+from words import lap_text
 
 TTL_S = 12.0
-
-
-def lap_text(seconds):
-    minutes = int(seconds // 60)
-    rest = round(seconds - minutes * 60, 1)
-    if rest >= 60.0:
-        minutes, rest = minutes + 1, round(rest - 60.0, 1)
-    return f"{minutes}:{rest:04.1f}"
 
 
 def call(kind, words, now, facts):

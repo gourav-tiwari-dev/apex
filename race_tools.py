@@ -17,6 +17,7 @@ import re
 import sqlite3
 import statistics
 from game.constants import BLUE_FLAG, QUALIFYING_SESSIONS, RACE_SESSIONS, SECTOR_YELLOW
+from words import lap_text
 
 WHEELS = ("front left", "front right", "rear left", "rear right")
 PHASES = {
@@ -42,17 +43,6 @@ MAX_SQL_ROWS = 30
 SQL_STEPS_LIMIT = 2_000_000  # sqlite VM steps before a query is cut off (~0.1-0.3 s)
 HERE = os.path.dirname(os.path.abspath(__file__))
 KNOWLEDGE_FILE = os.path.join(HERE, "knowledge.md")
-
-
-def lap_text(seconds):
-    if seconds is None or seconds <= 0:
-        return None
-    minutes = int(seconds // 60)
-    rest = round(seconds - minutes * 60, 1)
-    if rest >= 60.0:
-        minutes += 1
-        rest = round(rest - 60.0, 1)
-    return f"{minutes}:{rest:04.1f}"
 
 
 def session_name(number):

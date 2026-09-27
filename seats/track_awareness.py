@@ -23,7 +23,7 @@ import statistics
 
 from gaps import TrackClock
 from radio import Call, SPOTTER, RACECRAFT
-from seats.performance import tenths_words
+from words import tenths_words
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 
 

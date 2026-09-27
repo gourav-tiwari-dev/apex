@@ -24,6 +24,7 @@ from game.constants import (
     SECTOR_YELLOW,
     SESSION_OVER,
 )
+from words import lap_time_parts, tenths_words
 
 # mSectorFlag: 1 is a local yellow, nothing else is (game.constants.SECTOR_YELLOW, measured on all 5
 # race tapes 26 Sep). The 23 Sep note "1 (and sometimes 3)" was wrong about 3: it shows before
@@ -102,24 +103,6 @@ def spoken(
         template=template,
         evidence=evidence or {},
     )
-
-
-def lap_time_parts(seconds_total):
-    minutes = int(seconds_total // 60)
-    seconds = round(seconds_total - minutes * 60, 1)
-    if seconds >= 60.0:
-        minutes += 1
-        seconds = round(seconds - 60.0, 1)
-    return minutes, seconds
-
-
-def tenths(seconds):
-    count = round(seconds * 10)
-    if count <= 1:
-        return "a tenth"
-    if count >= 10:
-        return f"{round(seconds, 1)} seconds"
-    return f"{count} tenths"
 
 
 CATCH_UPPER = 1.5
@@ -549,7 +532,7 @@ class RaceEngineer:
                     f"The car ahead is {gap} s up the road and you are taking {gained} s a lap out of that: at this pace you are on it by lap {catch_lap}. Keep pushing.",
                     now,
                     facts,
-                    template=f"Car ahead, {gap}. You're taking {tenths(gained)} a lap. On it by lap {catch_lap}.",
+                    template=f"Car ahead, {gap}. You're taking {tenths_words(gained)} a lap. On it by lap {catch_lap}.",
                 )
         # not closing fast enough to catch before the flag: the lap time that would
         if (
@@ -599,7 +582,7 @@ class RaceEngineer:
                 "reach_lap": reach_lap,
             }
             conclusion = f"The car behind is {gap} s back and closing {his_gain} s a lap: on your gearbox by lap {reach_lap}."
-            template = f"Car behind, {gap}. Closing {tenths(his_gain)} a lap. On you by lap {reach_lap}."
+            template = f"Car behind, {gap}. Closing {tenths_words(his_gain)} a lap. On you by lap {reach_lap}."
             if behind.last_lap > 0:
                 his_min, his_sec = lap_time_parts(behind.last_lap)
                 facts.update({"their_minutes": his_min, "their_seconds": his_sec})

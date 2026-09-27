@@ -21,6 +21,7 @@ from race_state import identity
 from seats.spotter import CAR_LENGTH_M
 from balance import BalanceMeter, FIX
 from game.constants import QUALIFYING_SESSIONS
+from words import tenths_words
 
 # the kinds said on the radio. HARD_BRAKING, CORNER_ENTRY and THROTTLE_LIFT are recorded, never
 # said: v1's "coasting" is any throttle under 50% with no brake, which is correct part-throttle
@@ -70,15 +71,6 @@ MAX_SAMPLE_GAP_M = 200.0  # two snapshots further apart than this cannot be inte
 
 def car_lengths(metres):
     return max(1, round(metres / CAR_LENGTH_M))
-
-
-def tenths_words(seconds):
-    tenths = round(seconds * 10)
-    if tenths <= 1:
-        return "a tenth"
-    if tenths >= 10:
-        return f"{round(seconds, 1)} seconds"
-    return f"{tenths} tenths"
 
 
 def call_from_event(event, event_id):

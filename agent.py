@@ -45,6 +45,7 @@ from race_state import identity, same_class_neighbours, laps_to_go
 from seats.strategist import fine_margin
 import race_tools
 from orders import current_plan
+from words import lap_text
 
 MAX_ROUNDS = 4  # tool rounds before it must answer
 # asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
@@ -487,17 +488,6 @@ def split_call(raw):
             if part.upper().startswith("OVERRIDE:"):
                 override = part[9:].strip().lower()
     return call, override, " ".join(" ".join(lines).split())
-
-
-def lap_text(seconds):
-    if seconds is None or seconds <= 0:
-        return None
-    minutes = int(seconds // 60)
-    rest = round(seconds - minutes * 60, 1)
-    if rest >= 60.0:  # 239.96 s is 4:00.0, not 3:60.0
-        minutes += 1
-        rest = round(rest - 60.0, 1)
-    return f"{minutes}:{rest:04.1f}"
 
 
 NOT_A_FIGHT_S = 1.0  # further apart than this, nobody is diving at anybody yet
