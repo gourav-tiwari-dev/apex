@@ -20,6 +20,12 @@ How it stays honest:
     answer passes its own gate (no speeds, no he/she for other drivers, no hedging). A refused
     answer gets one rewrite with the reason; a second refusal is replaced by an honest
     "no clean answer" line.
+
+This module is RaceAgent: the thread that asks the model and hands the answers back to the
+race loop. The rest of the coach: coach/prompt.py (what it is told, its tool list),
+coach/snapshot.py (the race held still, and the tools), coach/fight_maths.py (the team call),
+coach/answer_checks.py (the gate), coach/race_tools.py (what the tools return) and
+coach/llm.py (the model).
 """
 
 import json

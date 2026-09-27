@@ -4,7 +4,7 @@ import json
 import time
 from dataclasses import replace
 
-from agent import RaceAgent
+from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from coach.answer_checks import check_answer, numbers_seen
 from coach.fight_maths import pace_words, trend_words

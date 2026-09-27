@@ -22,7 +22,7 @@ os.chdir(HERE)
 import session
 from question_bank import QUESTIONS
 from try_coach import frozen_race, DEFAULT_TAPE
-from agent import RaceAgent
+from coach.agent import RaceAgent
 from answers import Answers
 from radio import Budget
 
