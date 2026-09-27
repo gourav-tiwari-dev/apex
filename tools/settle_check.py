@@ -4,7 +4,7 @@ sys.path.insert(0, r"C:\Users\gourav\Downloads\apex_telemetry")
 import os
 
 os.chdir(r"C:\Users\gourav\Downloads\apex_telemetry")
-from live_telemetry import ReplaySource
+from game.tape import ReplaySource
 from seats import Moment
 from seats.settle import RaceSettle, neighbourhood
 

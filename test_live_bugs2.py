@@ -76,7 +76,7 @@ def test_a_misheard_corner_is_still_found():
 
 
 def test_a_tape_cut_off_mid_write_replays_up_to_the_cut(tmp_path):
-    from live_telemetry import ReplaySource
+    from game.tape import ReplaySource
 
     frame = {
         "speed_kmh": 100.0,

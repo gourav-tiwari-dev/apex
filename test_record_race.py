@@ -1,5 +1,5 @@
 from test_race_state import fake_game
-from live_telemetry import ReplaySource
+from game.tape import ReplaySource
 from record_race import record
 
 

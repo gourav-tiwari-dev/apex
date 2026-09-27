@@ -10,7 +10,7 @@ from datetime import datetime
 
 from sharedmemory import MMapControl
 from lmu_data import LMUObjectOut, LMUConstants
-from live_telemetry import Recorder
+from game.tape import Recorder
 from game.live_source import LiveSource
 from game.constants import SESSION_OVER
 

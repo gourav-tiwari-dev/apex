@@ -6,7 +6,7 @@ import io, contextlib, os, sys
 os.chdir(r"C:\Users\gourav\Downloads\apex_telemetry")
 sys.path.insert(0, os.getcwd())
 import seats.racecraft as rc
-from live_telemetry import ReplaySource
+from game.tape import ReplaySource
 from seats import Moment
 from seats.performance import PerformanceEngineer
 from track_map import corner_at, corners_for_track

@@ -1,6 +1,6 @@
 from lmu_data import LMUObjectOut
 from race_state import read_race_snapshot, read_near_cars
-from live_telemetry import ReplaySource, Recorder, TAPE_PATH
+from game.tape import ReplaySource, Recorder, TAPE_PATH
 
 
 def fake_game():
