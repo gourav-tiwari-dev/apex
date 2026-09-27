@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 from gaps import TrackClock, Trail
-from live_telemetry import Event
+from driving.detectors import Event
 from radio import Governor
 from seats.performance import PerformanceEngineer
 from seats.racecraft import Racecraft
@@ -467,7 +467,7 @@ def test_praise_and_the_alarm_go_out_in_the_start_chaos():
 def test_no_racecraft_after_a_spin():
     # live 25 Sep: spun at Indianapolis, and racecraft kept saying "mega defending"
     from test_racecraft import step, rival
-    from live_telemetry import Event
+    from driving.detectors import Event
 
     seat = seat_with_gaps()
     spin = Event(

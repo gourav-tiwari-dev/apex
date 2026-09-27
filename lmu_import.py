@@ -38,7 +38,8 @@ from dataclasses import asdict
 
 import duckdb
 
-from live_telemetry import CarState, FRONT_RADIUS, REAR_RADIUS
+from live_telemetry import CarState
+from driving.detectors import FRONT_RADIUS, REAR_RADIUS
 from race_state import Session, Me, RaceSnapshot
 
 LMU_TELEMETRY = (

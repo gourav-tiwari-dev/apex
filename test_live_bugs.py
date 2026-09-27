@@ -116,7 +116,7 @@ def test_J_after_a_crash_he_is_asked_if_he_is_ok_once():
     # his mark, 25 Sep (58-car race): "it doesn't know that I crashed and spun, my race is over".
     # Replay: 214 -> 6 km/h at Indianapolis, stopped a minute, and nobody asked. A pit wall's first
     # question after a crash is "Are you OK?"
-    from live_telemetry import Event
+    from driving.detectors import Event
 
     engineer = RaceEngineer()
     engineer.update(moment(0.0, race(0.0, {}, {"sector": 1})))
@@ -149,7 +149,7 @@ def test_J2_no_blue_flag_calls_while_he_crawls():
 
 def test_J3_no_wide_call_right_after_a_spin_or_a_hit():
     # the same replay: the spin call, then "Wide at Indianapolis" twice for the same crash
-    from live_telemetry import Event
+    from driving.detectors import Event
     from seats.performance import PerformanceEngineer
 
     seat = PerformanceEngineer()
@@ -527,7 +527,7 @@ def test_L2_the_finish_and_the_gap_report_say_the_class_place():
 
 def test_a_caught_slide_is_praised_only_if_no_spin_follows():
     # live 27 Sep: "Big moment. Caught it. Good hands." and then "Spun." 2 s later
-    from live_telemetry import Event
+    from driving.detectors import Event
 
     spun = PerformanceEngineer()
     slide = Event(

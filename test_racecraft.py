@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 import memory
-from live_telemetry import Event
+from driving.detectors import Event
 from race_state import Opponent
 from seats.performance import PerformanceEngineer, CornerPass
 from seats.racecraft import Racecraft

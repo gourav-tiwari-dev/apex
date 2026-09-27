@@ -21,7 +21,8 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from live_telemetry import CarState, SpinDetector, SlideCaughtDetector
+from live_telemetry import CarState
+from driving.detectors import SpinDetector, SlideCaughtDetector
 
 WINDOW_S = 3.0
 SPIN_CONFIRMED = 75.0  # the detector says > 90; 15 degrees for yaw-rate adding-up error

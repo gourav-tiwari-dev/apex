@@ -14,7 +14,8 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from live_telemetry import CarState, SpinDetector, SlideCaughtDetector
+from live_telemetry import CarState
+from driving.detectors import SpinDetector, SlideCaughtDetector
 from track_map import CornerMap, corners_for_track
 
 tapes = sys.argv[1:] or sorted(glob.glob("tape_2026092[3-5]_*.jsonl.gz"))

@@ -406,7 +406,7 @@ def run_frames(detector, headings):
 
 
 def test_a_car_facing_backwards_is_a_spin_and_a_hit_before_it_says_so():
-    from live_telemetry import SpinDetector
+    from driving.detectors import SpinDetector
 
     spin = SpinDetector()
     spin.last_car_contact = 0.1
@@ -419,7 +419,7 @@ def test_a_car_facing_backwards_is_a_spin_and_a_hit_before_it_says_so():
 
 
 def test_a_slide_that_comes_back_is_a_big_moment_not_a_spin():
-    from live_telemetry import SpinDetector, SlideCaughtDetector
+    from driving.detectors import SpinDetector, SlideCaughtDetector
 
     slide = (
         [(0, 0)] * 20

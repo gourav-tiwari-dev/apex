@@ -43,7 +43,7 @@ def test_recording_stops_at_session_end_and_replays(tmp_path):
 
 def test_one_incident_with_several_hits_counts_once():
     from dataclasses import replace
-    from live_telemetry import ContactDetection
+    from driving.detectors import ContactDetection
     from test_seats import frame
 
     detector = ContactDetection()
