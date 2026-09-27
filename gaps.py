@@ -30,7 +30,6 @@ KEEP_LAPS = 2.2  # trails older than this are dropped
 CLOSING_WINDOW_S = 10.0
 MIN_CLOSING_SAMPLES = 10
 ON_YOU_S = 0.3  # "on you": close enough to attack at the next braking zone
-LOOK_AHEAD_LAPS = 2
 PROFILE_STEP_M = 50.0  # the gap to each car is kept every 50 m of track
 PACE_STRETCHES = 8  # pace = the median of 8 stretches of the last lap
 
@@ -66,28 +65,6 @@ class Trail:
         d0, d1 = self.distance[i - 1], self.distance[i]
         t0, t1 = self.time[i - 1], self.time[i]
         return t0 + (t1 - t0) * (distance - d0) / (d1 - d0)
-
-    def distance_at(self, time):
-        """Where this car was at that time, or None if the trail does not cover it."""
-        if not self.time or time < self.time[0] or time > self.time[-1]:
-            return None
-        i = bisect.bisect_left(self.time, time)
-        if self.time[i] == time or i == 0:
-            return self.distance[i]
-        t0, t1 = self.time[i - 1], self.time[i]
-        d0, d1 = self.distance[i - 1], self.distance[i]
-        return d0 + (d1 - d0) * (time - t0) / (t1 - t0)
-
-    def speed(self, over_s=5.0):
-        """Metres a second over the last few seconds, or None."""
-        if len(self.time) < 2:
-            return None
-        i = bisect.bisect_left(self.time, self.time[-1] - over_s)
-        i = min(i, len(self.time) - 2)
-        seconds = self.time[-1] - self.time[i]
-        if seconds <= 0:
-            return None
-        return (self.distance[-1] - self.distance[i]) / seconds
 
     def trim(self, keep_from):
         cut = bisect.bisect_left(self.distance, keep_from)
@@ -346,19 +323,6 @@ class TrackClock:
         return -slope
 
     # ---- where it catches ------------------------------------------------------------------
-    def segment_time(self, trail, start, end):
-        """A car's time from one point to another on the last lap it drove through them."""
-        if self.lap_length is None or not trail.distance:
-            return None
-        laps_back = 1
-        while end - laps_back * self.lap_length > trail.distance[-1]:
-            laps_back += 1
-        a = trail.time_at(start - laps_back * self.lap_length)
-        b = trail.time_at(end - laps_back * self.lap_length)
-        if a is None or b is None:
-            return None
-        return b - a
-
     def catch_point(self, car_id, point, gap, corners=None):
         """(distance raced where it gets within ON_YOU_S, closing per lap), within one lap;
         or None (not closing, or not one full lap of this pair yet). point: the distance
