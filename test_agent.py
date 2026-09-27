@@ -445,3 +445,13 @@ def test_qualifying_picture_without_a_time():
     picture = qualifying_picture(quali)
     assert picture["his_best"] == "no time set" and "class P5" in picture["his_class_position"]
     assert picture["time_for_another_run"].startswith("only if he is already on track")
+
+
+def test_a_plan_question_is_not_a_fight_to_call():
+    # live 27 Sep, formation lap: "What's the plan for this race?" was refused for having no CALL
+    # line ("plan" counted as a fight word) and he got "No clean answer on that one"
+    from agent import about_the_fight
+    assert not about_the_fight("What's the plan for this race?")
+    assert not about_the_fight("What position can we get by the end of the race?")
+    assert about_the_fight("Car ahead is defending aggressively, what do I do?")
+    assert about_the_fight("What do I do about him?")

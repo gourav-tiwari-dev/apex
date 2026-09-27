@@ -284,12 +284,54 @@ def test_late_on_the_brakes_is_a_brilliant_move():
     assert praise.facts["move"] == "late_brake"
 
 
+def gearbox(seat, start, end, gap, **kw):
+    """A snapshot every 5 s from start to end with the car behind at that gap."""
+    seat.clock.gap_behind = lambda car_id, now: gap
+    calls = []
+    t = start
+    while t <= end:
+        calls += step(seat, t, **kw)
+        t += 5.0
+    return calls
+
+
 def test_defending_that_held_gets_praise():
-    seat = seat_with_gaps(behind=0.4)
-    step(seat, 100.0, opponents=[rival(6, 8.4, car_id=9)])
+    seat = seat_with_gaps()
+    gearbox(seat, 100.0, 170.0, 0.4, opponents=[rival(6, 8.4, car_id=9)])     # on his gearbox 70 s
     seat.clock.gap_behind = lambda car_id, now: 1.8
-    calls = step(seat, 175.0, opponents=[rival(6, 9.8, car_id=9)])
+    calls = step(seat, 175.0, opponents=[rival(6, 9.8, car_id=9)])            # then gone
     assert "DEFEND_HELD" in kinds(calls)
+
+
+def test_no_defence_praise_for_a_car_that_only_drifted_back():
+    # live 27 Sep: "Mega defending, they've got nothing" 70 s after the car had dropped to 0.9-1.5 s
+    # and stopped attacking; the drift had counted as pressure
+    seat = seat_with_gaps()
+    behind = dict(opponents=[rival(6, 8.4, car_id=9)])
+    gearbox(seat, 100.0, 165.0, 0.4, **behind)                     # a real 65 s on his gearbox...
+    calls = gearbox(seat, 170.0, 235.0, 1.1, **behind)             # ...then sat back, not attacking
+    seat.clock.gap_behind = lambda car_id, now: 1.8
+    calls += step(seat, 240.0, opponents=[rival(6, 9.8, car_id=9)])
+    assert "DEFEND_HELD" not in kinds(calls)
+
+
+def test_the_pass_being_held_is_not_also_a_defence():
+    # live 27 Sep: the car he had just passed sat on his gearbox, the pass was praised, and then
+    # "mega defending" came for the same fight
+    seat = seat_with_gaps()
+    pass_sequence(seat)                                            # through; it sits in his tow
+    after = dict(me_changes={"place": 4, "time_behind_leader": 7.6}, opponents=[rival(5, 7.9, car_id=5)])
+    t = 102.0
+    while t <= 170.0:                                              # on his gearbox over a minute
+        step(seat, t, lap=3, corner=None, **after)
+        t += 5.0
+    step(seat, 172.0, lap=3, new_race=False, corner="T11 Parabolica", **after)   # a braking zone
+    seat.clock.gap_behind = lambda car_id, now: 0.6
+    calls = step(seat, 175.0, lap=3, corner=None, **after)         # the pass is done: praised
+    seat.clock.gap_behind = lambda car_id, now: 1.8
+    calls += step(seat, 178.0, lap=3, corner=None, **after)        # and it falls away
+    assert "PASS_PRAISE" in kinds(calls)
+    assert "DEFEND_HELD" not in kinds(calls)
 
 
 def test_praise_and_the_alarm_go_out_in_the_start_chaos():

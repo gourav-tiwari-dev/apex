@@ -33,6 +33,7 @@ WIDE_AFTER_INCIDENT_S = 10.0
 WIDE_BELOW_KMH_IS_NOT_WIDE = 30.0
 SPIN_TTL_S = 10.0
 SLIDE_TTL_S = 4.0              # said while he still feels it, or not at all
+CATCH_HOLD_S = 3.0             # a caught slide is praised once it has held this long without a spin
 INCIDENTS = {"SPIN", "OFF_TRACK", "LOCKUP"}
 STALE_AFTER_S = 6.0      # v1's STALE_THRESHOLD: advice about a corner 6 s ago is useless
 
@@ -322,6 +323,7 @@ class PerformanceEngineer:
         self.balance = BalanceMeter()        # understeer / oversteer, from his own laps
         self.balance_said = set()            # corners already told about their balance
         self.incident_at = None              # sim time of his last spin or hit
+        self.held_catch = None               # (the "caught it" call, when it may be said)
 
     def saw_hit(self, sim_time):
         """A contact with a car or a wall, told by the race loop (as the spin detector is)."""
@@ -330,17 +332,30 @@ class PerformanceEngineer:
     def call_for_event(self, event, event_id):
         if event.kind == "SPIN":
             self.incident_at = event.sim_time
+            # live 27 Sep: "Big moment. Caught it. Good hands." then "Spun." 2 s later. The save
+            # waits CATCH_HOLD_S before it is praised; a spin in that time means it did not hold
+            self.held_catch = None
         elif event.kind == "OFF_TRACK" and event.speed_kmh < WIDE_BELOW_KMH_IS_NOT_WIDE:
             return None                      # parked or crawling after a crash
         elif event.kind == "OFF_TRACK" and self.incident_at is not None:
             if 0 <= event.sim_time - self.incident_at < WIDE_AFTER_INCIDENT_S:
                 return None                  # the spin or the hit is the news, not "wide"
-        return call_from_event(event, event_id)
+        call = call_from_event(event, event_id)
+        if call is not None and call.kind == "SLIDE_CAUGHT":
+            self.held_catch = (call, event.sim_time + CATCH_HOLD_S)
+            return None
+        return call
 
     def update(self, moment):
         calls = []
         race = moment.race
         now = moment.now
+
+        if self.held_catch is not None and now >= self.held_catch[1]:
+            caught = self.held_catch[0]
+            caught.sim_time = now                # said now, while he still feels it
+            calls.append(caught)
+            self.held_catch = None
 
         if race is not None and race.me is not None and moment.new_race and moment.corners:
             self.my_model = race.me.car_model

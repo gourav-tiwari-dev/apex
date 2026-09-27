@@ -18,6 +18,7 @@ What the field study of his four race tapes (tools/field_study.py) decided:
 It holds one TrackClock (every car's trail, mine included) and the segment times of every car
 (normal speed per 100 m of track: slow or stopped cars). Seats and the coach only read it.
 """
+import math
 import collections
 import statistics
 
@@ -168,6 +169,20 @@ class RaceModel:
             return None
         start = trail.time_at(trail.distance[-1] - self.lap_length)
         return None if start is None else round(trail.time[-1] - start, 2)
+
+    def road_time_to_line(self, key):
+        """Seconds the car took last lap from where it is now to the line: the rest of its lap with
+        the lap's own shape, where the distance alone would spread the time evenly."""
+        trail = self.trail(key)
+        if trail is None or not trail.distance or not self.lap_length:
+            return None
+        here = trail.distance[-1]
+        line = math.ceil(here / self.lap_length) * self.lap_length
+        then = trail.time_at(here - self.lap_length)
+        crossed = trail.time_at(line - self.lap_length)
+        if then is None or crossed is None:
+            return None
+        return round(crossed - then, 2)
 
     def catch(self, chaser, target, until=0.3):
         """Seconds until the chaser is within `until` of the target at the current road trend,

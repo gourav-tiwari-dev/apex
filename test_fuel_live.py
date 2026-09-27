@@ -116,10 +116,11 @@ def test_plenty_of_fuel_says_push_once_and_never_nags():
 
 
 def test_tight_fuel_is_said_not_only_save_or_box():
-    # live 25 Sep: 0.3 laps spare the whole race and the radio never said "tight"
+    # live 25 Sep: 0.3 laps spare the whole race and the radio never said "tight". With about 4 laps
+    # to go, as in that race: since 27 Sep "tight" is judged against the laps left
     s = Strategist()
-    calls = drive(s, energy_start=0.13 + 0.10 * 11000 / 13000, energy_per_lap=0.10, metres=WHOLE_LAP_M,
-                  time_left=200.4 + WHOLE_LAP_S)
+    calls = drive(s, energy_start=0.13 + 0.10 * 11000 / 13000 + 0.30, energy_per_lap=0.10, metres=WHOLE_LAP_M,
+                  time_left=200.4 + WHOLE_LAP_S + 3 * 242.0)
     fuel = [c for c in calls if c.kind == "FUEL"]
     assert s.fuel_now["verdict"] == "tight" and fuel[0].template.startswith("Energy's tight")
 
@@ -216,3 +217,42 @@ def test_a_lap_at_lights_out_is_not_a_lap_time():
     s.line_time = 44.0
     s.update(moment(187.0, snap, lap=1, wrapped=True))
     assert s.lap_times == []
+
+
+
+def test_in_the_last_laps_less_spare_is_still_fine():
+    # live 27 Sep: "Energy's tight, 0.4 laps spare. Lift and coast" with 2.4 and then 1.3 laps to go;
+    # 1.47 laps spare at the flag (his mark). The right "tight" calls on the tapes had 6-8% spare
+    assert verdict_of(0.4, 2.4) == "fine" and verdict_of(0.4, 1.3) == "fine"
+    assert verdict_of(0.3, 4.0) == "tight" and verdict_of(0.2, 2.5) == "tight"     # 25 Sep: both right
+    assert verdict_of(0.45, 8.0) == "tight"                                         # long stints: as before
+    assert verdict_of(0.05, 0.3) == "tight"                                         # never "fine" on crumbs
+
+
+def test_the_leader_is_timed_to_the_line_on_its_own_last_lap():
+    # live 27 Sep, 12 s on the clock, the leader 684 m from the line: by distance it was over in 12 s,
+    # one more lap; on the road the Ford chicanes took 25 s, the clock ran out first, and that lap was
+    # the last. "Laps to go" had been a lap out for minutes, and "Energy's tight" with it
+    from race_state import laps_to_go, leader_margin
+    from race_model import RaceModel
+    from gaps import Trail
+    lap = 13624.0
+    model = RaceModel(lap_length=lap)
+    def time_at(into):
+        """Its time at a distance into lap 4 onwards: 60 m/s to the chicanes, then 684 m in 25.6 s."""
+        at = into % lap
+        fast = min(at, 12940.0) / 60.0
+        slow = max(at - 12940.0, 0.0) / 26.7
+        return 1000.0 + (into // lap) * 241.3 + fast + slow
+
+    trail = Trail()
+    points = [12840.0 + step * 50.0 for step in range(275)] + [12940.0 + lap]
+    for into in points:                              # from just before this point one lap ago to now
+        trail.add(3 * lap + into, time_at(into))
+    model.clock.theirs[1] = trail
+    leader = replace(rival(4, 3.0), id=1, place=1, laps=4, lap_dist=12940.0, last_lap=-1.0, best_lap=239.1)
+    snap = race(1373.4, {"time_remaining": 12.2, "max_laps": 2147483647, "lap_length": lap},
+                {"laps": 4, "place": 5}, opponents=[leader])
+    assert laps_to_go(snap, 251.8) == 2               # by distance: over the line with 0.1 s to spare
+    assert laps_to_go(snap, 251.8, model) == 1        # on the road: the clock runs out first
+    assert leader_margin(snap, model) > 0

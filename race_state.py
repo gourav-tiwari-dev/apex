@@ -446,6 +446,33 @@ def rolling_lap(model, key):
     return lap if lap and lap > 30 else None
 
 
+def road_time_to_line(model, key):
+    """Seconds the car took last lap from where it is now to the line (race model), or None."""
+    if model is None:
+        return None
+    clock = getattr(model, "clock", None)
+    if clock is not None and not getattr(clock, "fixed_length", True):
+        return None                # a guessed, growing track length warps the trail (old tapes)
+    try:
+        seconds = model.road_time_to_line(key)
+    except Exception:
+        return None
+    return seconds
+
+
+def time_to_line(leader, leader_lap, lap_length, model, key):
+    """Seconds until the leader is over the line. From the leader's own last lap from this point
+    when the race model has it: Le Mans ends in the slow Ford chicanes, 5% of the distance and
+    ~10% of the time. Live 27 Sep, 684 m from the line: 12 s by distance, 25 s on the road, and
+    "laps to go" was a lap out for minutes at a time (and the fuel with it)."""
+    done = (leader.lap_dist / lap_length) if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None else 0.0
+    by_distance = (1.0 - min(max(done, 0.0), 1.0)) * leader_lap
+    on_road = road_time_to_line(model, key)
+    if on_road is not None and abs(on_road - by_distance) < 0.5 * leader_lap:
+        return on_road
+    return by_distance
+
+
 def laps_to_go(race, lap_time, model=None):
     """Laps still to drive, this one included, counted at the line. A lap race: max laps minus
     laps done. A timed race: the flag drops when the overall LEADER first crosses the line after
@@ -480,8 +507,7 @@ def laps_to_go(race, lap_time, model=None):
     if leader_lap is None:
         return None
     lap_length = track_length(race, model)
-    done = (leader.lap_dist / lap_length) if lap_length > 1000 and getattr(leader, "lap_dist", None) is not None else 0.0
-    to_line = (1.0 - min(max(done, 0.0), 1.0)) * leader_lap
+    to_line = time_to_line(leader, leader_lap, lap_length, model, "me" if leader is me else leader.id)
     more = 0 if session.time_remaining <= to_line else math.ceil((session.time_remaining - to_line) / leader_lap)
     leader_finishes_on = leader.laps + 1 + more
     if getattr(leader, "finish_status", 0) == 1:
@@ -506,7 +532,7 @@ def leader_margin(race, model=None):
     lap_length = track_length(race, model)
     if leader_lap is None or lap_length < 1000:
         return None
-    to_line = (1.0 - min(max(leader.lap_dist / lap_length, 0.0), 1.0)) * leader_lap
+    to_line = time_to_line(leader, leader_lap, lap_length, model, leader.id)
     return round(to_line - session.time_remaining, 1)
 
 

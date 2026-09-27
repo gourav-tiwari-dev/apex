@@ -107,6 +107,7 @@ MISHEARD = [
     (r"\bthought ahead\b", "car ahead"),
     (r"\bcar hat\b", "car ahead"),
     (r"\bcut ahead\b", "car ahead"),
+    (r"\b(caulif|cauley|kali)\b", "quali"),         # live 27 Sep, twice: "I crashed in Caulif"
 ]
 
 
@@ -131,7 +132,9 @@ RACING_WORDS = ("gap", "gaps", "ahead", "behind", "leader", "fuel", "energy", "t
                 "tires", "plan", "position", "place", "damage", "fight", "fighting", "catch", "losing",
                 "time", "lap", "laps", "pace", "box", "pit", "push", "save", "sector", "brake", "brakes",
                 "corner", "qualifying", "rain", "flag", "penalty", "overtake", "pass", "defend", "attack",
-                "car", "cars", "faster", "slower", "quick", "race", "finish", "points", "performance")
+                "car", "cars", "faster", "slower", "quick", "race", "finish", "points", "performance",
+                # live 27 Sep: "What's the problem?" (-0.85) and "I crashed in quali" got "say again"
+                "quali", "problem", "issue", "temps", "temp", "temperature")
 
 
 def has_racing_word(text):
@@ -170,6 +173,8 @@ def intent_of(text):
     """The intent with the longest phrase found in what he said, or None."""
     if is_mark(text):
         return "MARK"
+    if is_acknowledgement(text):
+        return "ACK"
     return matched(text)[0]
 
 
@@ -229,11 +234,36 @@ JUDGMENT_WORDS = ("can i", "can we", "should", "could", "do i", "what do i", "ho
 
 
 def is_mark(text):
-    return clean(text).startswith("mark")
+    """He starts or ends with "mark". Live 27 Sep: "Wrong advice regarding energy, Mark." lost to the
+    fuel question ("energy" is the longer phrase), went to the agent and was never saved as a mark."""
+    words = clean(text).split()
+    return bool(words) and (words[0].startswith("mark") or words[-1] == "mark")
+
+
+# "okay, got it" after an answer is him saying he heard it. Live 27 Sep it went to the agent, which
+# answered it with a new answer that contradicted its last one (and a model call)
+ACKNOWLEDGE = {"ok", "okay", "got", "it", "copy", "copied", "that", "understood", "understand", "roger",
+               "thanks", "thank", "you", "cheers", "alright", "right", "sure", "yeah", "yes", "yep",
+               "noted", "cool", "nice", "good", "fine", "mate", "i", "will", "do", "clear"}
+ACKNOWLEDGE_CORE = {"ok", "okay", "got", "copy", "copied", "understood", "understand", "roger", "thanks",
+                    "thank", "cheers", "alright", "noted"}
+
+
+def is_acknowledgement(text):
+    words = clean(text).split()
+    if not words:
+        return False
+    for word in words:
+        if word not in ACKNOWLEDGE:
+            return False
+    for word in words:
+        if word in ACKNOWLEDGE_CORE:
+            return True
+    return False
 
 
 def needs_agent(text):
-    if is_mark(text):
+    if is_mark(text) or is_acknowledgement(text):
         return False
     intent, phrase = matched(text)
     if intent in ("QUIET", "RADIO_REQUEST", "MARK"):
@@ -321,6 +351,8 @@ class Answers:
                      "or no gaps, no coaching, we push, we save, fight everyone, back to normal.")
         elif intent == "MARK":
             words = "Marked."
+        elif intent == "ACK":
+            words = "Copy."
         elif intent == "REPEAT":
             words = self.last_line or "Nothing to repeat yet, mate."
         else:
@@ -406,7 +438,8 @@ class Answers:
             return words + " Usage measured in half a lap."
         spare = picture["spare_laps"]
         what = "Fuel" if picture["limit"] == "fuel" else "Energy"
-        if spare >= 0.5:
+        from seats.strategist import fine_margin
+        if spare >= fine_margin(picture.get("laps_left") or 99.0):
             return f"{what}'s fine. {spare} laps spare. Push."
         if spare >= 0:
             return f"{what}'s tight, {spare} laps spare. Lift and coast into the big stops."

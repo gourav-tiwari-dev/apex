@@ -141,3 +141,32 @@ def test_a_new_push_to_talk_opens_the_controller_already_plugged_in():
     finally:
         ptt.start_sdl = real_start
     assert list(controller.pads) == [7]
+
+
+def test_a_mark_at_either_end_of_what_he_says_is_a_mark():
+    # live 27 Sep: "Wrong advice regarding energy, Mark." went to the agent (the fuel question's
+    # "energy" beat "mark") and was never saved as a mark
+    for said in ("Wrong advice regarding energy, Mark.", "Wrong defence called mark.", "Mark, that yellow was wrong."):
+        assert intent_of(said) == "MARK" and not needs_agent(said)
+    assert answers().answer("Wrong advice regarding energy, Mark.", race(5.0), 4, 5.0).template == "Marked."
+
+
+def test_okay_got_it_is_acknowledged_not_sent_to_the_agent():
+    # live 27 Sep: "Okay, got it." went to the agent, which gave a new answer that contradicted its last
+    for said in ("Okay, got it.", "Copy that.", "Understood, thanks mate."):
+        assert intent_of(said) == "ACK" and not needs_agent(said)
+    assert answers().answer("Okay, got it.", race(6.0), 4, 6.0).template == "Copy."
+    assert intent_of("Okay, what's the gap?") != "ACK"
+    assert needs_agent("Okay, where am I losing time to the car ahead?")
+
+
+def test_say_again_on_his_27_sep_words():
+    # live 27 Sep: two real questions got "say again" ("quali" misheard, "problem" not a racing
+    # word); the fragments still get it. Mishearings are fixed first, as live
+    from answers import garbled, fix_mishearing
+    for confidence, words, is_garbled in [(-0.58, "I crashed in Caulif, fine.", False),
+                                          (-0.85, "What's the problem?", False),
+                                          (-0.60, "Oh, at the temps.", False),
+                                          (-0.99, "Oh.", True),
+                                          (-0.76, "How's?", True)]:
+        assert garbled(fix_mishearing(words), confidence) == is_garbled, (confidence, words)

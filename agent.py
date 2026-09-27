@@ -32,6 +32,7 @@ from queue import Queue, Empty
 from persona import MODEL, BANNED, PROFANITY, GENDERED, numbers_in, number_is_backed, words_to_digits, has_phrase
 from radio import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go
+from seats.strategist import fine_margin
 import race_tools
 from orders import current_plan
 
@@ -900,7 +901,7 @@ class Snapshot:
             if spare < 0:
                 plan.append(f"SAVE {what}: {-spare} laps short at the flag. Lift and coast before the longest "
                             "braking zones until it is back above zero.")
-            elif spare < 0.5:
+            elif spare < fine_margin(fuel.get("laps_left") or 99.0):      # the strategist's own line
                 plan.append(f"{what} is tight: {spare} laps spare. No wasted laps.")
             else:
                 plan.append(f"{what} is no limit: {spare} laps spare. Push.")
@@ -1042,12 +1043,19 @@ ABOUT_NEIGHBOURS = ("behind", "ahead", "in front", "gap", "catch", "defend", "at
                     "what the fuck", "straights", "every lap", "last lap", "risk")
 
 
+# a plan, a place or a strategy may bring in the cars around him, but it is not a fight to call.
+# Live 27 Sep, formation lap: "What's the plan for this race?" was refused for having no CALL line
+# ("plan" is one of ABOUT_NEIGHBOURS) and he got "No clean answer on that one"
+PLANNING_WORDS = ("strategy", "plan", "position", "place", "update", "every lap", "last lap")
+
+
 def about_the_fight(question):
-    """Is the question about the cars around him? Words matched from their start ("he" is not
-    inside "the", "div" still finds "diving")."""
+    """Is the question about fighting the cars around him (a CALL decision)? Words matched from
+    their start ("he" is not inside "the", "div" still finds "diving")."""
     words = "".join(c if c.isalnum() else " " for c in question.lower()).split()
     text = " " + " ".join(words)
-    return any(" " + word.strip() in text for word in tuple(ABOUT_NEIGHBOURS) + tuple(FIGHT_WORDS))
+    fight_words = [word for word in ABOUT_NEIGHBOURS if word not in PLANNING_WORDS] + list(FIGHT_WORDS)
+    return any(" " + word.strip() in text for word in fight_words)
 
 
 def tacked_on(question, text, in_fight):

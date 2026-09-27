@@ -54,8 +54,22 @@ PUSH_AGAIN_SPARE = 1.0         # after saving, "push" again only with a full lap
 VERDICT_RANK = {"fine": 0, "saving": 1, "tight": 1, "save": 2, "box": 3}
 
 
+# ...but in the last laps less is plenty. Live 27 Sep: "Energy's tight, 0.4 laps spare. Lift and
+# coast" with 2.4 and then 1.3 laps to go (17% and 31% margins) - 1.47 spare at the flag, his mark.
+# On the 4 tapes that reach the flag the spare is measured to within 0.06 laps. The right "tight"
+# calls there had up to 10.4% of the laps left spare, the wrong ones 17-31%: 13% sits between
+FINE_SHARE_OF_LAPS_LEFT = 0.13
+FINE_AT_LEAST = 0.1            # laps: never "fine" on less, however few laps are left
+
+
+def fine_margin(laps_left):
+    """Laps spare that make the fuel simply "fine": SPARE_COMFORTABLE, less in the last laps."""
+    share = FINE_SHARE_OF_LAPS_LEFT * max(laps_left, 0.0)
+    return min(SPARE_COMFORTABLE, max(FINE_AT_LEAST, share))
+
+
 def verdict_of(spare, laps_left):
-    if spare >= SPARE_COMFORTABLE:
+    if spare >= fine_margin(laps_left):
         return "fine"
     if spare >= 0:
         return "tight"
@@ -416,7 +430,7 @@ class Strategist:
                 spare = energy_spare
                 facts = {"spare_laps": abs(spare), "laps_left": laps_left}
 
-        if spare >= SPARE_COMFORTABLE:
+        if spare >= fine_margin(laps_left):
             state = "fine"
             conclusion = f"Fuel lasts to the flag with {spare} laps spare. No saving. Push."
             template = "Fuel's fine to the flag. Push."

@@ -35,6 +35,7 @@ ALONGSIDE_M = 6.0             # two cars this close in lap distance are side by 
 THREE_WIDE_ACROSS_M = 4.0
 SLOW_SHARE = 0.5              # a car at half the NORMAL speed for where it is is a hazard
 STOPPED_KMH = 20.0
+TELEPORT_M = 300.0            # a car that moved this far between two snapshots did not drive there
 NORMAL_BIN_M = 50.0           # normal speed is learned for every 50 m of track
 NORMAL_SAMPLES = 40           # the latest passes kept per 50 m
 NORMAL_MIN_SAMPLES = 8        # fewer passes than this: only a stopped car is called
@@ -120,6 +121,8 @@ class TrackAwareness:
         self.clock = TrackClock()      # same-point gaps between the cars ahead
         self.group_since = None        # (id of the car ahead, since when its group has held together)
         self.last_group_call = None
+        self.last_seen_at = {}         # car id -> its lap distance at the last snapshot
+        self.parked = set()            # cars that jumped to where they stand: in the garage, not on track
 
     def fresh(self, key, now, rearm):
         last = self.said_at.get(key)
@@ -155,7 +158,8 @@ class TrackAwareness:
             if not shared:
                 self.clock.see_race(race, moment.now)
             for car in race.opponents:
-                if not car.in_pits and car.speed_kmh is not None:
+                self.watch_parked(car)
+                if not car.in_pits and car.speed_kmh is not None and car.id not in self.parked:
                     self.normal.see(car.id, car.lap_dist, car.speed_kmh)
         if not shared:
             self.clock.see_me(moment.frame.lap_dist, moment.now)
@@ -179,6 +183,22 @@ class TrackAwareness:
         calls += self.fights_ahead(race, now)
         return calls
 
+    def watch_parked(self, car):
+        """A car that jumped hundreds of metres in one snapshot did not drive there: "return to
+        garage". Live 27 Sep: a car crashed at 2,612 m, reappeared at 89 m among the garages 2 s
+        later, stopped and not flagged in the pits, and was called "Car stopped ahead, before Dunlop
+        Chicane" with nothing on the track. Parked until it drives off again."""
+        before = self.last_seen_at.get(car.id)
+        self.last_seen_at[car.id] = car.lap_dist
+        if before is None or not self.lap_length:
+            return
+        moved = abs(car.lap_dist - before)
+        moved = min(moved, abs(self.lap_length - moved))     # over the line is a short move
+        if moved > TELEPORT_M:
+            self.parked.add(car.id)
+        elif car.id in self.parked and car.speed_kmh is not None and car.speed_kmh >= STOPPED_KMH:
+            self.parked.discard(car.id)
+
     # ---- hazards ---------------------------------------------------------------------------
     def slow_or_stopped_ahead(self, race, moment, corners, now):
         from live_telemetry import corner_at
@@ -187,7 +207,7 @@ class TrackAwareness:
             return []
         worst = None
         for car in race.opponents:
-            if car.in_pits or car.speed_kmh is None:
+            if car.in_pits or car.speed_kmh is None or car.id in self.parked:
                 continue
             ahead = self.ahead_of_me(car, moment.frame.lap_dist)
             if not 30 < ahead <= LOOK_AHEAD_M:

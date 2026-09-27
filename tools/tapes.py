@@ -17,7 +17,12 @@ RACE_TAPES = ["tape_20260923_201605.jsonl.gz", "tape_20260924_202800.jsonl.gz",
               # added 27 Sep, they had been left out: the 58-car multiclass race (18 Hyper, 19 LMP2,
               # 25 GT3; he crashed out at Indianapolis, no flag) and the warning-lobby race (joined
               # late, alone on track, P13 at the flag)
-              "tape_20260925_200154.jsonl.gz", "tape_20260925_223404.jsonl.gz"]
+              "tape_20260925_200154.jsonl.gz", "tape_20260925_223404.jsonl.gz",
+              # 27 Sep: quali P3, lap-1 contact and damage, a spin, P4 at the flag; his marks: the
+              # "mega defending" and the "energy's tight" calls were wrong
+              "tape_20260927_103016.jsonl.gz",
+              # 27 Sep, second race: P16 on the grid, P5 at the flag, no marks; every check right
+              "tape_20260927_124523.jsonl.gz"]
 
 
 def snapshots(tape):

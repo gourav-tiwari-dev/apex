@@ -306,3 +306,17 @@ def test_L2_the_finish_and_the_gap_report_say_the_class_place():
     assert finish.template == "Chequered flag. P2 in class."
     report = RaceEngineer().gap_report(race(2.0, {}, {"place": 5}, opponents=mixed_field()), 2.0)
     assert report.template.startswith("P2 in class.")
+
+
+def test_a_caught_slide_is_praised_only_if_no_spin_follows():
+    # live 27 Sep: "Big moment. Caught it. Good hands." and then "Spun." 2 s later
+    from live_telemetry import Event
+    spun = PerformanceEngineer()
+    slide = Event(kind="SLIDE_CAUGHT", sim_time=990.5, speed_kmh=150.0, corner="Mulsanne Chicane 1", magnitude=41)
+    assert spun.call_for_event(slide, 1) is None                                   # held, not said yet
+    assert spun.call_for_event(Event(kind="SPIN", sim_time=992.5, speed_kmh=90.0, corner="Mulsanne Chicane 1"), 2) is not None
+    assert "SLIDE_CAUGHT" not in kinds(spun.update(moment(994.0)))
+    saved = PerformanceEngineer()
+    saved.call_for_event(slide, 1)
+    assert "SLIDE_CAUGHT" not in kinds(saved.update(moment(992.0)))               # still holding
+    assert "SLIDE_CAUGHT" in kinds(saved.update(moment(993.6)))                   # held 3 s: praised

@@ -249,3 +249,15 @@ def test_nothing_in_qualifying():
     m = replace(moment(1.0, snapshot), corners=CORNERS, session_type=6)
     m.frame.lap_dist = 700.0
     assert s.update(m) == []
+
+
+def test_a_car_that_jumped_to_the_garage_is_not_a_hazard():
+    # live 27 Sep: a car crashed at 2,612 m, "returned to garage" and stood at 89 m among the garages,
+    # not flagged in the pits: "Car stopped ahead, before Dunlop Chicane" with nothing on the track
+    s = seat()
+    look(s, 1.0, [car(3, 2612.0, speed=0.0)], my_lap_dist=5000.0)             # stopped far up the road
+    assert look(s, 3.4, [car(3, 1000.0, speed=0.0)], my_lap_dist=700.0) == []   # then 1.6 km away: jumped
+    slowed = seat()
+    look(slowed, 1.0, [car(4, 950.0, speed=120.0)], my_lap_dist=500.0)
+    calls = look(slowed, 1.2, [car(4, 960.0, speed=5.0)], my_lap_dist=700.0)    # drove there and stopped
+    assert kinds(calls) == ["CAR_STOPPED_AHEAD"]

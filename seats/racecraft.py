@@ -81,6 +81,7 @@ PRAISE_TTL_S = 8.0
 PRESSURE_GAP_S = 0.6
 PRESSURE_FOR_S = 60.0
 FELL_AWAY_GAP_S = 1.5
+PRESSURE_LAPSE_S = 30.0       # off the gearbox this long without falling away: the fight faded, no praise
 
 # the price of a fight
 FIGHT_COST_S = 1.0            # this much slower than his best, a lap in a fight
@@ -171,6 +172,7 @@ class Racecraft:
         self.passed_me_at = {}             # car id -> when it last passed me
         self.last_earned_pass_at = None
         self.pressure_since = {}           # car id -> when it got on my gearbox
+        self.pressure_last = {}            # car id -> the last time it was on my gearbox
         self.held_said = set()
         self.praise_turn = 0
         self.last_corner = None
@@ -626,6 +628,10 @@ class Racecraft:
             if not held:
                 continue
             del self.open_passes[car_id]
+            # the pressure right after my pass is the pass being held, praised as the pass: a
+            # defence starts counting from here (live 27 Sep: "mega defending" for the same fight)
+            self.pressure_since.pop(car_id, None)
+            self.pressure_last.pop(car_id, None)
             if pass_["contact"]:
                 continue                          # contact: the reset covers it, no praise
             held_moves.append(pass_["move"])
@@ -647,17 +653,29 @@ class Racecraft:
         return self.instant("PASS_PRAISE", words, now, {"move": move, "gap_ahead_s": self.gap_ahead})
 
     def defending_held(self, now):
+        """A car on his gearbox for PRESSURE_FOR_S that then fell away: the defence held. Live 27 Sep
+        it came 70 s late: the car was within 0.6 s for ~30 s, sat 0.9-1.5 s back for 70 s without
+        attacking, and the drift counted as pressure. Only time really on the gearbox counts now."""
         car, gap = self.behind, self.gap_behind
         if car is None or gap is None:
             return []
         if gap <= PRESSURE_GAP_S:
             self.pressure_since.setdefault(car.id, now)
+            self.pressure_last[car.id] = now
             return []
         since = self.pressure_since.get(car.id)
-        if since is None or gap < FELL_AWAY_GAP_S:
+        if since is None:
+            return []
+        last = self.pressure_last[car.id]
+        if now - last > PRESSURE_LAPSE_S:
+            del self.pressure_since[car.id]          # it drifted back without a fight
+            del self.pressure_last[car.id]
+            return []
+        if gap < FELL_AWAY_GAP_S:
             return []
         del self.pressure_since[car.id]
-        if now - since < PRESSURE_FOR_S or car.id in self.held_said:
+        del self.pressure_last[car.id]
+        if last - since < PRESSURE_FOR_S or car.id in self.held_said:
             return []
         self.held_said.add(car.id)
         return [self.instant("DEFEND_HELD", self.pick(("Mega defending, mate. They've got fucking nothing.",
