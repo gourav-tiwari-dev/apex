@@ -38,7 +38,6 @@ for tape in sys.argv[1:]:
             lap_count=race.me.laps + 1,
             lap_wrapped=False,
             corner=None,
-            track=None,
             session_type=race.session.session,
         )
         if green_at is not None and not settle.settled and src.new_race:

@@ -13,7 +13,6 @@ class Moment:
     lap_count: int
     lap_wrapped: bool  # True on the frame I crossed the line
     corner: str | None  # the corner I am in, or None on a straight
-    track: str | None
     corner_stat: object | None = (
         None  # the CornerStat of a corner I just left, this frame only
     )

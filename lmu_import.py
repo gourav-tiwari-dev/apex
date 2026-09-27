@@ -32,7 +32,6 @@ import bisect
 import glob
 import gzip
 import json
-import math
 import os
 import sys
 from dataclasses import asdict

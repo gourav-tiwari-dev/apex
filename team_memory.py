@@ -368,16 +368,6 @@ def brief_facts(conn, track):
     )
 
 
-def clean_race_trend(conn, last=5):
-    rows = conn.execute(
-        "SELECT id, subject, value, summary FROM profile_facts WHERE kind = 'clean_race' ORDER BY id DESC LIMIT ?",
-        (last,),
-    ).fetchall()
-    return [
-        {"fact_id": r[0], "subject": r[1], "value": r[2], "summary": r[3]} for r in rows
-    ]
-
-
 if __name__ == "__main__":
     from memory import connect_db
 

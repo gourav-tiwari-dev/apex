@@ -29,9 +29,7 @@ def test_learner_rebuilds_the_hand_measured_monza_map():
     lap = 0
     for frame in ReplaySource(None, ELEVEN_LAPS):
         lap = counter.update(frame)
-        learner.add(
-            lap, distance.update(frame), frame.brake, frame.throttle, frame.accel_lat
-        )
+        learner.add(lap, distance.update(frame), frame.brake, frame.accel_lat)
 
     learned = borrow_names(learner.corners(lap), MONZA_CORNERS)
 

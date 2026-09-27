@@ -7,7 +7,6 @@ This library is based on:
 """
 
 import ctypes
-import mmap
 
 
 class LMUConstants:
@@ -681,35 +680,3 @@ class LMULayout(ctypes.Structure):
     _fields_ = [
         ("data", LMUObjectOut),
     ]
-
-
-# Memory map
-
-
-class SimInfo:
-    """Simulation info from shared memory"""
-
-    def __init__(self):
-        self._lmu_data = mmap.mmap(
-            fileno=0,
-            length=ctypes.sizeof(LMUObjectOut),
-            tagname=LMUConstants.LMU_SHARED_MEMORY_FILE,
-        )
-        self.LMUData = LMUObjectOut.from_buffer(self._lmu_data)
-
-    def save(self, filename: str):
-        """Save buffer data to file"""
-        with open(filename, "wb") as output:
-            output.write(bytes(self._lmu_data))
-
-    def close(self):
-        """Close memory map"""
-        self.LMUData = None
-
-        try:  # this did not help with the errors
-            self._lmu_data.close()
-        except BufferError as e:
-            print("Error:", e)
-
-    def __del__(self):
-        self.close()

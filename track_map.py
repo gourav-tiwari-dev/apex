@@ -53,7 +53,7 @@ def corner_at(corners, distance):
     return None
 
 
-def is_busy(brake, throttle, accel_lat):
+def is_busy(brake, accel_lat):
     return brake > BRAKING or abs(accel_lat) >= TURNING
 
 
@@ -64,7 +64,7 @@ class TrackMapLearner:
         self.busy_by_lap = {}  # lap -> set of busy slice numbers
         self.track_length = 0.0
 
-    def add(self, lap_count, distance, brake, throttle, accel_lat):
+    def add(self, lap_count, distance, brake, accel_lat):
         # lap 0 is the out-lap fragment, at pit-limiter speed: it would teach wrong corners
         if lap_count < 1 or distance < 0:
             return
@@ -72,7 +72,7 @@ class TrackMapLearner:
             self.track_length = distance
         if lap_count not in self.busy_by_lap:
             self.busy_by_lap[lap_count] = set()
-        if is_busy(brake, throttle, accel_lat):
+        if is_busy(brake, accel_lat):
             self.busy_by_lap[lap_count].add(int(distance // SLICE_M))
 
     def complete_laps(self, current_lap):

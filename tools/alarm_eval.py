@@ -40,7 +40,6 @@ def run(min_per_lap, max_gap):
                     lap_count=r.me.laps + 1,
                     lap_wrapped=False,
                     corner=corner,
-                    track=None,
                     session_type=10,
                     corners=corners,
                 )

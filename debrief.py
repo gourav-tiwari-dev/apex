@@ -1,4 +1,4 @@
-import os, json, sqlite3, time, sys
+import os, json, time, sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -6,7 +6,7 @@ from openai import OpenAI
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
 from memory import latest_session_id, load_latest_contract, evaluate_contract, track_of
 from memory import reference_from_race, reference_from_self, save_radio
-from radio import Call, PERFORMANCE, MEMORY
+from radio import Call, MEMORY
 from seats.setup_engineer import advice_for
 from tts import speak
 
@@ -167,8 +167,6 @@ def for_speaking(text):
 
 def verdict_line(contract, grade):
     corner = contract["corner"]
-    before = contract["baseline"]
-    target = contract["target"]
     # no speeds: he drives by feel and never looks at the speedo (24 Sep)
     if grade["verdict"] == "insufficient":
         return f"The job at {corner} has {grade['laps']} clean laps of {contract['min_laps']} so far. It carries over to the next race."

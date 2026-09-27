@@ -1251,13 +1251,7 @@ def run_session(
                 last_opponents = source.race.opponents
                 if source.race.session.game_phase == GREEN_PHASE:
                     car_settings = (me.tc, me.abs, me.brake_bias_rear, me.motor_map)
-            track_learner.add(
-                own_laps,
-                real_lap_distance,
-                frame.brake,
-                frame.throttle,
-                frame.accel_lat,
-            )
+            track_learner.add(own_laps, real_lap_distance, frame.brake, frame.accel_lat)
             if learning_track and lap_counter.wrapped:
                 learned = track_learner.corners(own_laps)
                 if learned is not None:
@@ -1313,7 +1307,6 @@ def run_session(
                 lap_count=lap_count,
                 lap_wrapped=lap_counter.wrapped,
                 corner=corner_now,
-                track=track,
                 corner_stat=stat,
                 session_type=session_type,
                 corners=current_corners,

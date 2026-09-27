@@ -170,7 +170,6 @@ def moment(
         lap_count=lap,
         lap_wrapped=wrapped,
         corner=corner,
-        track="Monza",
     )
 
 
@@ -258,7 +257,6 @@ def test_spotter_is_silent_on_old_tapes():
         lap_count=1,
         lap_wrapped=False,
         corner=None,
-        track=None,
     )
     assert spotter.update(old) == []
 

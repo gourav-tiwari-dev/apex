@@ -161,7 +161,6 @@ BANK_LINES = {
     "LIGHTS_OUT": (ENGINEER_VOICE, "Lights out. Go."),
     "NOT_HERE": (ENGINEER_VOICE, "Not here. Wait for it."),
     "RADIO_CHECK": (ENGINEER_VOICE, "Radio check. I'm with you."),
-    "LLM_OFFLINE": (ENGINEER_VOICE, "Engineer's gone quiet. You know what to do."),
     "STAND_BY": (ENGINEER_VOICE, "Copy. Stand by."),
 }
 

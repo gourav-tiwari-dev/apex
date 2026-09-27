@@ -31,7 +31,7 @@ SEATS = [
     "setup",
     "memory",
 ]
-NOT_REAL = {"RADIO_CHECK", "LLM_OFFLINE"}
+NOT_REAL = {"RADIO_CHECK"}
 BETWEEN_SESSIONS = {"setup"}
 RACE = range(10, 14)
 QUALIFYING = range(5, 9)
