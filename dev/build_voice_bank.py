@@ -18,15 +18,9 @@ import asyncio
 import os
 import sys
 
-from voice import (
-    SPOTTER_KINDS,
-    BANK_FOLDER,
-    BANK_LINES,
-    mood_of,
-    render,
-    speakable,
-)
-import voice
+from radio.voice import SPOTTER_KINDS, BANK_FOLDER, BANK_LINES, mood_of, render
+from radio.words import speakable
+from radio import voice
 
 
 def words(text):

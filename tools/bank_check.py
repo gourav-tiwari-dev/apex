@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from phrasebook import Phrasebook
 from dev.build_voice_bank import error_rate
-from voice import speakable
+from radio.words import speakable
 
 SPOTTER = [
     "Car behind, 6 tenths, closing fast. It's already hit you once.",

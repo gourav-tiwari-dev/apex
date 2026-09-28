@@ -1,7 +1,8 @@
 """The words a voice is given and the mood of each call."""
 
-import voice
-from voice import speakable, mood_of
+from radio.desk import RadioDesk
+from radio.voice import mood_of
+from radio.words import speakable
 
 
 def test_racing_shorthand_becomes_words_a_voice_can_say():
@@ -29,9 +30,7 @@ def test_the_radio_desk_asks_for_the_mood_of_the_call():
     from test_radio import FakeVoice, FakePersona
 
     desk_voice = FakeVoice()
-    desk = voice.RadioDesk(
-        desk_voice, FakePersona("Brilliant, mate."), Budget(), clean=False
-    )
+    desk = RadioDesk(desk_voice, FakePersona("Brilliant, mate."), Budget(), clean=False)
     call = Call(
         "racecraft",
         "PASSED",

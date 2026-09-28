@@ -134,7 +134,7 @@ def test_the_engineer_gets_two_lines_a_minute_the_spotter_is_never_counted():
 
 
 def test_the_spotter_calls_are_said_in_the_spotter_voice():
-    from voice import SPOTTER_KINDS
+    from radio.voice import SPOTTER_KINDS
 
     assert {
         "CAR_LEFT",

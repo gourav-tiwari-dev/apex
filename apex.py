@@ -21,7 +21,7 @@ from memory import save_radio
 from radio.calls import Call, MEMORY
 from seats.setup_engineer import advice_for
 from datetime import datetime
-from voice import Voice
+from radio.voice import Voice
 from game.constants import RACE_SESSIONS
 
 

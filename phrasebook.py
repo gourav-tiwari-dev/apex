@@ -142,7 +142,7 @@ def units(kinds=None):
         | {f"Go at {name} this lap or settle in." for name in corners},
         "REPUTATION": reputation_sentences(),  # dry: said after a plan, a fact not a cheer
     }
-    from voice import mood_of
+    from radio.voice import mood_of
 
     engineer = {}
     for kind, texts in by_kind.items():

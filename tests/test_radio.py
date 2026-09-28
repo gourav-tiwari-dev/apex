@@ -1,7 +1,7 @@
 from radio.governor import Governor
 from radio.calls import Call, SPOTTER, RACECRAFT, PERFORMANCE
 from coach.llm import Budget
-from voice import RadioDesk
+from radio.desk import RadioDesk
 
 
 def call(

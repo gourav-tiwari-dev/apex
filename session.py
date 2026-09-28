@@ -40,7 +40,8 @@ from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer
 from orders import StandingOrders
 from persona import Persona
-from voice import Voice, RadioDesk
+from radio.voice import Voice
+from radio.desk import RadioDesk
 from seats.performance import PerformanceEngineer
 from seats import Moment
 from seats.spotter import Spotter

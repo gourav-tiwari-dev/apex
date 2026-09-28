@@ -1,7 +1,7 @@
 """25 Sep 2026: Azure's voices with emotion replace the cloned voice; edge-tts is the fallback."""
 
 from azure_voice import AzureVoice, ssml
-from voice import Voice
+from radio.voice import Voice
 
 WAV = b"RIFF....WAVEfmt "
 
@@ -74,7 +74,7 @@ def test_the_engineer_and_spotter_speak_through_azure_and_fall_back_to_edge():
     v.out_loud = True
     v.azure = azure(Answer(), Answer(500))
     assert v.render_with_engine("Box this lap.") == (WAV, "azure")
-    import voice as voice_module
+    from radio import voice as voice_module
 
     original = voice_module.render
 
@@ -113,7 +113,7 @@ def test_the_bank_uses_the_azure_books_when_azure_is_on():
 
 
 def test_the_standard_voice_carries_the_mood_in_speed_loudness_and_pitch():
-    from voice import prosody
+    from radio.voice import prosody
 
     praise, plan = prosody("engineer", "fired"), prosody("engineer", "dry")
     faster = int(praise[0].strip("+%")) > int(plan[0].strip("+%"))
@@ -125,7 +125,7 @@ def test_the_standard_voice_carries_the_mood_in_speed_loudness_and_pitch():
 
 def test_a_dead_network_falls_back_to_the_offline_windows_voice():
     # live 25 Sep: weak internet silenced the radio and crashed the debrief
-    import voice as voice_module
+    from radio import voice as voice_module
 
     original = voice_module.render
 

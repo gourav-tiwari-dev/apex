@@ -5,7 +5,8 @@ import numpy as np
 
 import phrasebook
 from phrasebook import Phrasebook, save_piece, sentences, trimmed, read_wav, to_wav
-from voice import Voice, RadioDesk
+from radio.voice import Voice
+from radio.desk import RadioDesk
 from radio.calls import Call, SPOTTER
 from coach.llm import Budget
 from test_radio import FakeVoice, FakePersona
@@ -174,7 +175,7 @@ def test_a_line_not_in_the_bank_is_rendered_live_as_before():
 
 
 def test_max_says_each_sentence_in_the_mood_of_the_call_it_belongs_to():
-    from voice import mood_of
+    from radio.voice import mood_of
 
     moods = phrasebook.units()["engineer"]
     assert "Clear." not in moods  # dropped from praise (his call, 25 Sep)

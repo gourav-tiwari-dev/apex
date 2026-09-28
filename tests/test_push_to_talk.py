@@ -14,7 +14,7 @@ from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from test_seats import race, behind_car
 from test_radio import FakeVoice
-from voice import RadioDesk
+from radio.desk import RadioDesk
 
 
 def test_questions_find_their_intent_and_the_longest_phrase_wins():
