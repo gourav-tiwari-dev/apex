@@ -5,7 +5,7 @@ that the coach states and may override with a reason."""
 import math
 
 from race_model import CATCH_UPPER
-from words import lap_text
+from radio.words import lap_text
 
 
 NOT_A_FIGHT_S = 1.0  # further apart than this, nobody is diving at anybody yet

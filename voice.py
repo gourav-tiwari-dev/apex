@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from queue import Queue, Full, Empty
 
 from persona import gate
-from lines import MaxLines
+from radio.lines import MaxLines
 from phrasebook import Phrasebook, radio_ready
 from azure_voice import AzureVoice
 

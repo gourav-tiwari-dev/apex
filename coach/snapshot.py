@@ -23,7 +23,7 @@ from coach.fight_maths import (
 )
 from race_state import identity, laps_to_go, same_class_neighbours, tyre_averages
 from seats.strategist import HOT_TYRE_C, fine_margin
-from words import lap_text
+from radio.words import lap_text
 
 
 OTHER_CLASS_NEAR_M = 400  # an other-class car this close behind is about to arrive

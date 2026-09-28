@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from seats.qualifying import QualifyingEngineer
-from words import lap_text
+from radio.words import lap_text
 from seats.strategist import Strategist
 from test_seats import race, moment, behind_car, kinds
 

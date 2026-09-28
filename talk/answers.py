@@ -13,7 +13,7 @@ from radio.calls import Call, RACE_CONTROL
 from race_state import same_class_neighbours, laps_to_go, multiclass, tyre_averages
 from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW, WHEEL_NAMES
 from seats.strategist import HOT_TYRE_C
-from words import Rotation, lap_text
+from radio.words import Rotation, lap_text
 from talk.hearing import intent_of, laps_asked
 
 ANSWER_TTL_S = 10.0

@@ -17,7 +17,7 @@ import re
 import sqlite3
 import statistics
 from game.constants import BLUE_FLAG, QUALIFYING_SESSIONS, RACE_SESSIONS, SECTOR_YELLOW
-from words import lap_text
+from radio.words import lap_text
 from game.constants import WHEEL_NAMES
 from race_state import NO_TYRE_READING_C, tyre_averages
 

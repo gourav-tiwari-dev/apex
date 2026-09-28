@@ -21,7 +21,7 @@ from race_state import identity
 from seats.spotter import CAR_LENGTH_M
 from balance import BalanceMeter, FIX
 from game.constants import QUALIFYING_SESSIONS
-from words import tenths_words
+from radio.words import tenths_words
 
 # the kinds said on the radio. HARD_BRAKING, CORNER_ENTRY and THROTTLE_LIFT are recorded, never
 # said: v1's "coasting" is any throttle under 50% with no brake, which is correct part-throttle

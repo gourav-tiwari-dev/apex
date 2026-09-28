@@ -42,7 +42,7 @@ QUIET = 0.01  # below this share of full scale is silence, for trimming
 # ---- which sentences ----------------------------------------------------------------------
 def gap_words(low_s, high_s):
     """Every way tenths_words() can say a gap between these two, in tenths."""
-    from words import tenths_words
+    from radio.words import tenths_words
 
     return sorted(
         {

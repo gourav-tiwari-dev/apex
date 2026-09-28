@@ -1,4 +1,4 @@
-from words import Rotation
+from radio.words import Rotation
 
 """Max's voice for code's own lines, with no model in the loop.
 

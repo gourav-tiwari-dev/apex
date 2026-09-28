@@ -24,7 +24,7 @@ from game.constants import (
     SECTOR_YELLOW,
     SESSION_OVER,
 )
-from words import lap_time_parts, tenths_words
+from radio.words import lap_time_parts, tenths_words
 from race_model import CATCH_UPPER
 
 # mSectorFlag: 1 is a local yellow, nothing else is (game.constants.SECTOR_YELLOW, measured on all 5

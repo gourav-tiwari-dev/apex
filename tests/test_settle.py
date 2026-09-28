@@ -146,7 +146,7 @@ def test_the_spotter_calls_are_said_in_the_spotter_voice():
 
 
 def test_a_seat_line_is_said_in_code_words_with_a_max_closer_and_never_asks_the_model():
-    from lines import MaxLines
+    from radio.lines import MaxLines
     from seats.race_engineer import spoken
 
     the_call = spoken(
