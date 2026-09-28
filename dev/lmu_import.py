@@ -342,8 +342,8 @@ def load_into_apex(tape_paths):
     import contextlib
     import io
     from session import run_session
-    from memory import connect_db
-    from team_memory import build_profile
+    from memory.db import connect_db
+    from memory.team_memory import build_profile
 
     conn = connect_db("apex.db")
     already = {row[0] for row in conn.execute("SELECT tape_path FROM sessions")}

@@ -1,7 +1,10 @@
 import json, time, sys
-from memory import build_evidence_pack, connect_db, make_contract, save_contract
-from memory import latest_session_id, load_latest_contract, evaluate_contract, track_of
-from memory import reference_from_race, reference_from_self, save_radio
+from memory.db import connect_db
+from memory.contracts import build_evidence_pack, make_contract, save_contract
+from memory.db import latest_session_id, track_of
+from memory.contracts import load_latest_contract, evaluate_contract
+from memory.db import save_radio
+from memory.contracts import reference_from_race, reference_from_self
 from radio.calls import Call, MEMORY
 from seats.setup_engineer import advice_for
 from radio.tts import speak

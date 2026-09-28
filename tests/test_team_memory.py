@@ -3,7 +3,14 @@ import sqlite3
 import pytest
 
 import memory
-from team_memory import build_profile, drives, save_fact, brief_facts, habits_at, rival
+from memory.team_memory import (
+    build_profile,
+    drives,
+    save_fact,
+    brief_facts,
+    habits_at,
+    rival,
+)
 
 
 def new_db(tmp_path):

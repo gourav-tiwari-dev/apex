@@ -53,7 +53,7 @@ from talk.answers import Answers
 from talk.hearing import needs_agent
 from dev.lmu_import import NoVoice
 from coach.llm import Budget
-from team_memory import facts as memory_facts
+from memory.team_memory import facts as memory_facts
 from radio.voice import Voice
 
 DEFAULT_TAPE = "tape_20260923_201605.jsonl.gz"

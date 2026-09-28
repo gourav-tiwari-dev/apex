@@ -15,14 +15,13 @@ Every frame goes through the same steps, in this order (Session.run):
 from game.sharedmemory import MMapControl
 from game.lmu_data import LMUObjectOut, LMUConstants
 from datetime import datetime
-from memory import (
+from memory.db import (
     connect_db,
     start_session,
     save_event,
     finish_session,
     save_lap,
     save_corner_stat,
-    print_corner_report,
     set_session_track,
     save_radio,
     save_llm_call,
@@ -32,6 +31,7 @@ from memory import (
     save_opponent_corners,
     save_pass_attempts,
 )
+from memory.corner_report import print_corner_report
 from radio.governor import Governor
 from radio.calls import Call, RACE_CONTROL
 from coach.llm import Budget
@@ -55,7 +55,7 @@ from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from race_model import RaceModel
 from talk import ptt as push_to_talk
-from team_memory import facts as memory_facts
+from memory.team_memory import facts as memory_facts
 from driving.track_map import (
     CornerMap,
     corners_for_track,

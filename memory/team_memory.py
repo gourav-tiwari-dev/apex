@@ -370,7 +370,7 @@ def brief_facts(conn, track):
 
 
 if __name__ == "__main__":
-    from memory import connect_db
+    from memory.db import connect_db
 
     conn = connect_db("apex.db")
     found = build_profile(conn)

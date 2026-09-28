@@ -26,7 +26,7 @@ import statistics
 import sys
 from datetime import datetime
 
-from memory import connect_db
+from memory.db import connect_db
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 
 SEATS = [
