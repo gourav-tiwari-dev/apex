@@ -225,7 +225,9 @@ INTENTS = {
 }
 
 
-def clean(text):
+def plain_words(text):
+    """His words made plain for matching: lower case, numbers as digits, no punctuation.
+    (Not the "clean" of clean mode, which means no swearing.)"""
     text = words_to_digits(text.lower())
     text = text.replace("'", "")
     return re.sub(r"[^a-z0-9 ]+", " ", text).strip()
@@ -322,7 +324,7 @@ RACING_WORDS = (
 
 
 def has_racing_word(text):
-    for word in clean(text).split():
+    for word in plain_words(text).split():
         if word in RACING_WORDS:
             return True
         if len(word) >= 2 and word[0] == "p" and word[1:].isdigit():
@@ -344,7 +346,7 @@ def garbled(text, confidence):
 
 def matched(text):
     """(intent, the phrase that matched): the longest phrase found in what he said."""
-    heard = " " + clean(text) + " "
+    heard = " " + plain_words(text) + " "
     best = (None, None)
     for intent, phrases in INTENTS.items():
         for phrase in phrases:
@@ -493,7 +495,7 @@ def words_beyond(text, intent):
     } | VOCABULARY_EXTRA.get(intent, set())
     return [
         word
-        for word in clean(text).split()
+        for word in plain_words(text).split()
         if word not in vocabulary and word not in FILLER and not word.isdigit()
     ]
 
@@ -546,7 +548,7 @@ JUDGMENT_WORDS = (
 def is_mark(text):
     """He starts or ends with "mark". Live 27 Sep: "Wrong advice regarding energy, Mark." lost to the
     fuel question ("energy" is the longer phrase), went to the agent and was never saved as a mark."""
-    words = clean(text).split()
+    words = plain_words(text).split()
     return bool(words) and (words[0].startswith("mark") or words[-1] == "mark")
 
 
@@ -602,7 +604,7 @@ ACKNOWLEDGE_CORE = {
 
 
 def is_acknowledgement(text):
-    words = clean(text).split()
+    words = plain_words(text).split()
     if not words:
         return False
     for word in words:
@@ -625,18 +627,18 @@ def needs_agent(text):
     if intent in ALWAYS_FIXED:
         return False
     # judgment words that are part of the intent's own phrase ("what pace do i need") do not count
-    heard = (" " + clean(text) + " ").replace(" " + phrase + " ", " ")
+    heard = (" " + plain_words(text) + " ").replace(" " + phrase + " ", " ")
     for words in JUDGMENT_WORDS:
         if " " + words + " " in heard:
             return True
-    return len(clean(text).split()) > FIXED_ANSWER_MAX_WORDS
+    return len(plain_words(text).split()) > FIXED_ANSWER_MAX_WORDS
 
 
 def laps_asked(text):
     """ "quiet for 3 laps" -> 3."""
-    match = re.search(r"(\d+)\s*lap", clean(text))
+    match = re.search(r"(\d+)\s*lap", plain_words(text))
     if match:
         return max(1, int(match.group(1)))
-    if re.search(r"\ba lap\b|\bthis lap\b", clean(text)):
+    if re.search(r"\ba lap\b|\bthis lap\b", plain_words(text)):
         return 1
     return DEFAULT_QUIET_LAPS
