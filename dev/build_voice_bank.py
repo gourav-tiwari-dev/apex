@@ -54,7 +54,7 @@ def standard():
                 mood_of(key),
             )
         )
-        from phrasebook import radio_ready
+        from radio.phrasebook import radio_ready
 
         with open(os.path.join(BANK_FOLDER, key + ".wav"), "wb") as f:
             f.write(radio_ready(audio))  # levelled like every live line
@@ -71,8 +71,8 @@ def azure_bank():
     (voice_bank/azure/). Paced under the free tier's 20 requests a minute; run it again to
     finish or retry - what is already there is kept."""
     import time
-    import phrasebook
-    from azure_voice import AzureVoice, FREE_TIER_PER_MINUTE
+    from radio import phrasebook
+    from radio.azure_voice import AzureVoice, FREE_TIER_PER_MINUTE
 
     azure = AzureVoice()
     if not azure.ready:
@@ -125,7 +125,7 @@ def azure_bank():
 
 
 def phrases_standard():
-    import phrasebook
+    from radio import phrasebook
 
     wanted = phrasebook.units()
     jobs = [

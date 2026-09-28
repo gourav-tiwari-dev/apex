@@ -4,7 +4,7 @@ from memory import latest_session_id, load_latest_contract, evaluate_contract, t
 from memory import reference_from_race, reference_from_self, save_radio
 from radio.calls import Call, MEMORY
 from seats.setup_engineer import advice_for
-from tts import speak
+from radio.tts import speak
 from coach.llm import DEBRIEF_MODEL, open_client
 
 DEBRIEF_PROMPT = (

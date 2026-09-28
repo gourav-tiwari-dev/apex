@@ -22,8 +22,8 @@ import io
 import os
 import time
 
-from phrasebook import Phrasebook, radio_ready
-from azure_voice import AzureVoice
+from radio.phrasebook import Phrasebook, radio_ready
+from radio.azure_voice import AzureVoice
 from radio.words import speakable
 
 # live 25 Sep: Ryan (British, soft) was "barely audible". Christopher: firm and clear, and
@@ -151,7 +151,7 @@ def online_or_offline(text, voice, role, mood):
             asyncio.run(render_with_timeout(text, voice, role, mood))
         ), "standard"
     except Exception:
-        import offline_voice
+        from radio import offline_voice
 
         audio = offline_voice.render(text, voice_index=1 if role == "spotter" else 0)
         if audio is None:

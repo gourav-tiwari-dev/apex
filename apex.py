@@ -12,7 +12,7 @@ Apex session, and the debrief runs after a race. Ctrl+C when you are done for th
 import argparse
 
 from memory import latest_session_id, load_latest_contract, connect_db
-from tts import speak
+from radio.tts import speak
 from debrief import for_speaking, run_debrief
 from session import run_session
 from game.tape import TAPE_PATH

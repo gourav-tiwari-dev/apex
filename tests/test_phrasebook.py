@@ -3,8 +3,8 @@ a millisecond, instead of ~1.3 s (edge-tts) of live rendering."""
 
 import numpy as np
 
-import phrasebook
-from phrasebook import Phrasebook, save_piece, sentences, trimmed, read_wav, to_wav
+from radio import phrasebook
+from radio.phrasebook import Phrasebook, save_piece, sentences, trimmed, read_wav, to_wav
 from radio.voice import Voice
 from radio.desk import RadioDesk
 from radio.calls import Call, SPOTTER
@@ -191,7 +191,7 @@ def test_max_says_each_sentence_in_the_mood_of_the_call_it_belongs_to():
 
 def test_levelling_never_wraps_the_samples():
     # live 25 Sep: the limiter reached 1.2x full scale and int16 wrapped: the engineer cracked
-    from phrasebook import levelled
+    from radio.phrasebook import levelled
 
     loud = (np.sin(np.arange(24000) / 3) * 30000).astype(np.int16)
     out = levelled(loud).astype(np.int32)

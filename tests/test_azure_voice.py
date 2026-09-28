@@ -1,6 +1,6 @@
 """25 Sep 2026: Azure's voices with emotion replace the cloned voice; edge-tts is the fallback."""
 
-from azure_voice import AzureVoice, ssml
+from radio.azure_voice import AzureVoice, ssml
 from radio.voice import Voice
 
 WAV = b"RIFF....WAVEfmt "

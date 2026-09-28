@@ -54,7 +54,10 @@ class AzureVoice:
                 from dotenv import load_dotenv
 
                 load_dotenv(
-                    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+                    os.path.join(
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        ".env",
+                    )
                 )
             except ImportError:
                 pass
