@@ -3,7 +3,10 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
+)
 
 
 def test_every_bank_question_is_routed_to_the_right_lane():
