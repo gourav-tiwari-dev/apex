@@ -20,6 +20,7 @@ from game.constants import (
     SESSION_OVER,
 )
 from radio.words import lap_time_parts, tenths_words
+from seats.strategist import measured_lap
 from race.race_model import CATCH_UPPER
 
 # mSectorFlag: 1 is a local yellow, nothing else is (game.constants.SECTOR_YELLOW, measured on all 5
@@ -183,23 +184,44 @@ class RaceEngineer:
         return [ask]
 
     def update(self, moment):
+        """Everything the race engineer says, in the order a frame is looked at."""
+        self.note_incidents(moment.events)
+        race = moment.race
+        if race is None or race.me is None or not moment.new_race:
+            return []
+        now = moment.now
+        phase = race.session.game_phase
+        calls = []
+        calls += self.start_and_finish(race, moment, phase, now)
+        calls += self.flags(race, moment, phase, now)
+        calls += self.penalty(race.me, now)
+        calls += self.track_limits(race, moment, now)
+        calls += self.damage(race.me, now)
+        racing = (
+            moment.session_type in RACE_SESSIONS
+            and phase == GREEN_FLAG
+            and not race.me.in_pits
+        )
+        calls += self.at_the_line(race, moment, racing, now)
+        if racing and moment.model is not None:
+            calls += self.pits_ahead(race, moment.model, now)
+        calls += self.where_you_are(race, moment, racing, now)
+        return calls
+
+    def note_incidents(self, events):
         # incidents on every frame: they come with the car frames, and the race snapshots (5 a
         # second) missed most of them (27 Sep: the own-spin yellow rule rarely saw its spin)
-        for event in moment.events:
+        for event in events:
             if event.kind == "SPIN":
                 self.own_spin_at = event.sim_time
             if event.kind in INCIDENT_KINDS:
                 self.incident_at = event.sim_time
-        race = moment.race
-        if race is None or race.me is None or not moment.new_race:
-            return []
-        me = race.me
-        session = race.session
-        now = moment.now
-        calls = []
 
-        # the start (E1)
-        phase = session.game_phase
+    def start_and_finish(self, race, moment, phase, now):
+        """The start (E1): formation lap, lights out, safety car and green. The end: the
+        leader's flag makes this his last lap, then the chequered flag and his place."""
+        me = race.me
+        calls = []
         if phase == FORMATION_LAP and not self.formation_called:
             self.formation_called = True
             calls.append(
@@ -254,23 +276,29 @@ class RaceEngineer:
                 )
             )
         self.phase = phase
+        return calls
 
-        # flags (E2)
+    def flags(self, race, moment, phase, now):
+        """Flags (E2): blue, "you OK?" after a crash, and a yellow in his sector or the next."""
+        me = race.me
+        calls = []
         crawling = moment.frame is not None and moment.frame.speed_kmh < CRAWLING_KMH
         if me.flag == BLUE_FLAG and not self.blue_flag and not crawling:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
         calls.extend(self.after_a_crash(moment, me, phase, now))
         yellow_sectors = [
-            i for i, flag in enumerate(session.sector_flags) if flag == SECTOR_YELLOW
+            i
+            for i, flag in enumerate(race.session.sector_flags)
+            if flag == SECTOR_YELLOW
         ]
         here, next_one = (
             FLAG_SLOT.get(me.sector),
             FLAG_SLOT.get(NEXT_SECTOR.get(me.sector)),
         )
         yellow_now = here in yellow_sectors or next_one in yellow_sectors
-        # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow" twice
-        # right after he spun at Indianapolis)
+        # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow"
+        # twice right after he spun at Indianapolis)
         own_yellow = (
             self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
         )
@@ -290,8 +318,10 @@ class RaceEngineer:
             calls.append(urgent("YELLOW", "Yellow flag. Yellow.", now))
             self.yellow_said_at = now
         self.yellow = yellow_now
+        return calls
 
-        # penalties
+    def penalty(self, me, now):
+        calls = []
         if self.penalties is not None and me.penalties > self.penalties:
             calls.append(
                 spoken(
@@ -304,9 +334,15 @@ class RaceEngineer:
                 )
             )
         self.penalties = me.penalties
+        return calls
 
-        # track limits (E3): the game counts limit "steps" and gives a penalty at
-        # limit_steps_per_penalty (seen on the tapes: 12 or 20)
+    def track_limits(self, race, moment, now):
+        """Track limits (E3): the game counts limit "steps" and gives a penalty at
+        limit_steps_per_penalty (seen on the tapes: 12 or 20). Said from half way, and at each
+        of the last steps."""
+        me = race.me
+        session = race.session
+        calls = []
         stepped = (
             self.limit_steps is not None and me.track_limit_steps > self.limit_steps
         )
@@ -335,8 +371,11 @@ class RaceEngineer:
                 )
             )
         self.limit_steps = me.track_limit_steps
+        return calls
 
-        # damage (E4)
+    def damage(self, me, now):
+        """Damage (E4): new dents on the car."""
+        calls = []
         dent_total = sum(me.dents)
         if self.dents is not None and dent_total > self.dents:
             calls.append(
@@ -349,42 +388,41 @@ class RaceEngineer:
                 )
             )
         self.dents = dent_total
+        return calls
 
-        # who is catching whom, and the lap times that matter, at every line in a race
-        racing = (
-            moment.session_type in RACE_SESSIONS
-            and phase == GREEN_FLAG
-            and not me.in_pits
-        )
+    def at_the_line(self, race, moment, racing, now):
+        """At the line: his lap time, then (racing) who is catching whom and whether he is
+        held up."""
+        calls = []
         if moment.lap_wrapped:
-            from seats.strategist import measured_lap
-
-            if me.laps >= 1:  # at lights out the "lap" is the formation (2:23, 25 Sep)
+            if (
+                race.me.laps >= 1
+            ):  # at lights out the "lap" is the formation (2:23, 25 Sep)
                 self.my_lap = (
-                    measured_lap(me.last_lap, self.line_time, now) or self.my_lap
+                    measured_lap(race.me.last_lap, self.line_time, now) or self.my_lap
                 )
             self.line_time = now
         if moment.lap_wrapped and racing and moment.lap_count >= 1:
             calls.extend(self.race_picture(race, moment.lap_count, now, moment.model))
             if moment.model is not None:
                 calls.extend(self.held_up(race, moment.model, moment.corners, now))
-        if racing and moment.new_race and moment.model is not None:
-            calls.extend(self.pits_ahead(race, moment.model, now))
+        return calls
 
-        # where you are in the race: every few laps, and EVERY lap when he is on his own (live 25 Sep:
-        # he joined 3 minutes late, nobody was within two minutes, and the radio went quiet for the
-        # race - a real engineer talks a lone driver through his laps)
+    def where_you_are(self, race, moment, racing, now):
+        """Where you are in the race: every few laps, and EVERY lap when he is on his own (live
+        25 Sep: he joined 3 minutes late, nobody was within two minutes, and the radio went
+        quiet for the race - a real engineer talks a lone driver through his laps)."""
         alone = racing and self.alone(race, moment.model)
         every_lap = alone or (
-            self.orders is not None and self.orders.gaps_every_lap()
-        )  # his order
+            self.orders is not None and self.orders.gaps_every_lap()  # his order
+        )
         due = moment.lap_count >= self.last_report_lap + (
             1 if every_lap else REPORT_EVERY_LAPS
         )
         if moment.lap_wrapped and due and moment.lap_count > 1:
             self.last_report_lap = moment.lap_count
-            calls.append(self.gap_report(race, now, moment.model))
-        return calls
+            return [self.gap_report(race, now, moment.model)]
+        return []
 
     def race_picture(self, race, lap, now, model=None):
         ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, model)
