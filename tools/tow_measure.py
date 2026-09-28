@@ -8,7 +8,7 @@ sys.path.insert(0, os.getcwd())
 from game.tape import ReplaySource
 from race_state import same_class_neighbours
 from gaps import TrackClock
-from track_map import corners_for_track
+from driving.track_map import corners_for_track
 
 TAPES = [
     "tape_20260924_201632.jsonl.gz",

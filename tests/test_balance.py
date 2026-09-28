@@ -3,7 +3,7 @@ for that speed and phase of the corner."""
 
 from types import SimpleNamespace
 
-from balance import BalanceMeter, describe
+from driving.balance import BalanceMeter, describe
 
 NORMAL_GAIN = 0.07  # yaw / (speed x steering) on an ordinary corner
 

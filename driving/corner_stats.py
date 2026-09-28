@@ -6,7 +6,7 @@ time through the corner, and where he was back on the power after the slowest po
 
 from dataclasses import dataclass
 
-from track_map import CornerMap
+from driving.track_map import CornerMap
 
 
 @dataclass

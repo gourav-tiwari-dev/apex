@@ -9,7 +9,7 @@ import seats.racecraft as rc
 from game.tape import ReplaySource
 from seats import Moment
 from seats.performance import PerformanceEngineer
-from track_map import corner_at, corners_for_track
+from driving.track_map import corner_at, corners_for_track
 
 TAPES = ["tape_20260924_201632.jsonl.gz", "tape_20260924_202800.jsonl.gz"]
 

@@ -4,12 +4,12 @@ from dataclasses import asdict
 
 import session
 import memory
-import track_map
+from driving import track_map
 from game.tape import ReplaySource
 from driving.laps import LapCounter, LapDistance
 from race_state import read_race_snapshot
 from test_race_state import fake_game
-from track_map import TrackMapLearner, MONZA_CORNERS, borrow_names, corner_at
+from driving.track_map import TrackMapLearner, MONZA_CORNERS, borrow_names, corner_at
 from test_determinism import FakePersona
 
 ELEVEN_LAPS = "tape_20260821_232642.jsonl.gz"

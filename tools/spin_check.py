@@ -16,7 +16,7 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from game.car_frame import CarState
 from driving.detectors import SpinDetector, SlideCaughtDetector
-from track_map import CornerMap, corners_for_track
+from driving.track_map import CornerMap, corners_for_track
 
 tapes = sys.argv[1:] or sorted(glob.glob("tape_2026092[3-5]_*.jsonl.gz"))
 for tape in tapes:

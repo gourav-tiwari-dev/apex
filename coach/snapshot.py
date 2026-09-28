@@ -427,7 +427,7 @@ class Snapshot:
                 entry["my_last_s"] = round(timed[-1], 2)
             measured = performance.balance.corner_balance(corner)
             if measured is not None:
-                from balance import describe
+                from driving.balance import describe
 
                 entry["balance"] = describe(measured)
             if corner in rival:

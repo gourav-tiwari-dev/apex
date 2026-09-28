@@ -11,7 +11,7 @@ import math
 from dataclasses import dataclass
 
 from race_state import identity
-from track_map import CornerMap
+from driving.track_map import CornerMap
 
 
 # Wheel radii in metres (from mStaticUndeflectedRadius: 34cm front, 36cm rear).

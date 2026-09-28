@@ -21,7 +21,7 @@ import collections
 import math
 import statistics
 
-from track_map import corner_at
+from driving.track_map import corner_at
 
 from gaps import TrackClock
 from radio.calls import Call, SPOTTER, RACECRAFT

@@ -56,7 +56,7 @@ from coach.snapshot import Snapshot
 from race_model import RaceModel
 import ptt as push_to_talk
 from team_memory import facts as memory_facts
-from track_map import (
+from driving.track_map import (
     CornerMap,
     corners_for_track,
     TrackMapLearner,

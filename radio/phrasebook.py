@@ -53,7 +53,7 @@ def gap_words(low_s, high_s):
 
 
 def corner_names():
-    from track_map import MAPS_FOLDER, MONZA_CORNERS
+    from driving.track_map import MAPS_FOLDER, MONZA_CORNERS
 
     names = {corner["name"] for corner in MONZA_CORNERS}
     if os.path.isdir(MAPS_FOLDER):

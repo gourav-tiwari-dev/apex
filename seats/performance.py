@@ -16,10 +16,10 @@ import statistics
 from dataclasses import dataclass
 
 from radio.calls import Call, ENGINEER, PERFORMANCE, MEMORY
-from track_map import corner_at
+from driving.track_map import corner_at
 from race_state import identity
 from seats.spotter import CAR_LENGTH_M
-from balance import BalanceMeter, FIX
+from driving.balance import BalanceMeter, FIX
 from game.constants import QUALIFYING_SESSIONS
 from radio.words import tenths_words
 
