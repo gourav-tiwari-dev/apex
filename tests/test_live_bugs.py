@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from persona import gate
+from radio.persona import gate
 import memory
 from game.race_snapshot import identity
 from race.facts import laps_to_go

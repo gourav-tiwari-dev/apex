@@ -39,7 +39,7 @@ from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer
 from talk.orders import StandingOrders
-from persona import Persona
+from radio.persona import Persona
 from radio.voice import Voice
 from radio.desk import RadioDesk
 from seats.performance import PerformanceEngineer

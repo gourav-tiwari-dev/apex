@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from persona import gate, Persona
+from radio.persona import gate, Persona
 from radio.calls import Call, PERFORMANCE
 
 
@@ -112,7 +112,7 @@ def test_spelled_out_numbers_are_checked_too():
 
 
 def test_the_model_is_told_the_message_not_asked_to_invent_one():
-    from persona import facts_text
+    from radio.persona import facts_text
 
     text = facts_text(call(facts={"gap_s": 0.3}))
     assert text.startswith("tell him: ")

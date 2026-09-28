@@ -7,7 +7,7 @@ catch the mistakes his races showed. fallback is the line when the model is down
 
 import re
 
-from persona import (
+from radio.persona import (
     BANNED,
     GENDERED,
     PROFANITY,
