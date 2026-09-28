@@ -421,14 +421,12 @@ class Racecraft:
         self.clock = model.clock
 
     def update(self, moment):
+        """Everything racecraft says this frame: after incidents, then (on each new race
+        snapshot) plans, closing cars, places won and lost, passes, and at the line the cost
+        of a fight."""
         race = moment.race
         now = moment.now
-        if moment.new_race and race is not None and race.me is not None:
-            if self.model is None:
-                self.clock.see_race(race, now)
-            self.reputation.see_race(race)
-        if self.model is None:
-            self.clock.see_me(moment.frame.lap_dist, now)
+        self.see(moment)
         if race is None or race.me is None:
             return []
         # qualifying places change all the time as others set laps: "you lost a place"
@@ -437,21 +435,48 @@ class Racecraft:
             return []
         if race.me.in_pits or race.session.game_phase != GREEN_FLAG:
             return []
-        # after a spin, or crawling: no racecraft (live 25 Sep, spun at Indianapolis, it kept saying
-        # "mega defending" and "stay in the tow")
+        if self.quiet_after_incident(moment, now):
+            return []
+        corners = moment.corners or []
+        self.corners = corners
+        calls = self.after_incidents(moment.events, now)
+        self.count_braking_zones(moment, now)
+        if moment.new_race:
+            calls += self.each_snapshot(race, moment, corners, now)
+        if moment.lap_wrapped:
+            calls += self.fight_cost(race, now)
+        warning = self.not_here_warning(moment, corners, now)
+        if warning is not None:
+            calls.append(warning)
+        self.watch_for_attempt(moment, now)
+        return calls
+
+    def see(self, moment):
+        """Feed my own clock (only when the race model is not shared) and the reputations."""
+        race = moment.race
+        now = moment.now
+        if moment.new_race and race is not None and race.me is not None:
+            if self.model is None:
+                self.clock.see_race(race, now)
+            self.reputation.see_race(race)
+        if self.model is None:
+            self.clock.see_me(moment.frame.lap_dist, now)
+
+    def quiet_after_incident(self, moment, now):
+        """True while quiet: after a spin, or crawling, no racecraft (live 25 Sep, spun at
+        Indianapolis, it kept saying "mega defending" and "stay in the tow")."""
         if (
             any(event.kind == "SPIN" for event in moment.events)
             or moment.frame.speed_kmh < INCIDENT_KMH
         ):
             self.quiet_until = now + INCIDENT_QUIET_S
-        if self.quiet_until is not None and now < self.quiet_until:
-            return []
-        me = race.me
-        corners = moment.corners or []
-        self.corners = corners
-        calls = []
+        return self.quiet_until is not None and now < self.quiet_until
 
-        for event in moment.events:
+    def after_incidents(self, events, now):
+        """Contact: note who hit him, calm him down, and no praise for a pass it touched. Two
+        offs close together: two tidy laps."""
+        calls = []
+        for event in events:
             if event.kind == "CONTACT":
                 who = event.other_car
                 if who is not None:
@@ -483,7 +508,9 @@ class Racecraft:
                             now,
                         )
                     )
+        return calls
 
+    def count_braking_zones(self, moment, now):
         # a braking zone survived = a corner left after the one the pass was made in
         if self.last_corner is not None and moment.corner != self.last_corner:
             self.last_corner_exit = now
@@ -493,27 +520,23 @@ class Racecraft:
                 pass_["left_pass_corner"] = True
         self.last_corner = moment.corner
 
-        if moment.new_race:
-            self.cars = {opponent.id: opponent for opponent in race.opponents}
-            self.ahead, game_gap_ahead, self.behind, game_gap_behind = (
-                same_class_neighbours(race, self.model)
-            )
-            self.gap_ahead = self.real_gap(self.ahead, "ahead", now, game_gap_ahead)
-            self.gap_behind = self.real_gap(self.behind, "behind", now, game_gap_behind)
-            calls += self.plans(corners, now)
-            calls += self.closing_calls(corners, now)
-            calls += self.watch_places(race, moment, corners, now)
-            calls += self.follow_passes(moment, corners, now)
-            calls += self.defending_held(now)
-            self.last_place = me.place
-            self.resolve_attempt(me, now)
-        if moment.lap_wrapped:
-            calls += self.fight_cost(race, now)
-
-        warning = self.not_here_warning(moment, corners, now)
-        if warning is not None:
-            calls.append(warning)
-        self.watch_for_attempt(moment, now)
+    def each_snapshot(self, race, moment, corners, now):
+        """On each new race snapshot: who is around him and how far, then every call that
+        needs the whole field."""
+        self.cars = {opponent.id: opponent for opponent in race.opponents}
+        self.ahead, game_gap_ahead, self.behind, game_gap_behind = (
+            same_class_neighbours(race, self.model)
+        )
+        self.gap_ahead = self.real_gap(self.ahead, "ahead", now, game_gap_ahead)
+        self.gap_behind = self.real_gap(self.behind, "behind", now, game_gap_behind)
+        calls = []
+        calls += self.plans(corners, now)
+        calls += self.closing_calls(corners, now)
+        calls += self.watch_places(race, moment, corners, now)
+        calls += self.follow_passes(moment, corners, now)
+        calls += self.defending_held(now)
+        self.last_place = race.me.place
+        self.resolve_attempt(race.me, now)
         return calls
 
     def plans(self, corners, now):
@@ -547,77 +570,84 @@ class Racecraft:
         once one of them is proven."""
         calls = []
         for side in ("behind", "ahead"):
-            car = self.behind if side == "behind" else self.ahead
-            gap = self.gap_behind if side == "behind" else self.gap_ahead
-            said = self.alarmed if side == "behind" else self.closing_called
-            if car is None or gap is None:
-                continue
-            if gap > ALARM_REARM_GAP_S:
-                said.discard(car.id)
-            if car.id in said or not ALARM_MIN_GAP_S <= gap <= ALARM_MAX_GAP_S:
-                continue
-            point = self.gap_points.get(side)
-            if point is None:
-                continue  # the game's gap: the rate is fitted on same-point gaps only
-            if car.in_pits or car.pit_state != 0:
-                continue  # a car pitting is not a car closing (PITS_AHEAD says it)
-            # a car that was already on him (or just passed) and is dropping back is not closing: the
-            # 10 s rate still leans on the older, closer gaps. Replays of 23 and 25 Sep (27 Sep):
-            # "Closing fast on the car ahead" 2 s after that car passed him, and at 0.19 -> 0.51 s
-            closest = self.clock.closest_lately(car.id, now)
-            if closest is not None and closest < ALARM_MIN_GAP_S:
-                continue
-            # closing is judged on the lap once there is a lap of both trails: at Le Mans the gap
-            # breathes +-0.5 s inside a lap, and a 10 s rate measures the breathing. Replays of the 7
-            # race tapes (27 Sep): 10 of 24 closing calls never came within 0.3 s in a lap (one on a
-            # car 2.3 s a lap slower); on the lap pace 5 of 22, with the same 9 of 10 arrivals warned.
-            # Crew Chief likewise trends the gap over sectors, and iRacedeck against one lap ago
-            rate = self.clock.closing_rate(car.id, now)
-            quicker = self.clock.pace_vs_me(
-                car.id
-            )  # s a lap that car is quicker than me
-            if quicker is not None:
-                per_lap = quicker if side == "behind" else -quicker
-                if per_lap < ALARM_MIN_PACE_S:
-                    continue
-            elif rate is None or rate < ALARM_MIN_RATE:
-                continue
-            said.add(car.id)
-            facts = {"gap_s": gap}
-            if quicker is not None:
-                facts["pace_closing_s_per_lap"] = round(per_lap, 2)
-            if rate is not None and rate > 0:
-                facts["closing_s_per_s"] = round(rate, 3)
-                facts["predicted_catch_s"] = round((gap - ON_YOU_S) / rate, 1)
-            found = self.clock.catch_point(car.id, point, gap)
-            if found is not None and corners:
-                facts["predicted_corner_lap_model"] = self.clock.corner_at_or_after(
-                    found[0], corners
-                )
-                facts["closing_per_lap_s"] = round(found[1], 2)
-            if side == "behind":
-                words = f"Car behind, {tenths_words(gap)}, closing fast."
-                reputation = self.reputation.words(car)
-                if reputation is not None:
-                    words += f" {reputation}"
-                calls.append(
-                    self.instant(
-                        "CLOSING_ALARM",
-                        words,
-                        now,
-                        facts,
-                        seat="spotter",
-                        priority=SPOTTER,
-                        ttl=ALARM_TTL_S,
-                        voice="spotter",
-                    )
-                )
-            else:
-                words = (
-                    f"Closing fast on the car ahead. {tenths_words(gap).capitalize()}."
-                )
-                calls.append(self.instant("CLOSING_ON", words, now, facts))
+            call = self.closing_call(side, corners, now)
+            if call is not None:
+                calls.append(call)
         return calls
+
+    def closing_call(self, side, corners, now):
+        """The closing call for the car behind or the car ahead, or None."""
+        car = self.behind if side == "behind" else self.ahead
+        gap = self.gap_behind if side == "behind" else self.gap_ahead
+        said = self.alarmed if side == "behind" else self.closing_called
+        if car is None or gap is None:
+            return None
+        if gap > ALARM_REARM_GAP_S:
+            said.discard(car.id)
+        if car.id in said or not ALARM_MIN_GAP_S <= gap <= ALARM_MAX_GAP_S:
+            return None
+        point = self.gap_points.get(side)
+        if point is None:
+            return None  # the game's gap: the rate is fitted on same-point gaps only
+        if car.in_pits or car.pit_state != 0:
+            return None  # a car pitting is not a car closing (PITS_AHEAD says it)
+        # a car that was already on him (or just passed) and is dropping back is not closing:
+        # the 10 s rate still leans on the older, closer gaps. Replays of 23 and 25 Sep (27 Sep):
+        # "Closing fast on the car ahead" 2 s after that car passed him, and at 0.19 -> 0.51 s
+        closest = self.clock.closest_lately(car.id, now)
+        if closest is not None and closest < ALARM_MIN_GAP_S:
+            return None
+        # closing is judged on the lap once there is a lap of both trails: at Le Mans the gap
+        # breathes +-0.5 s inside a lap, and a 10 s rate measures the breathing. Replays of the
+        # 7 race tapes (27 Sep): 10 of 24 closing calls never came within 0.3 s in a lap (one
+        # on a car 2.3 s a lap slower); on the lap pace 5 of 22, with the same 9 of 10 arrivals
+        # warned. Crew Chief likewise trends the gap over sectors, and iRacedeck against one lap
+        # ago
+        rate = self.clock.closing_rate(car.id, now)
+        quicker = self.clock.pace_vs_me(car.id)  # s a lap that car is quicker than me
+        per_lap = None
+        if quicker is not None:
+            per_lap = quicker if side == "behind" else -quicker
+            if per_lap < ALARM_MIN_PACE_S:
+                return None
+        elif rate is None or rate < ALARM_MIN_RATE:
+            return None
+        said.add(car.id)
+        facts = self.closing_facts(car, gap, point, rate, per_lap, corners)
+        if side == "behind":
+            words = f"Car behind, {tenths_words(gap)}, closing fast."
+            reputation = self.reputation.words(car)
+            if reputation is not None:
+                words += f" {reputation}"
+            return self.instant(
+                "CLOSING_ALARM",
+                words,
+                now,
+                facts,
+                seat="spotter",
+                priority=SPOTTER,
+                ttl=ALARM_TTL_S,
+                voice="spotter",
+            )
+        words = f"Closing fast on the car ahead. {tenths_words(gap).capitalize()}."
+        return self.instant("CLOSING_ON", words, now, facts)
+
+    def closing_facts(self, car, gap, point, rate, per_lap, corners):
+        """What a closing call rests on, logged with it: the lap pace, the live rate, and both
+        predictions of where it catches (scored later, never said yet)."""
+        facts = {"gap_s": gap}
+        if per_lap is not None:
+            facts["pace_closing_s_per_lap"] = round(per_lap, 2)
+        if rate is not None and rate > 0:
+            facts["closing_s_per_s"] = round(rate, 3)
+            facts["predicted_catch_s"] = round((gap - ON_YOU_S) / rate, 1)
+        found = self.clock.catch_point(car.id, point, gap)
+        if found is not None and corners:
+            facts["predicted_corner_lap_model"] = self.clock.corner_at_or_after(
+                found[0], corners
+            )
+            facts["closing_per_lap_s"] = round(found[1], 2)
+        return facts
 
     # ---- passes made, passes lost ----------------------------------------------------------
     def order_around_me(self, race):
