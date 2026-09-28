@@ -1,4 +1,4 @@
-"""Scratch query runner:  python q.py "SELECT ..." """
+"""Scratch query runner:  python dev/q.py "SELECT ..." """
 
 import sqlite3, sys
 

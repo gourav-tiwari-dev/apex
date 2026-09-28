@@ -9,7 +9,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from phrasebook import Phrasebook
-from build_voice_bank import error_rate
+from dev.build_voice_bank import error_rate
 from voice import speakable
 
 SPOTTER = [

@@ -1,6 +1,6 @@
 """Check a v2 tape: which fields the game actually filled in.
 
-    python audit_tape.py tape_20260924_203000.jsonl.gz
+    python dev/audit_tape.py tape_20260924_203000.jsonl.gz
 
 LIVE      the value changed during the recording
 CONSTANT  it had one value the whole time (fine for things like track name)
@@ -9,6 +9,12 @@ DEAD      always zero / empty: the game never filled it in, so no seat may rely 
 One recording can't prove a field is dead if nothing happened to change it
 (no pit stop -> pit fields stay 0). Those need a session where it happens.
 """
+
+import os
+import sys
+
+# run as `python dev/audit_tape.py` from the project folder: Apex's modules are one folder up
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import gzip
 import json

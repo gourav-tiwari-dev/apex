@@ -15,8 +15,8 @@ One book per voice:
     azure_spotter    the same sentences in Azure's voices with emotion (when .env has a key)
     azure_engineer
 
-    python build_voice_bank.py --phrases    spotter + engineer (needs internet)
-    python build_voice_bank.py --azure      the Azure books
+    python dev/build_voice_bank.py --phrases    spotter + engineer (needs internet)
+    python dev/build_voice_bank.py --azure      the Azure books
 """
 
 import hashlib

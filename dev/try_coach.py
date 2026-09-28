@@ -1,8 +1,8 @@
 """Talk to the race engineer without the game running.
 
-    python try_coach.py                 the 23 Sep Le Mans race, frozen at lap 4
-    python try_coach.py --lap 2         frozen at another lap
-    python try_coach.py --tape TAPE     another race tape
+    python dev/try_coach.py                 the 23 Sep Le Mans race, frozen at lap 4
+    python dev/try_coach.py --lap 2         frozen at another lap
+    python dev/try_coach.py --tape TAPE     another race tape
 
 Set the situation you want to ask about (24 Sep: "make the situation exactly match what I'm
 saying"). The real race stays underneath - your corners, balance, habits, rivals - and only
@@ -28,6 +28,12 @@ else goes to the race agent, and the answer is spoken, like in a race. Every age
 costs about Rs 0.2. Nothing is written to apex.db: the replay goes into a throwaway database.
 """
 
+import os
+import sys
+
+# run as `python dev/try_coach.py` from the project folder: Apex's modules are one folder up
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import argparse
 import contextlib
 import io
@@ -45,7 +51,7 @@ from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from talk.answers import Answers
 from talk.hearing import needs_agent
-from lmu_import import NoVoice
+from dev.lmu_import import NoVoice
 from radio import Budget
 from team_memory import facts as memory_facts
 from voice import Voice

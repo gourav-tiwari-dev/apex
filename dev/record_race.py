@@ -1,10 +1,16 @@
 """Record a session to a tape and nothing else: no voice, no LLM calls, no database.
 
-    python record_race.py
+    python dev/record_race.py
 
 Start it, then drive. It stops by itself when the session is over, or with Ctrl+C.
 The tape it writes is what the v2 seats get built and tested on.
 """
+
+import os
+import sys
+
+# run as `python dev/record_race.py` from the project folder: Apex's modules are one folder up
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
 
@@ -72,7 +78,7 @@ def record(info, tape_path):
         print(
             f"Saved {frames} frames, {snapshots} race snapshots, {near_lines} near lines to {tape_path}"
         )
-        print(f"Check it with:  python audit_tape.py {tape_path}")
+        print(f"Check it with:  python dev/audit_tape.py {tape_path}")
 
 
 if __name__ == "__main__":

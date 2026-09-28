@@ -1,7 +1,7 @@
 """The question bank against a frozen race, for real (v3 step 5b).
 Usage: ask_bank.py OUT_JSON [--agent N] [--cap RS] [--tape TAPE] [--lap LAP]
 
-Freezes the race (like try_coach.py), then:
+Freezes the race (like dev/try_coach.py), then:
   - every fixed-lane question is answered by code (free), and checked it does not crash
   - N agent questions, spread evenly over the categories, go to the real model
 Writes every answer with its tools, time and cost to OUT_JSON, and prints a summary.
@@ -21,7 +21,7 @@ os.chdir(HERE)
 
 import session
 from question_bank import QUESTIONS
-from try_coach import frozen_race, DEFAULT_TAPE
+from dev.try_coach import frozen_race, DEFAULT_TAPE
 from coach.agent import RaceAgent
 from talk.answers import Answers
 from radio import Budget

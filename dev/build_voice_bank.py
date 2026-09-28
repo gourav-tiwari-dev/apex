@@ -1,12 +1,18 @@
 """Render the urgent radio lines once, so they play in 0.01 ms during a race.
 
-    python build_voice_bank.py              the standard voice (edge-tts, needs internet)
-    python build_voice_bank.py --phrases    the sentences of instant lines (phrasebook.py),
+    python dev/build_voice_bank.py              the standard voice (edge-tts, needs internet)
+    python dev/build_voice_bank.py --phrases    the sentences of instant lines (phrasebook.py),
                                             spotter + standard engineer voice (internet)
-    python build_voice_bank.py --azure      all of it in Azure's voices with emotion (.env key)
+    python dev/build_voice_bank.py --azure      all of it in Azure's voices with emotion (.env key)
 
 Run it again after changing BANK_LINES. voice_bank/ is gitignored.
 """
+
+import os
+import sys
+
+# run as `python dev/build_voice_bank.py` from the project folder: Apex's modules are one folder up
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
 import os

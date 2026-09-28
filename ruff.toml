@@ -28,4 +28,5 @@ max-nested-blocks = 3
 [lint.per-file-ignores]
 # tests and the study tools read like scripts; the contract is for the code that runs in a race
 "test_*.py" = ["D", "PLR", "N802", "E731", "ERA001"]
-"tools/*.py" = ["D", "PLR", "ERA001"]
+"tools/*.py" = ["D", "PLR", "ERA001", "E402"]
+"dev/*.py" = ["D", "PLR", "ERA001", "E402"]  # hand-run scripts, like the tools

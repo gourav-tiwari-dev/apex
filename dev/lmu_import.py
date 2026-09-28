@@ -1,8 +1,8 @@
 """Turn LMU's own telemetry recordings into Apex tapes.
 
-    python lmu_import.py                    convert every recording in LMU's Telemetry folder
-    python lmu_import.py FILE.duckdb        convert one
-    python lmu_import.py --load             convert, then load them into apex.db + team memory
+    python dev/lmu_import.py                    convert every recording in LMU's Telemetry folder
+    python dev/lmu_import.py FILE.duckdb        convert one
+    python dev/lmu_import.py --load             convert, then load them into apex.db + team memory
 
 LMU saves a .duckdb file per session by itself (UserData/Telemetry). It is my car only, no
 other cars, but 101 channels, including steering, which Apex's old tapes never had.
@@ -27,6 +27,12 @@ What each channel is, measured on a Le Mans race file (23 Sep 2026):
 
 Tapes come out at 50 Hz, with a race line once a second (session, track, fuel, tyres...).
 """
+
+import os
+import sys
+
+# run as `python dev/lmu_import.py` from the project folder: Apex's modules are one folder up
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bisect
 import glob

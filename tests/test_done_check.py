@@ -1,5 +1,5 @@
 import memory
-from done_check import check, SEATS, save_result
+from dev.done_check import check, SEATS, save_result
 from radio import Call
 
 

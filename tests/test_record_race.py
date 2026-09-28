@@ -1,6 +1,6 @@
 from test_race_state import fake_game
 from game.tape import ReplaySource
-from record_race import record
+from dev.record_race import record
 
 
 class FakeGame:

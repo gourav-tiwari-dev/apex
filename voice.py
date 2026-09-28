@@ -277,7 +277,7 @@ class Voice:
                 missing.append(key)
         if missing:
             print(
-                f"[voice bank: {len(missing)} lines missing - run  python build_voice_bank.py]"
+                f"[voice bank: {len(missing)} lines missing - run  python dev/build_voice_bank.py]"
             )
 
     def play_urgent(self, key, fallback_text):

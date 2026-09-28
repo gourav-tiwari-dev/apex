@@ -1,7 +1,7 @@
 """Is Apex v2 done? The check that decides it (V2_DONE.md, locked by Gourav 23 Sep 2026).
 
-    python done_check.py            check the latest race
-    python done_check.py 42         check session 42
+    python dev/done_check.py            check the latest race
+    python dev/done_check.py 42         check session 42
 
 DONE = one full ranked race with Apex on, never switched off, and every one of the seven
 seats made at least one real call. Plus the upgrades he accepted (D1-D5):
@@ -14,6 +14,12 @@ seats made at least one real call. Plus the upgrades he accepted (D1-D5):
 A REAL call = actually spoken, triggered by data (not the radio check, not a fallback notice).
 Debrief and brief lines count: that is where the setup engineer works.
 """
+
+import os
+import sys
+
+# run as `python dev/done_check.py` from the project folder: Apex's modules are one folder up
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
 import statistics
