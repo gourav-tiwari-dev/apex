@@ -25,7 +25,7 @@ from game.constants import (
     SESSION_OVER,
 )
 from radio.words import lap_time_parts, tenths_words
-from race_model import CATCH_UPPER
+from race.race_model import CATCH_UPPER
 
 # mSectorFlag: 1 is a local yellow, nothing else is (game.constants.SECTOR_YELLOW, measured on all 5
 # race tapes 26 Sep). The 23 Sep note "1 (and sometimes 3)" was wrong about 3: it shows before

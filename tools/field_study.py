@@ -114,7 +114,7 @@ def study_laps():
 def replay(tape, every=None):
     """Replays a tape into a RaceModel; calls every(model, snap) after each snapshot."""
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from race_model import RaceModel
+    from race.race_model import RaceModel
 
     length = max(
         max([o.lap_dist for o in snap.opponents] + [0.0]) for snap in snapshots(tape)

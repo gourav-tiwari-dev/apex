@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tapes import snapshots, RACE_TAPES
-from race_model import RaceModel
+from race.race_model import RaceModel
 
 SAMPLE_S = 15.0
 CAUGHT_S = 0.4  # within this: caught (the forecast aims at 0.3)

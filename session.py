@@ -53,7 +53,7 @@ from talk.answers import Answers
 from talk.hearing import needs_agent, intent_of, fix_mishearing, garbled, is_mark
 from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
-from race_model import RaceModel
+from race.race_model import RaceModel
 from talk import ptt as push_to_talk
 from memory.team_memory import facts as memory_facts
 from driving.track_map import (

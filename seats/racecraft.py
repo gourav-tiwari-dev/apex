@@ -35,7 +35,7 @@ from seats.spotter import (
 )
 from radio.words import Rotation, tenths_words
 from race_state import same_lap, identity, same_class_neighbours, said_place
-from gaps import TrackClock, ON_YOU_S
+from race.gaps import TrackClock, ON_YOU_S
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 
 FIGHT_GAP_S = 1.0  # a same-class car within a second ahead is a fight

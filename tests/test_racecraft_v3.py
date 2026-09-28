@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from gaps import TrackClock, Trail
+from race.gaps import TrackClock, Trail
 from driving.detectors import Event
 from radio.governor import Governor
 from seats.performance import PerformanceEngineer

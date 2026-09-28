@@ -17,6 +17,7 @@ from seats.race_engineer import RaceEngineer
 from seats.racecraft import Racecraft
 from seats.strategist import Strategist
 from test_seats import race, behind_car
+from race.gaps import Trail
 
 
 class Function:
@@ -582,7 +583,7 @@ def test_pace_is_never_his_start_lap_or_best_lap():
 
 
 def test_pace_is_measured_on_the_road_a_lap_apart():
-    from gaps import TrackClock
+    from race.gaps import TrackClock
 
     clock = TrackClock()
     clock.lap_length = 1000.0
@@ -590,7 +591,7 @@ def test_pace_is_measured_on_the_road_a_lap_apart():
     for step in range(0, 700):
         t = step * 0.1
         clock.mine.add(1000.0 + 50.0 * t, t)
-        clock.theirs.setdefault(9, __import__("gaps").Trail()).add(850.0 + 55.0 * t, t)
+        clock.theirs.setdefault(9, Trail()).add(850.0 + 55.0 * t, t)
     quicker = clock.pace_vs_me(9)
     assert (
         quicker is not None and 1.5 < quicker < 2.0

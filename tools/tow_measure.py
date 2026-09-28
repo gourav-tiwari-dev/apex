@@ -7,7 +7,7 @@ os.chdir(r"C:\Users\gourav\Downloads\apex_telemetry")
 sys.path.insert(0, os.getcwd())
 from game.tape import ReplaySource
 from race_state import same_class_neighbours
-from gaps import TrackClock
+from race.gaps import TrackClock
 from driving.track_map import corners_for_track
 
 TAPES = [

@@ -285,7 +285,7 @@ def test_laps_to_go_without_the_session_lap_uses_the_longest_lap_seen():
     # done", 15 s on the clock became one more lap, the 5-lap race looked 6, and the fuel said
     # "0.8 laps spare" against 1.81 at the flag
     from race_state import laps_to_go, leader_margin
-    from race_model import RaceModel
+    from race.race_model import RaceModel
 
     leader = replace(
         rival(5, 3.0), place=1, laps=4, lap_dist=12556.5, last_lap=242.0, best_lap=239.8
@@ -326,8 +326,8 @@ def test_the_leader_is_timed_to_the_line_on_its_own_last_lap():
     # one more lap; on the road the Ford chicanes took 25 s, the clock ran out first, and that lap was
     # the last. "Laps to go" had been a lap out for minutes, and "Energy's tight" with it
     from race_state import laps_to_go, leader_margin
-    from race_model import RaceModel
-    from gaps import Trail
+    from race.race_model import RaceModel
+    from race.gaps import Trail
 
     lap = 13624.0
     model = RaceModel(lap_length=lap)

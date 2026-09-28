@@ -22,7 +22,7 @@ pit stops. Seats and the coach only read it.
 import math
 import statistics
 
-from gaps import TrackClock
+from race.gaps import TrackClock
 
 STRETCHES = 8  # a lap of road trend = the median of 8 stretches
 SURE_LAPS = 2  # two laps of trend: the direction was right ~80% on his tapes

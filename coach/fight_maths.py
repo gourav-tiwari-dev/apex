@@ -4,7 +4,7 @@ that the coach states and may override with a reason."""
 
 import math
 
-from race_model import CATCH_UPPER
+from race.race_model import CATCH_UPPER
 from radio.words import lap_text
 
 

@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from race_model import RaceModel, ME
+from race.race_model import RaceModel, ME
 from test_seats import race
 from test_racecraft import rival
 

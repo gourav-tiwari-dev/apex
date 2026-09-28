@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tapes import snapshots, RACE_TAPES
-from race_model import RaceModel, BATTLE_S
+from race.race_model import RaceModel, BATTLE_S
 
 SAMPLE_S = 10.0
 PASS_HOLD_S = 10.0  # a pass counts when the new order holds this long

@@ -94,7 +94,7 @@ def d4_passes():
 def d5_laps_to_go():
     """With the race model fed, as live: the leader's rolling lap is the pace (26 Sep)."""
     from race_state import laps_to_go
-    from race_model import RaceModel
+    from race.race_model import RaceModel
 
     checked, right = 0, 0
     # mid-lap too (26 Sep): the 24 Sep tape counted a lap too many between the lines, where the
@@ -143,7 +143,7 @@ def d5_laps_to_go():
 
 
 def d8_cost():
-    from race_model import RaceModel
+    from race.race_model import RaceModel
 
     tape = RACE_TAPES[1]
     length = max(

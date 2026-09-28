@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 from seats.track_awareness import TrackAwareness
-from gaps import TrackClock
+from race.gaps import TrackClock
 from test_racecraft import rival, CORNERS
 from test_seats import moment, race, kinds
 
