@@ -1,5 +1,3 @@
-from game.constants import RACE_SESSIONS
-
 """TEAM MEMORY: what Apex knows about how Gourav drives, across every drive.
 
 His rules (notion_apex.md section 8.1, and "don't make stuff up on ur own"):
@@ -11,6 +9,8 @@ His rules (notion_apex.md section 8.1, and "don't make stuff up on ur own"):
 Everything here is rebuilt from the database by build_profile(). Like corner_stats, it is a
 cache: safe to delete, and the next build puts it back.
 """
+
+from game.constants import RACE_SESSIONS
 
 HABIT_MIN = 3
 HABIT_MIN_DRIVES = 2

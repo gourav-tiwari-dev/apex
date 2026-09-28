@@ -1,11 +1,11 @@
-import re
-
 """How the radio words things: lap times ("3:59.4"), gaps ("6 tenths"), Max's lines in turn,
 and racing shorthand a voice can say ("P4" -> "P four", speakable).
 
 One place, so the seats, the answers, the coach's tools and the phrase bank can never write the
 same number two ways. Until 27 Sep 2026 the lap time was typed out in five files, the gap in two,
 and the turn-taking of Max's lines in three."""
+
+import re
 
 
 def lap_time_parts(seconds):

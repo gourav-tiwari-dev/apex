@@ -1,5 +1,3 @@
-from radio.words import Rotation
-
 """Max's voice for code's own lines, with no model in the loop.
 
 v3 (24 Sep 2026): the audit of that night's race found 27 of 38 kinds of line went through
@@ -10,6 +8,8 @@ voice is added from the pools below. Rotating, never random, so a replay says th
 Each closer is (with swearing, clean). An empty closer means "just the facts": short lines
 are part of the voice, and not every line needs a flourish.
 """
+
+from radio.words import Rotation
 
 CLOSERS = {
     "CATCHING": [
