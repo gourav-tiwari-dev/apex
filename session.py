@@ -12,8 +12,8 @@ Every frame goes through the same steps, in this order (Session.run):
     -> hear him -> take the coach's answers -> the governor puts one call on air
     -> write the tape (live) -> has the session ended?"""
 
-from sharedmemory import MMapControl
-from lmu_data import LMUObjectOut, LMUConstants
+from game.sharedmemory import MMapControl
+from game.lmu_data import LMUObjectOut, LMUConstants
 from datetime import datetime
 from memory import (
     connect_db,

@@ -1,4 +1,4 @@
-from lmu_data import LMUObjectOut
+from game.lmu_data import LMUObjectOut
 from race_state import read_race_snapshot, read_near_cars
 from game.tape import ReplaySource, Recorder, TAPE_PATH
 

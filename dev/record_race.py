@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
 
-from sharedmemory import MMapControl
-from lmu_data import LMUObjectOut, LMUConstants
+from game.sharedmemory import MMapControl
+from game.lmu_data import LMUObjectOut, LMUConstants
 from game.tape import Recorder
 from game.live_source import LiveSource
 from game.constants import SESSION_OVER

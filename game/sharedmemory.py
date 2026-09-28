@@ -15,8 +15,8 @@ try:
     from . import lmu_data
     from .lmu_data import LMUConstants
 except ImportError:  # standalone, not package
-    import lmu_data
-    from lmu_data import LMUConstants
+    from game import lmu_data
+    from game.lmu_data import LMUConstants
 
 PLATFORM = platform.system()
 MAX_VEHICLES = LMUConstants.MAX_MAPPED_VEHICLES
