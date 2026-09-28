@@ -10,7 +10,7 @@ from coach.answer_checks import check_answer, numbers_seen
 from coach.fight_maths import pace_words, trend_words
 from talk.hearing import needs_agent
 from words import lap_text
-from radio import Governor
+from radio.governor import Governor
 from coach.llm import Budget
 from seats.performance import PerformanceEngineer
 from seats.race_engineer import RaceEngineer

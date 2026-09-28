@@ -14,7 +14,7 @@ The chaos starts at lights out, and again at a restart (full-course yellow back 
 When it settles, the engineer says ONE summary line, in code's own words.
 """
 
-from radio import Call, ENGINEER
+from radio.calls import Call, ENGINEER
 from race_state import same_class_neighbours, said_place, class_place
 from seats.spotter import sides_taken
 from game.constants import GREEN_FLAG, RACE_SESSIONS, SAFETY_CAR, SECTOR_YELLOW

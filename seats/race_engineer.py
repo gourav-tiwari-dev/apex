@@ -7,7 +7,7 @@ yellow) come from the voice bank; the rest is phrased by the persona on the next
 
 import math
 
-from radio import Call, RACE_CONTROL, ENGINEER
+from radio.calls import Call, RACE_CONTROL, ENGINEER
 from race_state import (
     identity,
     same_class_neighbours,

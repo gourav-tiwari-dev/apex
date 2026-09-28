@@ -6,7 +6,8 @@ from dataclasses import replace
 
 from talk.answers import Answers
 from talk.hearing import intent_of, laps_asked
-from radio import Call, Governor, SPOTTER, PERFORMANCE
+from radio.governor import Governor
+from radio.calls import Call, SPOTTER, PERFORMANCE
 from coach.llm import Budget
 from seats.performance import PerformanceEngineer
 from seats.race_engineer import RaceEngineer

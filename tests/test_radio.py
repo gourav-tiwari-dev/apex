@@ -1,4 +1,5 @@
-from radio import Call, Governor, SPOTTER, RACECRAFT, PERFORMANCE
+from radio.governor import Governor
+from radio.calls import Call, SPOTTER, RACECRAFT, PERFORMANCE
 from coach.llm import Budget
 from voice import RadioDesk
 

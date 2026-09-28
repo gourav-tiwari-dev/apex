@@ -2,7 +2,8 @@
 
 from dataclasses import replace
 
-from radio import Call, Governor, ENGINEER, PERFORMANCE, SPOTTER
+from radio.governor import Governor
+from radio.calls import Call, ENGINEER, PERFORMANCE, SPOTTER
 from seats.settle import RaceSettle
 from test_seats import moment, race, near, behind_car
 
@@ -177,7 +178,8 @@ def test_no_seat_line_names_a_driver():
 
 def test_praise_and_stick_it_go_out_in_the_start_chaos():
     # his call, 25 Sep: a 3-car pass on the straight at the start got no praise
-    from radio import Governor, Call, RACECRAFT
+    from radio.governor import Governor
+    from radio.calls import Call, RACECRAFT
 
     governor = Governor()
     governor.settled = False

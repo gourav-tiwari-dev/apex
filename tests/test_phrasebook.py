@@ -6,7 +6,7 @@ import numpy as np
 import phrasebook
 from phrasebook import Phrasebook, save_piece, sentences, trimmed, read_wav, to_wav
 from voice import Voice, RadioDesk
-from radio import Call, SPOTTER
+from radio.calls import Call, SPOTTER
 from coach.llm import Budget
 from test_radio import FakeVoice, FakePersona
 

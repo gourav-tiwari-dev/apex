@@ -6,7 +6,7 @@ one lane over is "alongside". Calls are urgent and come from the voice bank, so 
 start in 0.01 ms.
 """
 
-from radio import Call, SPOTTER
+from radio.calls import Call, SPOTTER
 from game.constants import GREEN_FLAG
 
 CAR_LENGTH_M = 4.7  # a GT3 is about 4.6-4.7 m long

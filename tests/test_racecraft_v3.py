@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from gaps import TrackClock, Trail
 from driving.detectors import Event
-from radio import Governor
+from radio.governor import Governor
 from seats.performance import PerformanceEngineer
 from seats.racecraft import Racecraft
 from test_racecraft import step, rival, CORNERS

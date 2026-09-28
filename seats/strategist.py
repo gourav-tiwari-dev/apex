@@ -7,7 +7,7 @@ so the first call waits until two full laps are done.
 
 import statistics
 
-from radio import Call, STRATEGY, ENGINEER
+from radio.calls import Call, STRATEGY, ENGINEER
 from race_state import laps_to_go, leader_margin
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 from game.constants import WHEEL_NAMES

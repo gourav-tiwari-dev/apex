@@ -24,7 +24,7 @@ import statistics
 from track_map import corner_at
 
 from gaps import TrackClock
-from radio import Call, SPOTTER, RACECRAFT
+from radio.calls import Call, SPOTTER, RACECRAFT
 from words import tenths_words
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 

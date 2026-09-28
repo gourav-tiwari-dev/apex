@@ -3,7 +3,7 @@
 from talk.answers import Answers
 from talk.hearing import intent_of, needs_agent
 from session import due_reminders
-from radio import Governor
+from radio.governor import Governor
 from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
 from seats.performance import PerformanceEngineer

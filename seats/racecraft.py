@@ -25,7 +25,7 @@ defend only where it can get you, one move, and a fight slows both cars down.
 
 import statistics
 
-from radio import Call, RACECRAFT, ENGINEER, SPOTTER
+from radio.calls import Call, RACECRAFT, ENGINEER, SPOTTER
 from seats.spotter import (
     side_and_overlap,
     sides_taken,

@@ -18,7 +18,7 @@ from session import run_session
 from game.tape import TAPE_PATH
 from team_memory import build_profile, facts as memory_facts
 from memory import save_radio
-from radio import Call, MEMORY
+from radio.calls import Call, MEMORY
 from seats.setup_engineer import advice_for
 from datetime import datetime
 from voice import Voice

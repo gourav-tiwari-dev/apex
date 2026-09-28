@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from persona import gate, Persona
-from radio import Call, PERFORMANCE
+from radio.calls import Call, PERFORMANCE
 
 
 def call(kind="OFF_TRACK", facts=None):

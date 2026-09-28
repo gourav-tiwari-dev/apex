@@ -5,7 +5,7 @@ from dataclasses import replace
 from persona import gate
 import memory
 from race_state import identity, laps_to_go
-from radio import Call, PERFORMANCE
+from radio.calls import Call, PERFORMANCE
 from seats.performance import PerformanceEngineer, SPOKEN_KINDS
 from seats.race_engineer import RaceEngineer
 from seats.spotter import Spotter

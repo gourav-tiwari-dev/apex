@@ -8,7 +8,7 @@ No traffic or clean-air calls: in LMU qualifying he is alone on track (his fact,
 other drivers are only on the timing sheet, so a "car ahead" there is a ghost.
 """
 
-from radio import Call, ENGINEER
+from radio.calls import Call, ENGINEER
 from game.constants import GREEN_FLAG, QUALIFYING_SESSIONS, SESSION_OVER
 from words import lap_text
 

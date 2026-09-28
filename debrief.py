@@ -2,7 +2,7 @@ import json, time, sys
 from memory import build_evidence_pack, connect_db, make_contract, save_contract
 from memory import latest_session_id, load_latest_contract, evaluate_contract, track_of
 from memory import reference_from_race, reference_from_self, save_radio
-from radio import Call, MEMORY
+from radio.calls import Call, MEMORY
 from seats.setup_engineer import advice_for
 from tts import speak
 from coach.llm import DEBRIEF_MODEL, open_client

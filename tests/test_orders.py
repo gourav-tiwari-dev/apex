@@ -3,7 +3,8 @@
 import sqlite3
 
 from orders import StandingOrders, current_plan
-from radio import Call, Governor, STRATEGY, MEMORY
+from radio.governor import Governor
+from radio.calls import Call, STRATEGY, MEMORY
 from coach.agent import RaceAgent
 from coach.answer_checks import split_orders
 from coach.llm import Budget

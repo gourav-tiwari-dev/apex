@@ -7,7 +7,7 @@
 It only ever repeats a team-memory fact, and every fact already carries its evidence.
 """
 
-from radio import Call, MEMORY
+from radio.calls import Call, MEMORY
 from game.constants import FORMATION_LAP
 
 REMIND_BEFORE_M = 400.0
