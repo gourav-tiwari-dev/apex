@@ -4,7 +4,7 @@ There is no microphone on a replay, so orders and questions are tested on a real
 them into a script. ScriptedTalk hands them to the race loop exactly as push-to-talk hands over
 what it heard."""
 
-import ptt as push_to_talk
+from talk import ptt as push_to_talk
 
 
 class ScriptedTalk:

@@ -34,7 +34,7 @@ import time
 from queue import Queue, Empty
 
 from radio.calls import Call, RACE_CONTROL
-from orders import current_plan
+from talk.orders import current_plan
 from coach.llm import LIVE_MODEL, open_client
 from coach.prompt import (
     AGENT_PROMPT,

@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from orders import StandingOrders, current_plan
+from talk.orders import StandingOrders, current_plan
 from radio.governor import Governor
 from radio.calls import Call, STRATEGY, MEMORY
 from coach.agent import RaceAgent

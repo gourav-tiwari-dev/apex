@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
 import session
 import memory
-from orders import COACHING_KINDS
+from talk.orders import COACHING_KINDS
 from tapes import RACE_TAPES
 
 LEAD = 5.0  # seconds between his order and the call it should stop

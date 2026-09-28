@@ -11,7 +11,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ptt import load_button, Controller
+from talk.ptt import load_button, Controller
 
 numbers = [a for a in sys.argv[1:] if not a.startswith("--")]
 seconds = float(numbers[0]) if numbers else 60.0

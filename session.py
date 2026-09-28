@@ -38,7 +38,7 @@ from coach.llm import Budget
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer
-from orders import StandingOrders
+from talk.orders import StandingOrders
 from persona import Persona
 from radio.voice import Voice
 from radio.desk import RadioDesk
@@ -54,7 +54,7 @@ from talk.hearing import needs_agent, intent_of, fix_mishearing, garbled, is_mar
 from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from race_model import RaceModel
-import ptt as push_to_talk
+from talk import ptt as push_to_talk
 from team_memory import facts as memory_facts
 from driving.track_map import (
     CornerMap,

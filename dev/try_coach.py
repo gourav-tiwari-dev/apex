@@ -46,7 +46,7 @@ from dataclasses import replace
 import session
 import memory
 from race_state import identity, same_class_neighbours
-import ptt as push_to_talk
+from talk import ptt as push_to_talk
 from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from talk.answers import Answers

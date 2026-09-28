@@ -156,7 +156,7 @@ def test_say_again_on_his_own_logged_words():
 def test_a_new_push_to_talk_opens_the_controller_already_plugged_in():
     # live 25 Sep: SDL announces a controller once per run, so from the second session on the pad
     # was never opened and push-to-talk was deaf for the whole race
-    import ptt
+    from talk import ptt
 
     class Pad:
         def __init__(self, index):
