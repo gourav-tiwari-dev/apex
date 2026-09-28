@@ -1,6 +1,6 @@
 """Push-to-talk answers (M9, option A): the question is matched in code and answered from the
 live race, with no model in the loop. The button and the mic are hardware and are tested by
-hand with  python ptt.py --test."""
+hand with  python -m talk.ptt --test."""
 
 from dataclasses import replace
 

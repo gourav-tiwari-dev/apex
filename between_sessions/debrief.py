@@ -248,7 +248,7 @@ def run_debrief(session_id=None):
 
     conn = connect_db("apex.db")
 
-    # Grade the latest session unless one is named, for example: python debrief.py 11
+    # Grade the latest session unless one is named, for example: python -m between_sessions.debrief 11
     if session_id is None:
         session_id = latest_session_id(conn)
     print(f"session {session_id}")

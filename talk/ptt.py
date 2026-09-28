@@ -1,7 +1,7 @@
 """Push-to-talk (M9): hold R1, ask, let go. Apex answers on the radio.
 
-    python ptt.py --learn     press R1 once: Apex remembers which button it is
-    python ptt.py --test      hold R1 and talk: prints what it heard, how fast, and the intent
+    python -m talk.ptt --learn     press R1 once: Apex remembers which button it is
+    python -m talk.ptt --test      hold R1 and talk: prints what it heard, how fast, and the intent
 
 Measured 24 Sep 2026 on the RTX 5060: speech-to-text with Whisper base.en takes 53 ms on the
 GPU (357 ms on the CPU) for a 3.5 s question. NOT measured yet: the same with LMU running.
@@ -302,7 +302,7 @@ def start_if_set_up(verbose=False):
     button = load_button()
     if button is None:
         print(
-            "[push-to-talk off: run  python ptt.py --learn  once, with the controller plugged in]"
+            "[push-to-talk off: run  python -m talk.ptt --learn  once, with the controller plugged in]"
         )
         return None
     try:

@@ -3,6 +3,9 @@
 An AI race engineer for Le Mans Ultimate. A full team on the radio while you race, and one
 memory of how you drive.
 
+Reading the code? Start with [ARCHITECTURE.md](ARCHITECTURE.md) (the map and a reading
+order) and [GLOSSARY.md](GLOSSARY.md) (every word, one meaning).
+
 ## v2: the team
 
 | Seat | What it does during a race |
@@ -21,29 +24,32 @@ The voice is modelled on Max Verstappen's radio style with his engineer's precis
 ## How it decides what to say
 
 ```
-game (shared memory) -> race state -> 7 seats raise calls -> radio governor -> voice
+game (shared memory) -> race model -> 8 seats raise calls -> radio governor -> voice
                                            ^                     |
                                       team memory          urgent: pre-recorded clip
-                                                           the rest: LLM phrases it,
-                                                           a gate checks it, then TTS
+                                                           the rest: the seat's own words
+                                                           plus a Max closer, from the
+                                                           phrase bank or rendered live
 ```
 
-- **Code decides what is said, the model only decides how it sounds.** Each call carries the
-  message and the facts it rests on.
-- **The gate** refuses any line with a number that isn't in the facts (digits or words), banned
-  hedging words, labels, questions, or a guessed gender for another driver. A refused line falls
-  back to code's own words, or silence.
+- **Code decides what is said, and how.** Each call carries the message and the facts it rests
+  on; since 24 Sep no model rewords the seats' lines (it cost about 1.8 s a line). Only the
+  coach, for push-to-talk questions, uses a model.
+- **The coach's gate** refuses an answer with a number that is not in the data or his question,
+  a speed, hedging, or a guessed gender for another driver: one rewrite, then an honest
+  "no clean answer".
 - **The governor** runs on game time only: urgent calls go at once, everything else waits for a
   straight, one line at a time. A replay at any speed makes the same decisions (tested).
 - **Team memory** keeps only facts with evidence: every fact links to the events it came from,
   and a habit needs 3+ occurrences across 2+ separate drives.
-- **Budget:** LLM calls are capped at Rs 5 a race; past it, template lines only.
+- **Cost:** every model call is counted and logged per session; push-to-talk is never refused
+  (his call, 25 Sep).
 
 ## Run it
 
 ```
 pip install openai python-dotenv edge-tts pygame pytest
-python build_voice_bank.py       # once: renders the urgent lines
+python dev/build_voice_bank.py   # once: renders the urgent lines
 ```
 
 Put your API key in `.env` as `AICREDITS_API_KEY=...`.
@@ -52,11 +58,12 @@ Put your API key in `.env` as `AICREDITS_API_KEY=...`.
 python apex.py                   # a race night: brief, every session you drive, debrief after the race
 python apex.py --clean           # the same, no swearing (for recordings)
 python apex.py --replay          # replay the test tape
-python record_race.py            # record a session to a tape, nothing else (no voice, no LLM)
-python audit_tape.py TAPE        # which game fields were actually live on a tape
-python done_check.py             # is v2 done? checks the latest race
-python team_memory.py            # rebuild and print what the team remembers
+python dev/record_race.py        # record a session to a tape, nothing else (no voice, no LLM)
+python dev/audit_tape.py TAPE    # which game fields were actually live on a tape
+python dev/done_check.py         # is v2 done? checks the latest race
+python -m memory.team_memory     # rebuild and print what the team remembers
 python -m pytest                 # the test suite, no LLM calls, no sound
+python tools/behaviour_lock.py   # replays his race tapes: did a change change anything Apex does?
 ```
 
 ### Push-to-talk
@@ -64,19 +71,19 @@ python -m pytest                 # the test suite, no LLM calls, no sound
 Hold R1, ask, let go. Apex matches the question to a fixed list and answers from the live
 race in code, no model in the loop: gap ahead / behind, lap time to catch the car ahead,
 fuel, laps left, where you are losing time, position, lap times, "quiet for N laps" (urgent
-calls and the spotter stay on) and "radio back on". Speech-to-text is Whisper base.en on the
-GPU: 51-179 ms per question, measured.
+calls and the spotter stay on) and "radio back on". Speech-to-text is Whisper small.en on the
+GPU.
 
 ```
 pip install faster-whisper sounddevice
-python ptt.py --learn            # once, controller plugged in: press R1
-python ptt.py --test             # hold R1 and talk: what it heard, how fast, which question
+python -m talk.ptt --learn       # once, controller plugged in: press R1
+python -m talk.ptt --test        # hold R1 and talk: what it heard, how fast, which question
 ```
 
-Anything longer or off the list goes to the **race agent** (`agent.py`): "Copy. Stand by.",
-then a model with six read-only tools (race picture, any driver, his habits, a corner, the car,
-the corners ahead) looks at a still picture of the race taken the moment he asked, makes one
-call and gives the reason. Measured at lap 4 of a real race: 2.1-3.4 s and Rs 0.14-0.26 a
+Anything longer or off the list goes to the **coach** (`coach/agent.py`): "Copy. Stand by.",
+then a model with 16 tools (the race picture, any driver, his habits, a corner, the car, the
+standings, his laps, the database...) looks at a still picture of the race taken the moment he
+asked, makes one call and gives the reason. Measured at lap 4 of a real race: 2.1-3.4 s and Rs 0.14-0.26 a
 question, thinking off. Its answers pass their own gate: numbers only from the data or his
 question, no speeds, no he/she for other drivers, one rewrite, then an honest "no clean answer".
 Asked "he's 2 seconds faster, defend or let him go?", it checked the data first: "1 second a

@@ -8,6 +8,9 @@ graphify-out/
 test_toy.py
 !README.md
 !DECISIONS.md
+# the way into the code (refactor, 27-28 Sep): public like the README
+!ARCHITECTURE.md
+!GLOSSARY.md
 # the database is a local cache of the tapes, and a tracked binary conflicts on every merge
 apex.db
 # race tapes with opponents are tens of MB; the tapes already in git stay tracked
