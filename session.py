@@ -32,7 +32,8 @@ from memory import (
     save_opponent_corners,
     save_pass_attempts,
 )
-from radio import Governor, Budget, Call, RACE_CONTROL
+from radio import Governor, Call, RACE_CONTROL
+from coach.llm import Budget
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer

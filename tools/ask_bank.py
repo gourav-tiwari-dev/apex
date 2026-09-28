@@ -24,7 +24,7 @@ from question_bank import QUESTIONS
 from dev.try_coach import frozen_race, DEFAULT_TAPE
 from coach.agent import RaceAgent
 from talk.answers import Answers
-from radio import Budget
+from coach.llm import Budget
 
 GAVE_UP = (
     "No clean answer",

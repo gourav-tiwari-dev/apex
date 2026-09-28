@@ -6,7 +6,7 @@ from orders import StandingOrders, current_plan
 from radio import Call, Governor, STRATEGY, MEMORY
 from coach.agent import RaceAgent
 from coach.answer_checks import split_orders
-from radio import Budget
+from coach.llm import Budget
 from test_agent import ScriptedModel, Message, snapshot_at_lap_4
 
 

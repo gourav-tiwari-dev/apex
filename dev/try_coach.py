@@ -52,7 +52,7 @@ from coach.snapshot import Snapshot
 from talk.answers import Answers
 from talk.hearing import needs_agent
 from dev.lmu_import import NoVoice
-from radio import Budget
+from coach.llm import Budget
 from team_memory import facts as memory_facts
 from voice import Voice
 

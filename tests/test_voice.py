@@ -24,7 +24,8 @@ def test_each_kind_of_call_gets_its_mood():
 
 
 def test_the_radio_desk_asks_for_the_mood_of_the_call():
-    from radio import Budget, Call, PERFORMANCE
+    from radio import Call, PERFORMANCE
+    from coach.llm import Budget
     from test_radio import FakeVoice, FakePersona
 
     desk_voice = FakeVoice()

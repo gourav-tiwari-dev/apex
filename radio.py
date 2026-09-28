@@ -264,29 +264,3 @@ class Governor:
 
     def decision_hash(self):
         return hashlib.sha256(json.dumps(self.admitted).encode()).hexdigest()
-
-
-class Budget:
-    """What the LLM has cost this session. Past the cap, Apex speaks template lines only."""
-
-    # GUESSED prices: derived from the 23 Sep balance drop (Rs 0.62 for 3884 tokens in and
-    # 3496 out), assuming output costs 4x input as on aicredits' V3 price list.
-    RS_PER_MILLION_IN = 35.0
-    RS_PER_MILLION_OUT = 139.0
-
-    def __init__(self, cap_rs=5.0):
-        self.cap_rs = cap_rs
-        self.spent_rs = 0.0
-
-    def cost_of(self, tokens_in, tokens_out):
-        return (
-            tokens_in * self.RS_PER_MILLION_IN + tokens_out * self.RS_PER_MILLION_OUT
-        ) / 1_000_000
-
-    def charge(self, tokens_in, tokens_out):
-        cost = self.cost_of(tokens_in, tokens_out)
-        self.spent_rs += cost
-        return cost
-
-    def allows_llm(self):
-        return self.spent_rs < self.cap_rs
