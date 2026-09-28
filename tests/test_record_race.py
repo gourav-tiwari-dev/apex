@@ -76,7 +76,7 @@ def test_a_session_already_over_at_startup_does_not_end_straight_away(
     import gzip, json
     from dataclasses import asdict
     import session, memory
-    from race_state import read_race_snapshot
+    from game.race_snapshot import read_race_snapshot
     from test_race_state import fake_game, first_frames
     from test_determinism import FakePersona
 

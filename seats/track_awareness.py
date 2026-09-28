@@ -470,7 +470,7 @@ class TrackAwareness:
         car directly ahead of him, so cars joining or leaving the front of a train do not make
         it "new" (the first version keyed on every car in it and called it 57 times)."""
         me = race.me
-        from race_state import same_lap
+        from race.facts import same_lap
 
         rivals = [
             car

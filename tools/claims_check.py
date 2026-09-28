@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES, snapshots
-from race_state import class_place
+from race.facts import class_place
 
 PLACE_WITHIN_S = 2.0
 FLIP_FLOP_S = 60.0

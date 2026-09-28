@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from game.car_frame import CarState
-from race_state import Session, Me, Opponent, RaceSnapshot, NearCar, NearCars
+from game.race_snapshot import Session, Me, Opponent, RaceSnapshot, NearCar, NearCars
 from seats import Moment
 from seats.spotter import Spotter
 from seats.race_engineer import RaceEngineer

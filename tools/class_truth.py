@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(HERE, "tools"))
 os.chdir(HERE)
 from replay_orders import replay
 from tapes import RACE_TAPES
-from race_state import race_snapshot_from_dict
+from game.race_snapshot import race_snapshot_from_dict
 from seats.track_awareness import class_rank
 
 WARNED_WITHIN_S = 15.0

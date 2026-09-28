@@ -19,7 +19,7 @@ import statistics
 from game.constants import BLUE_FLAG, QUALIFYING_SESSIONS, RACE_SESSIONS, SECTOR_YELLOW
 from radio.words import lap_text
 from game.constants import WHEEL_NAMES
-from race_state import NO_TYRE_READING_C, tyre_averages
+from game.race_snapshot import NO_TYRE_READING_C, tyre_averages
 
 PHASES = {
     0: "before the session",

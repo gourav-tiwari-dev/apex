@@ -10,7 +10,8 @@ Which question he asked is talk/hearing.py; this module answers it.
 """
 
 from radio.calls import Call, RACE_CONTROL
-from race_state import same_class_neighbours, laps_to_go, multiclass, tyre_averages
+from game.race_snapshot import tyre_averages
+from race.facts import same_class_neighbours, laps_to_go, multiclass
 from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW, WHEEL_NAMES
 from seats.strategist import HOT_TYRE_C
 from radio.words import Rotation, lap_text

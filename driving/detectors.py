@@ -10,7 +10,7 @@ cooldown has passed. Every detector names the corner from the CornerMap it is gi
 import math
 from dataclasses import dataclass
 
-from race_state import identity
+from game.race_snapshot import identity
 from driving.track_map import CornerMap
 
 

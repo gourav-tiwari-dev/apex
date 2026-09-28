@@ -217,7 +217,7 @@ def trend_words(side, shrink):
 
 
 def road_words(me, opponent):
-    from race_state import same_lap
+    from race.facts import same_lap
 
     if not same_lap(me, opponent):
         return "on a different lap"

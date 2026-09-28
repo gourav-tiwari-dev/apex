@@ -34,7 +34,8 @@ from seats.spotter import (
     LANE_MAX_M,
 )
 from radio.words import Rotation, tenths_words
-from race_state import same_lap, identity, same_class_neighbours, said_place
+from game.race_snapshot import identity
+from race.facts import same_lap, same_class_neighbours, said_place
 from race.gaps import TrackClock, ON_YOU_S
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 

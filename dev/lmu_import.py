@@ -46,7 +46,7 @@ import duckdb
 
 from game.car_frame import CarState
 from driving.detectors import FRONT_RADIUS, REAR_RADIUS
-from race_state import Session, Me, RaceSnapshot
+from game.race_snapshot import Session, Me, RaceSnapshot
 
 LMU_TELEMETRY = (
     r"C:\Program Files (x86)\Steam\steamapps\common\Le Mans Ultimate\UserData\Telemetry"

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 from driving.detectors import RearSnapDetector
 from driving.corner_stats import CornerStat
-from race_state import Opponent
+from game.race_snapshot import Opponent
 from seats.performance import PerformanceEngineer, OpponentCorners, what_to_change
 from test_seats import frame, moment, race, kinds
 

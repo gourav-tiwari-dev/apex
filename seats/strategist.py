@@ -8,10 +8,10 @@ so the first call waits until two full laps are done.
 import statistics
 
 from radio.calls import Call, STRATEGY, ENGINEER
-from race_state import laps_to_go, leader_margin
+from race.facts import laps_to_go, leader_margin
 from game.constants import GREEN_FLAG, RACE_SESSIONS
 from game.constants import WHEEL_NAMES
-from race_state import NO_TYRE_READING_C
+from game.race_snapshot import NO_TYRE_READING_C
 
 FIRST_CALL_AFTER_LAPS = 2  # need two measured laps before saying anything about fuel
 RECHECK_EVERY_LAPS = 3

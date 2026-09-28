@@ -241,7 +241,7 @@ def test_after_a_save_call_fine_means_the_saving_is_working_not_push():
 
 def test_laps_to_go_uses_the_session_lap_not_the_farthest_car():
     # live 25 Sep, lap 1 at Le Mans: the farthest car was 1.9 km in, so the lap looked 1.9 km long
-    from race_state import laps_to_go
+    from race.facts import laps_to_go
 
     leader = replace(
         rival(5, 3.0), place=1, laps=0, lap_dist=1880.0, last_lap=236.0, best_lap=236.0
@@ -259,7 +259,7 @@ def test_laps_to_go_uses_the_session_lap_not_the_farthest_car():
 
 def test_laps_to_go_after_the_leader_takes_the_flag():
     # live 25 Sep, his last lap: the leader had finished and Apex still counted one more lap
-    from race_state import laps_to_go
+    from race.facts import laps_to_go
 
     leader = replace(
         rival(5, 3.0),
@@ -284,7 +284,7 @@ def test_laps_to_go_without_the_session_lap_uses_the_longest_lap_seen():
     # and at 1320 s the farthest car was the leader himself, 1.1 km from the line: "100% of the lap
     # done", 15 s on the clock became one more lap, the 5-lap race looked 6, and the fuel said
     # "0.8 laps spare" against 1.81 at the flag
-    from race_state import laps_to_go, leader_margin
+    from race.facts import laps_to_go, leader_margin
     from race.race_model import RaceModel
 
     leader = replace(
@@ -325,7 +325,7 @@ def test_the_leader_is_timed_to_the_line_on_its_own_last_lap():
     # live 27 Sep, 12 s on the clock, the leader 684 m from the line: by distance it was over in 12 s,
     # one more lap; on the road the Ford chicanes took 25 s, the clock ran out first, and that lap was
     # the last. "Laps to go" had been a lap out for minutes, and "Energy's tight" with it
-    from race_state import laps_to_go, leader_margin
+    from race.facts import laps_to_go, leader_margin
     from race.race_model import RaceModel
     from race.gaps import Trail
 

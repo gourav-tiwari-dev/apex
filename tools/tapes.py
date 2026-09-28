@@ -7,7 +7,7 @@ import sys
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from race_state import race_snapshot_from_dict
+from game.race_snapshot import race_snapshot_from_dict
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # the tapes of whole races (24 Sep 201632 is the start of 202800's race)

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import memory
 from driving.detectors import Event
-from race_state import Opponent
+from game.race_snapshot import Opponent
 from seats.performance import PerformanceEngineer, CornerPass
 from seats.racecraft import Racecraft
 from memory.team_memory import build_profile, facts

@@ -21,7 +21,8 @@ from coach.fight_maths import (
     team_call,
     trend_words,
 )
-from race_state import identity, laps_to_go, same_class_neighbours, tyre_averages
+from game.race_snapshot import identity, tyre_averages
+from race.facts import laps_to_go, same_class_neighbours
 from seats.strategist import HOT_TYRE_C, fine_margin
 from radio.words import lap_text
 
@@ -581,7 +582,7 @@ class Snapshot:
         if name == "race_events":
             events = race_tools.race_events(self.db_path, self.session_id)
             # the other car in a contact, as its place now (never a name): "who hit me?"
-            from race_state import identity
+            from game.race_snapshot import identity
 
             places = {identity(o): f"P{o.place}" for o in self.race.opponents}
             for contact in events.get("contacts", []):

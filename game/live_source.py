@@ -8,7 +8,7 @@ import math
 import time
 
 from game.car_frame import CarState
-from race_state import read_race_snapshot, read_near_cars
+from game.race_snapshot import read_race_snapshot, read_near_cars
 
 
 class LiveSource:

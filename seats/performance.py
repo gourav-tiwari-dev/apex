@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from radio.calls import Call, ENGINEER, PERFORMANCE, MEMORY
 from driving.track_map import corner_at
-from race_state import identity
+from game.race_snapshot import identity
 from seats.spotter import CAR_LENGTH_M
 from driving.balance import BalanceMeter, FIX
 from game.constants import QUALIFYING_SESSIONS

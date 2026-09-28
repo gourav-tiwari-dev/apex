@@ -7,7 +7,7 @@ import memory
 from driving import track_map
 from game.tape import ReplaySource
 from driving.laps import LapCounter, LapDistance
-from race_state import read_race_snapshot
+from game.race_snapshot import read_race_snapshot
 from test_race_state import fake_game
 from driving.track_map import TrackMapLearner, MONZA_CORNERS, borrow_names, corner_at
 from test_determinism import FakePersona
@@ -54,9 +54,7 @@ def test_a_new_track_is_learned_while_driving_and_saved(tmp_path, monkeypatch):
 
     db_path = str(tmp_path / "test.db")
     monkeypatch.setattr(track_map, "MAPS_FOLDER", str(tmp_path / "maps"))
-    monkeypatch.setattr(
-        session, "connect_db", lambda: memory.connect_db(db_path)
-    )
+    monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db_path))
 
     session.run_session(True, None, tape, out_loud=False, persona=FakePersona())
 

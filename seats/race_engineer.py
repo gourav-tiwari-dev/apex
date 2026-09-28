@@ -8,13 +8,8 @@ yellow) come from the voice bank; the rest is phrased by the persona on the next
 import math
 
 from radio.calls import Call, RACE_CONTROL, ENGINEER
-from race_state import (
-    identity,
-    same_class_neighbours,
-    laps_to_go,
-    said_place,
-    class_place,
-)
+from game.race_snapshot import identity
+from race.facts import same_class_neighbours, laps_to_go, said_place, class_place
 from game.constants import (
     BLUE_FLAG,
     FORMATION_LAP,

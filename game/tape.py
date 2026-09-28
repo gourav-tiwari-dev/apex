@@ -13,7 +13,7 @@ from dataclasses import asdict
 from queue import Queue
 
 from game.car_frame import CarState
-from race_state import near_cars_from_dict, race_snapshot_from_dict
+from game.race_snapshot import near_cars_from_dict, race_snapshot_from_dict
 
 
 TAPE_PATH = "tape_60hz_clean.jsonl.gz"

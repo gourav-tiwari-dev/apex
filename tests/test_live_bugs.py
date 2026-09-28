@@ -4,7 +4,8 @@ from dataclasses import replace
 
 from persona import gate
 import memory
-from race_state import identity, laps_to_go
+from game.race_snapshot import identity
+from race.facts import laps_to_go
 from radio.calls import Call, PERFORMANCE
 from seats.performance import PerformanceEngineer, SPOKEN_KINDS
 from seats.race_engineer import RaceEngineer
@@ -487,7 +488,7 @@ def mixed_field():
 def test_L_in_a_multiclass_race_his_place_is_his_place_in_class():
     # replay of the 58-car race (27 Sep): "Settled. P54, up seven." and "P43." were overall places
     # among Hypercars and LMP2s; among the GT3s he races he was P18 and P7
-    from race_state import said_place, class_place, multiclass
+    from race.facts import said_place, class_place, multiclass
 
     mixed = race(1.0, {}, {"place": 5}, opponents=mixed_field())
     assert multiclass(mixed)
