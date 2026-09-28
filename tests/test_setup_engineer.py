@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import memory
 from driving.detectors import WheelspinDetector
-from seats.setup_engineer import advice_for
+from between_sessions.setup_engineer import advice_for
 from test_seats import frame
 from test_team_memory import add_session, add_event
 

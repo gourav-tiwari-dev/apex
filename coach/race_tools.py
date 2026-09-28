@@ -337,7 +337,7 @@ def setup_advice(db_path, session_id, race):
     }
     if not db_path or session_id is None:
         return {"settings_now": settings, "advice": "no race log available here"}
-    from seats.setup_engineer import advice_for
+    from between_sessions.setup_engineer import advice_for
 
     conn = read_only(db_path)
     try:

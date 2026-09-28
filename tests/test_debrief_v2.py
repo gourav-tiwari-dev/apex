@@ -1,4 +1,4 @@
-import debrief
+from between_sessions import debrief
 from seats.performance import CornerPass
 import memory
 from test_team_memory import add_session, add_event

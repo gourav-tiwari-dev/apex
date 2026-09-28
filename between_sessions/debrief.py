@@ -6,7 +6,7 @@ from memory.contracts import load_latest_contract, evaluate_contract
 from memory.db import save_radio
 from memory.contracts import reference_from_race, reference_from_self
 from radio.calls import Call, MEMORY
-from seats.setup_engineer import advice_for
+from between_sessions.setup_engineer import advice_for
 from radio.tts import speak
 from coach.llm import DEBRIEF_MODEL, open_client
 
