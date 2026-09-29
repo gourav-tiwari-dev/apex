@@ -61,51 +61,11 @@ def corner_report(conn, session_id=None):
     Sorted by brake-point spread: the least repeatable corner comes first."""
     rows = load_corner_rows(conn, session_id)
     incident_counts = load_incident_counts(conn, session_id)
-
-    # group the laps by corner: {"T1 Rettifilo": [(brake_onset, min_speed), ...], ...}
-    laps_by_corner = {}
-    for row in rows:
-        corner, lap_count, brake_onset, min_speed, slow_zone, coast = row
-        if corner not in laps_by_corner:
-            laps_by_corner[corner] = []
-        laps_by_corner[corner].append((brake_onset, min_speed, slow_zone, coast))
+    laps_by_corner = group_by_corner(rows)
 
     report = []
     for corner in laps_by_corner:
-        laps = laps_by_corner[corner]
-
-        # a lap with no braking (T3 is taken flat) has brake_onset None - leave it out
-        onsets = []
-        speeds = []
-        zones = []
-        coasts = []
-        for brake_onset, min_speed, slow_zone, coast in laps:
-            if slow_zone is not None:
-                zones.append(slow_zone)
-            if coast is not None:
-                coasts.append(coast)
-            if brake_onset is not None:
-                onsets.append(brake_onset)
-            if min_speed is not None:
-                speeds.append(min_speed)
-
-        incidents = 0
-        if corner in incident_counts:
-            incidents = incident_counts[corner]
-
-        report.append(
-            {
-                "corner": corner,
-                "laps": len(laps),
-                "onset_median": middle_value(onsets),
-                "onset_spread": spread(onsets),
-                "speed_median": middle_value(speeds),
-                "speed_spread": spread(speeds),
-                "incidents": incidents,
-                "zone_median": middle_value(zones),
-                "coast_median": middle_value(coasts),
-            }
-        )
+        report.append(corner_card(corner, laps_by_corner[corner], incident_counts))
 
     with_spread = []
     without_spread = []
@@ -117,6 +77,53 @@ def corner_report(conn, session_id=None):
     with_spread.sort(key=onset_spread_of, reverse=True)
 
     return with_spread + without_spread
+
+
+def group_by_corner(rows):
+    """The laps grouped by corner: {"T1 Rettifilo": [(brake_onset, min_speed, slow_zone,
+    coast), ...], ...}"""
+    laps_by_corner = {}
+    for row in rows:
+        corner, lap_count, brake_onset, min_speed, slow_zone, coast = row
+        if corner not in laps_by_corner:
+            laps_by_corner[corner] = []
+        laps_by_corner[corner].append((brake_onset, min_speed, slow_zone, coast))
+    return laps_by_corner
+
+
+def corner_card(corner, laps, incident_counts):
+    """One corner's row of the report card: the median and spread of his laps there, and
+    the incidents."""
+    # a lap with no braking (T3 is taken flat) has brake_onset None - leave it out
+    onsets = []
+    speeds = []
+    zones = []
+    coasts = []
+    for brake_onset, min_speed, slow_zone, coast in laps:
+        if slow_zone is not None:
+            zones.append(slow_zone)
+        if coast is not None:
+            coasts.append(coast)
+        if brake_onset is not None:
+            onsets.append(brake_onset)
+        if min_speed is not None:
+            speeds.append(min_speed)
+
+    incidents = 0
+    if corner in incident_counts:
+        incidents = incident_counts[corner]
+
+    return {
+        "corner": corner,
+        "laps": len(laps),
+        "onset_median": middle_value(onsets),
+        "onset_spread": spread(onsets),
+        "speed_median": middle_value(speeds),
+        "speed_spread": spread(speeds),
+        "incidents": incidents,
+        "zone_median": middle_value(zones),
+        "coast_median": middle_value(coasts),
+    }
 
 
 def format_number(value, width):

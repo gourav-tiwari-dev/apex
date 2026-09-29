@@ -174,11 +174,31 @@ def reference_from_race(conn, session_id, car_class=None, car_model=None):
     pool = rows
     if same_model:
         pool = same_model
+    corners, drivers = fastest_per_corner(speeds_by_driver(pool, car_class))
+    if not corners:
+        return None
+    return {
+        "source": "the fastest car in your class in this race: "
+        + ", ".join(sorted(drivers)),
+        "brake_point_note": "not measured on this track",
+        "corners": corners,
+    }
+
+
+def speeds_by_driver(rows, car_class):
+    """(corner, driver) -> every min speed that driver did there; only the cars of car_class,
+    when one is given."""
     speeds = {}
-    for driver, row_class, row_model, corner, speed in pool:
+    for driver, row_class, row_model, corner, speed in rows:
         if car_class is not None and row_class != car_class:
             continue
         speeds.setdefault((corner, driver), []).append(speed)
+    return speeds
+
+
+def fastest_per_corner(speeds):
+    """Each corner's reference: the highest median min speed there over REFERENCE_LAPS laps
+    or more. Returns (corner -> reference, every driver who set one along the way)."""
     corners = {}
     drivers = set()
     for (corner, driver), values in speeds.items():
@@ -193,14 +213,7 @@ def reference_from_race(conn, session_id, car_class=None, car_model=None):
                 "confidence": f"{driver}'s own telemetry, 5 Hz, good to 1-2 km/h",
             }
             drivers.add(driver)
-    if not corners:
-        return None
-    return {
-        "source": "the fastest car in your class in this race: "
-        + ", ".join(sorted(drivers)),
-        "brake_point_note": "not measured on this track",
-        "corners": corners,
-    }
+    return corners, drivers
 
 
 def reference_from_self(conn, track):

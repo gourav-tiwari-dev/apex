@@ -75,16 +75,29 @@ def units(kinds=None):
     """book -> every unit (one or more whole sentences) to pre-render. The spotter's is a set;
     the engineer's maps each unit to the mood Max says it in. The engineer units are rendered
     twice: in the standard voice and in Max's."""
-    from seats.racecraft import (
-        BRILLIANT,
-        SOLID,
-        MOVE_WORDS,
-        ALARM_MAX_GAP_S,
-        FIGHT_COST_S,
-    )
+    corners = corner_names()
+    by_kind = max_sentences(corners)
+    from radio.voice import mood_of
+
+    engineer = {}
+    for kind, texts in by_kind.items():
+        for text in texts:
+            engineer.setdefault(text, mood_of(kind))
+    if kinds is not None:
+        wanted = {}
+        for text, mood in engineer.items():
+            if any(text in by_kind.get(kind, ()) for kind in kinds):
+                wanted[text] = mood
+        engineer = wanted
+    return {"spotter": spotter_sentences(corners), "engineer": engineer}
+
+
+def spotter_sentences(corners):
+    """Every spotter sentence: the hazards ahead, a car closing fast behind, the faster
+    classes arriving."""
+    from seats.racecraft import ALARM_MAX_GAP_S
     from seats.track_awareness import FASTER_CLASS_ARRIVES_S
 
-    corners = corner_names()
     places = corners + [f"before {name}" for name in corners]
 
     spotter = {
@@ -108,11 +121,22 @@ def units(kinds=None):
         f"On you in about {n} seconds."
         for n in range(1, int(FASTER_CLASS_ARRIVES_S) + 1)
     }
+    return spotter
 
-    # Max's sentences, by the kind of call that says them: each is rendered in THAT call's
-    # mood (voice.mood_of), the mood a live render of the whole line would get, so a joined
-    # praise line does not switch from fired to dry halfway through
-    by_kind = {
+
+def max_sentences(corners):
+    """Max's sentences, by the kind of call that says them: each is rendered in THAT call's
+    mood (voice.mood_of), the mood a live render of the whole line would get, so a joined
+    praise line does not switch from fired to dry halfway through."""
+    from seats.racecraft import (
+        BRILLIANT,
+        SOLID,
+        MOVE_WORDS,
+        ALARM_MAX_GAP_S,
+        FIGHT_COST_S,
+    )
+
+    return {
         "PASS_PRAISE": {f"Next one, {gap}." for gap in gap_words(0.1, 9.9)}
         | {text for pair in BRILLIANT + SOLID for text in pair}
         | set(MOVE_WORDS.values()),
@@ -142,19 +166,6 @@ def units(kinds=None):
         | {f"Go at {name} this lap or settle in." for name in corners},
         "REPUTATION": reputation_sentences(),  # dry: said after a plan, a fact not a cheer
     }
-    from radio.voice import mood_of
-
-    engineer = {}
-    for kind, texts in by_kind.items():
-        for text in texts:
-            engineer.setdefault(text, mood_of(kind))
-    if kinds is not None:
-        engineer = {
-            text: mood
-            for text, mood in engineer.items()
-            if any(text in by_kind.get(kind, ()) for kind in kinds)
-        }
-    return {"spotter": spotter, "engineer": engineer}
 
 
 # ---- splitting and joining ----------------------------------------------------------------

@@ -13,11 +13,21 @@ from radio.calls import Call, RACE_CONTROL
 from game.race_snapshot import tyre_averages
 from race.facts import same_class_neighbours, laps_to_go, multiclass
 from game.constants import BLUE_FLAG, SAFETY_CAR, SECTOR_YELLOW, WHEEL_NAMES
-from seats.strategist import HOT_TYRE_C
+from seats.strategist import HOT_TYRE_C, fine_margin, fuel_words
 from radio.words import Rotation, lap_text
 from talk.hearing import intent_of, laps_asked
 
 ANSWER_TTL_S = 10.0
+LOW_TANK_SHARE = 0.1  # under this share of the tank (or of the energy): LOW
+# the questions with one answer, whatever the race
+FIXED_REPLIES = {
+    "RADIO_REQUEST": (
+        "Can't switch that one, mate. What you can: quiet for some laps, radio back on, gaps every lap "
+        "or no gaps, no coaching, we push, we save, fight everyone, back to normal."
+    ),
+    "MARK": "Marked.",
+    "ACK": "Copy.",
+}
 
 # The fast lane has no model in it, so the Verstappen voice is written here by hand (24 Sep:
 # "I need the outputs from the engineer in the same aggressive swearing Verstappen persona").
@@ -79,38 +89,10 @@ class Answers:
         return " " + self.closers.next(intent, lines)
 
     def answer(self, text, race, lap, now):
+        """His question, answered from the race in code's words, with the attitude line
+        when it fits."""
         intent = intent_of(text)
-        seat = "race_engineer"
-        if race is None or race.me is None:
-            words = "No race data yet."
-        elif intent is None:
-            words = "Didn't get that, mate. Say again."
-        elif intent == "FUEL":
-            seat = "strategist"
-            words = self.fuel(race)
-        elif intent == "WHERE_LOSING":
-            seat = "performance"
-            words = self.where_losing()
-        elif intent == "QUIET":
-            laps = laps_asked(text)
-            self.governor.quiet_until_lap = lap + laps
-            words = f"Fine, I'll shut up for {laps} {'lap' if laps == 1 else 'laps'}. Spotter stays on."
-        elif intent == "RADIO_ON":
-            self.governor.quiet_until_lap = None
-            words = "Radio's back, mate."
-        elif intent == "RADIO_REQUEST":
-            words = (
-                "Can't switch that one, mate. What you can: quiet for some laps, radio back on, gaps every lap "
-                "or no gaps, no coaching, we push, we save, fight everyone, back to normal."
-            )
-        elif intent == "MARK":
-            words = "Marked."
-        elif intent == "ACK":
-            words = "Copy."
-        elif intent == "REPEAT":
-            words = self.last_line or "Nothing to repeat yet, mate."
-        else:
-            words = getattr(self, intent.lower())(race)
+        seat, words = self.words_for(intent, text, race, lap)
         # the attitude line; "stop worrying about the fuel" only when the fuel IS fine, and
         # never after a non-answer ("No lap time for it yet. Simple as that. Fucking go.")
         no_answer = words.startswith(("No ", "Nobody", "Need ")) or "yet." in words
@@ -134,6 +116,33 @@ class Answers:
             asked=True,
             phrase=False,
         )
+
+    def words_for(self, intent, text, race, lap):
+        """(seat, words): who answers and what, by what he asked. Quiet and radio-on change
+        the governor's quiet laps."""
+        if race is None or race.me is None:
+            return "race_engineer", "No race data yet."
+        if intent is None:
+            return "race_engineer", "Didn't get that, mate. Say again."
+        if intent == "FUEL":
+            return "strategist", self.fuel(race)
+        if intent == "WHERE_LOSING":
+            return "performance", self.where_losing()
+        if intent == "QUIET":
+            laps = laps_asked(text)
+            self.governor.quiet_until_lap = lap + laps
+            return (
+                "race_engineer",
+                f"Fine, I'll shut up for {laps} {'lap' if laps == 1 else 'laps'}. Spotter stays on.",
+            )
+        if intent == "RADIO_ON":
+            self.governor.quiet_until_lap = None
+            return "race_engineer", "Radio's back, mate."
+        if intent in FIXED_REPLIES:
+            return "race_engineer", FIXED_REPLIES[intent]
+        if intent == "REPEAT":
+            return "race_engineer", self.last_line or "Nothing to repeat yet, mate."
+        return "race_engineer", getattr(self, intent.lower())(race)
 
     def gap_ahead(self, race):
         ahead, gap, behind, gap_behind = same_class_neighbours(race, self.model)
@@ -190,32 +199,15 @@ class Answers:
         return f"You need {lap_text(target)} to catch the car ahead by the flag. It's doing {lap_text(theirs)}."
 
     def fuel(self, race=None):
+        """Fuel (or energy) to the flag: the strategist's verdict, or before it has measured
+        two laps, what is in the tank."""
         picture = self.strategist.fuel_now
         if picture is not None and "verdict" in picture:
-            from seats.strategist import fuel_words
-
             return fuel_words(picture)  # the verdict, not just numbers (25 Sep)
         if picture is None:
-            # live 25 Sep: "Need two laps to measure the fuel" was all he got. The tank is known
-            # from the first second; only the laps it lasts needs two laps at the line.
-            if race is None or race.me is None:
-                return "Need two laps to measure the fuel."
-            words = f"{round(race.me.fuel, 1)} litres in."
-            if race.me.virtual_energy > 0:
-                words += f" Energy {round(race.me.virtual_energy * 100)} percent."
-            low = (
-                race.me.fuel_capacity > 0 and race.me.fuel / race.me.fuel_capacity < 0.1
-            )
-            if low or 0 < race.me.virtual_energy < 0.1:
-                return (
-                    words
-                    + " That's LOW. Usage in half a lap: check your screen, be ready to box."
-                )
-            return words + " Usage measured in half a lap."
+            return tank_words(race)
         spare = picture["spare_laps"]
         what = "Fuel" if picture["limit"] == "fuel" else "Energy"
-        from seats.strategist import fine_margin
-
         if spare >= fine_margin(picture.get("laps_left") or 99.0):
             return f"{what}'s fine. {spare} laps spare. Push."
         if spare >= 0:
@@ -480,3 +472,22 @@ class Answers:
         if me.best_lap > 0:
             words += f" Best {lap_text(me.best_lap)}."
         return words
+
+
+def tank_words(race):
+    """Before the fuel is measured: what is in the tank. Live 25 Sep: "Need two laps to measure
+    the fuel" was all he got. The tank is known from the first second; only the laps it lasts
+    needs two laps at the line."""
+    if race is None or race.me is None:
+        return "Need two laps to measure the fuel."
+    me = race.me
+    words = f"{round(me.fuel, 1)} litres in."
+    if me.virtual_energy > 0:
+        words += f" Energy {round(me.virtual_energy * 100)} percent."
+    low = me.fuel_capacity > 0 and me.fuel / me.fuel_capacity < LOW_TANK_SHARE
+    if low or 0 < me.virtual_energy < LOW_TANK_SHARE:
+        return (
+            words
+            + " That's LOW. Usage in half a lap: check your screen, be ready to box."
+        )
+    return words + " Usage measured in half a lap."

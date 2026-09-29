@@ -87,47 +87,55 @@ class Controller:
 
     def poll(self):
         """Returns "pressed", "released" or None. Handles the controller being plugged in late."""
-        pygame = self.pygame
-        change = None
         try:
-            events = pygame.event.get()
+            events = self.pygame.event.get()
         except (SystemError, KeyError):
             # 24 Sep, live: pygame raised KeyError(0) from inside event.get() when a controller
             # it never opened disconnected (LMU taking the pad). Start the controller side over.
-            pygame.joystick.quit()
-            pygame.joystick.init()
-            self.pads = {}
-            self.open_connected()
-            if self.held:
-                self.held = False
-                return "released"
-            return None
+            return self.start_over()
+        change = None
         for event in events:
-            if event.type == pygame.JOYDEVICEADDED:
-                pad = pygame.joystick.Joystick(event.device_index)
-                self.pads[pad.get_instance_id()] = pad
-            elif event.type == pygame.JOYDEVICEREMOVED:
-                self.pads.pop(event.instance_id, None)
-                if self.held:
-                    self.held = False
-                    change = "released"
-            elif (
-                event.type == pygame.JOYBUTTONDOWN
-                and event.button == self.button
-                and self.mine(event.instance_id)
-            ):
-                if not self.held:
-                    self.held = True
-                    change = "pressed"
-            elif (
-                event.type == pygame.JOYBUTTONUP
-                and event.button == self.button
-                and self.mine(event.instance_id)
-            ):
-                if self.held:
-                    self.held = False
-                    change = "released"
+            seen = self.see(event)
+            if seen is not None:
+                change = seen
         return change
+
+    def start_over(self):
+        """The controller side from scratch; a button that was held counts as released."""
+        self.pygame.joystick.quit()
+        self.pygame.joystick.init()
+        self.pads = {}
+        self.open_connected()
+        return self.release()
+
+    def see(self, event):
+        """One controller event: a pad plugged in or out, or his button down or up. Returns
+        "pressed", "released" or None."""
+        pygame = self.pygame
+        if event.type == pygame.JOYDEVICEADDED:
+            pad = pygame.joystick.Joystick(event.device_index)
+            self.pads[pad.get_instance_id()] = pad
+            return None
+        if event.type == pygame.JOYDEVICEREMOVED:
+            self.pads.pop(event.instance_id, None)
+            return self.release()
+        if event.type not in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
+            return None
+        if event.button != self.button or not self.mine(event.instance_id):
+            return None
+        if event.type == pygame.JOYBUTTONUP:
+            return self.release()
+        if self.held:
+            return None
+        self.held = True
+        return "pressed"
+
+    def release(self):
+        """A held button is let go: "released". Not held: None."""
+        if not self.held:
+            return None
+        self.held = False
+        return "released"
 
     def mine(self, instance_id):
         pad = self.pads.get(instance_id)

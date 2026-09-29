@@ -33,6 +33,8 @@ OVERSTEER_ABOVE = 1.30
 COUNTERSTEER_SHARE = 0.02
 LAPS_TO_JUDGE = 3
 MIN_SAMPLES = 5
+PASS_MIN_FRAMES = 20  # a corner pass shorter than this many frames is not read
+ROTATING_MIN_YAW = 0.1  # yaw rate above this: the car is rotating
 PHASES = ("entry", "mid", "exit")
 
 # the standard driver fix, per phase (the words a coach would use)
@@ -80,6 +82,16 @@ def band_of(speed_kmh):
     return int(speed_kmh // BAND_KMH)
 
 
+def phase_of(speed_kmh, index, slowest, low):
+    """entry, mid or exit: within PHASE_SPLIT_KMH of the slowest speed (at or under low) is the
+    middle; before the slowest frame is the entry, after it the exit."""
+    if speed_kmh <= low:
+        return "mid"
+    if index < slowest:
+        return "entry"
+    return "exit"
+
+
 class BalanceMeter:
     """Fed every frame. Keeps his normal per speed band and phase, and every corner pass's
     balance per phase. Needs steering and yaw: old tapes and LMU's own files have no yaw, so
@@ -106,7 +118,9 @@ class BalanceMeter:
         return finished
 
     def finish(self, corner, frames):
-        if len(frames) < 20:
+        """A corner pass is done: every cornering frame's rotation per unit of steering, by
+        speed band and phase, and the share of the cornering spent countersteering."""
+        if len(frames) < PASS_MIN_FRAMES:
             return None
         slowest = 0
         for index, frame in enumerate(frames):
@@ -119,17 +133,12 @@ class BalanceMeter:
         for index, frame in enumerate(frames):
             if not turning(frame):
                 continue
-            if abs(frame.yaw_rate) > 0.1:
+            if abs(frame.yaw_rate) > ROTATING_MIN_YAW:
                 cornering += 1
                 if (frame.steering_filtered > 0) != (frame.yaw_rate > 0):
                     against += 1
                     continue  # countersteer is counted, not averaged in
-            if frame.speed_kmh <= low:
-                phase = "mid"
-            elif index < slowest:
-                phase = "entry"
-            else:
-                phase = "exit"
+            phase = phase_of(frame.speed_kmh, index, slowest, low)
             value = rotation_per_steer(frame)
             raw[phase].append((band_of(frame.speed_kmh), value))
             self.samples.setdefault((band_of(frame.speed_kmh), phase), []).append(value)
