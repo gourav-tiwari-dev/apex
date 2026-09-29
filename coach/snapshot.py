@@ -26,6 +26,7 @@ from coach.fight_maths import (
 from game.race_snapshot import identity, tyre_averages
 from race.facts import laps_to_go, same_class_neighbours
 from seats.strategist import HOT_TYRE_C, fine_margin
+from seats.racecraft import EDGE_WORTH_USING_KMH
 from radio.words import lap_text
 from game.constants import RACE_SESSIONS
 
@@ -66,9 +67,7 @@ class Snapshot:
         self.standings = race_tools.standings(race)
         self.session = race_tools.session_info(race, self.picture.get("laps_to_go"))
         self.laps = race_tools.lap_history(list(getattr(strategist, "lap_records", [])))
-        self.drivers = self.every_driver(
-            race, performance, racecraft, contacts_this_race, engineer
-        )
+        self.drivers = self.every_driver(race, racecraft, contacts_this_race, engineer)
         self.habits = habits
         self.corners = self.every_corner(performance)
         self.car_state = self.car(race, strategist)
@@ -362,62 +361,70 @@ class Snapshot:
                 out.append(f"{who[0]} and {who[1]}, {gap} s apart")
         return out[:5]
 
-    def every_driver(self, race, performance, racecraft, contacts_this_race, engineer):
+    def every_driver(self, race, racecraft, contacts_this_race, engineer):
+        """Every driver of his class, by lower-case name, with "ahead" and "behind" too: what
+        the coach's driver tool returns."""
         me = race.me
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, self.model)
+        ahead, _, behind, _ = same_class_neighbours(race, self.model)
         drivers = {}
         for opponent in race.opponents:
             if opponent.car_class != me.car_class:
                 continue
-            entry = {
-                "driver": opponent.driver,
-                "place": opponent.place,
-                "car": opponent.car_model or opponent.car_name,
-                "last_lap": lap_text(opponent.last_lap),
-                "best_lap": lap_text(opponent.best_lap),
-                "in_pits": opponent.in_pits,
-                "where": road_words(me, opponent),
-            }
-            theirs, source = recent_lap(opponent)
-            mine = my_pace(me, engineer)
-            theirs, mine, _, how = pace_pair(
-                opponent, theirs, source, mine, engineer, racecraft, self.model
+            entry = self.driver_entry(
+                opponent, me, racecraft, contacts_this_race, engineer
             )
-            if theirs is not None and mine is not None:
-                entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
-            else:
-                entry["their_pace"] = "not known: no lap time posted yet"
-            key = identity(opponent)
-            edges = racecraft.edges_against(key)
-            # named for what they measure: speed carried through the middle, NOT braking (24 Sep:
-            # "corners_they_are_quicker" came back as "quicker in every braking zone")
-            if self.model is None or not self.corners_map:
-                entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(
-                    c for c, edge in edges.items() if edge <= -3.0
-                )
-                entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(
-                    c for c, edge in edges.items() if edge >= 3.0
-                )
-            entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
-            entry["pass_attempts_this_race"] = [
-                a[4] for a in racecraft.attempts if a[0] == key
-            ]
-            entry["history"] = racecraft.rivals.get(key)
-            if self.model is not None and self.corners_map:
-                # seconds THEY gain on you through each corner, from the road (race model)
-                gains = self.model.corner_gains(opponent.id, "me", self.corners_map)
-                entry["corners_where_they_gain_time_s"] = {
-                    c: g for c, g in gains.items() if g >= 0.1
-                }
-                entry["corners_where_you_gain_time_s"] = {
-                    c: -g for c, g in gains.items() if g <= -0.1
-                }
             drivers[opponent.driver.lower()] = entry
             if opponent is ahead:
                 drivers["ahead"] = entry
             if opponent is behind:
                 drivers["behind"] = entry
         return drivers
+
+    def driver_entry(self, opponent, me, racecraft, contacts_this_race, engineer):
+        """One driver as the coach sees them: place, car, laps, where on the road, pace against
+        his, where each of them is quicker, contacts, pass attempts, history."""
+        entry = {
+            "driver": opponent.driver,
+            "place": opponent.place,
+            "car": opponent.car_model or opponent.car_name,
+            "last_lap": lap_text(opponent.last_lap),
+            "best_lap": lap_text(opponent.best_lap),
+            "in_pits": opponent.in_pits,
+            "where": road_words(me, opponent),
+        }
+        theirs, source = recent_lap(opponent)
+        mine = my_pace(me, engineer)
+        theirs, mine, _, how = pace_pair(
+            opponent, theirs, source, mine, engineer, racecraft, self.model
+        )
+        if theirs is not None and mine is not None:
+            entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
+        else:
+            entry["their_pace"] = "not known: no lap time posted yet"
+        key = identity(opponent)
+        if self.model is None or not self.corners_map:
+            add_speed_edges(entry, racecraft.edges_against(key))
+        entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
+        entry["pass_attempts_this_race"] = [
+            a[4] for a in racecraft.attempts if a[0] == key
+        ]
+        entry["history"] = racecraft.rivals.get(key)
+        if self.model is not None and self.corners_map:
+            self.add_road_gains(entry, opponent)
+        return entry
+
+    def add_road_gains(self, entry, opponent):
+        """Seconds THEY gain on you through each corner, from the road (race model)."""
+        gains = self.model.corner_gains(opponent.id, "me", self.corners_map)
+        theirs = {}
+        yours = {}
+        for corner, gain in gains.items():
+            if gain >= 0.1:
+                theirs[corner] = gain
+            if gain <= -0.1:
+                yours[corner] = -gain
+        entry["corners_where_they_gain_time_s"] = theirs
+        entry["corners_where_you_gain_time_s"] = yours
 
     def every_corner(self, performance):
         corners = {}
@@ -640,3 +647,18 @@ class Snapshot:
             "error": f"no data for corner '{wanted}'",
             "known": sorted(self.corners),
         }
+
+
+def add_speed_edges(entry, edges):
+    """Where each of them carries more speed through the middle of a corner (the racecraft
+    edges). Named for what they measure: speed carried through the middle, NOT braking (24
+    Sep: "corners_they_are_quicker" came back as "quicker in every braking zone")."""
+    theirs = []
+    yours = []
+    for corner, edge in edges.items():
+        if edge <= -EDGE_WORTH_USING_KMH:
+            theirs.append(corner)
+        if edge >= EDGE_WORTH_USING_KMH:
+            yours.append(corner)
+    entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(theirs)
+    entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(yours)

@@ -359,42 +359,68 @@ def check_answer(
     if not text or not text.strip():
         return False, "empty"
     lowered = text.lower()
+    reason = name_said(lowered, names)
+    if reason is None:
+        reason = form_problem(text, lowered, max_words, speeds_ok)
+    if reason is None:
+        reason = word_problem(lowered, clean)
+    if reason is None:
+        reason = number_problem(lowered, known_numbers)
+    if reason is not None:
+        return False, reason
+    return True, "ok"
+
+
+def name_said(lowered, names):
+    """A driver's name, or a part of it of 4 letters or more: never said."""
     for name in names:
-        parts = [name.lower()] + [
-            part for part in name.lower().split() if len(part) >= 4
-        ]
+        parts = [name.lower()]
+        for part in name.lower().split():
+            if len(part) >= 4:
+                parts.append(part)
         for part in parts:
             if has_phrase(lowered, part):
-                return (
-                    False,
-                    "says a driver's name: say the car ahead, the car behind, or its position",
-                )
+                return "says a driver's name: say the car ahead, the car behind, or its position"
+    return None
+
+
+def form_problem(text, lowered, max_words, speeds_ok):
+    """Too long, a question back, markdown, or a speed he did not ask for."""
     if len(text.split()) > max_words:
-        return False, f"too long: keep it to about {round(max_words * 0.65)} words"
+        return f"too long: keep it to about {round(max_words * 0.65)} words"
     if "?" in text:
-        return False, "asks a question back"
+        return "asks a question back"
     if "*" in text or "\n-" in text:
-        return False, "markdown would be read aloud"
+        return "markdown would be read aloud"
     if not speeds_ok and re.search(r"km/h|\bkph\b|\bkmh\b|kilomet|\bmph\b", lowered):
-        return False, "says a speed; use time, gaps, laps or car lengths"
+        return "says a speed; use time, gaps, laps or car lengths"
+    return None
+
+
+def word_problem(lowered, clean):
+    """He or she for a real person, a banned word, or swearing in clean mode."""
     for word in GENDERED:
         if has_phrase(lowered, word):
             return (
-                False,
-                f"uses '{word}' for a real person; use their name or 'the car behind'",
+                f"uses '{word}' for a real person; use their name or 'the car behind'"
             )
     for phrase in BANNED:
         if has_phrase(lowered, phrase):
-            return False, f"banned word '{phrase}'"
+            return f"banned word '{phrase}'"
     if clean:
         for word in PROFANITY:
             if has_phrase(lowered, word):
-                return False, "swears in clean mode"
+                return "swears in clean mode"
+    return None
+
+
+def number_problem(lowered, known_numbers):
+    """A number no tool returned and he did not say."""
     facts = {str(i): n for i, n in enumerate(known_numbers)}
     for number in numbers_in(lowered):
         if not number_is_backed(number, facts):
-            return False, f"the number {number:g} is not in the data"
-    return True, "ok"
+            return f"the number {number:g} is not in the data"
+    return None
 
 
 def numbers_seen(*texts):
