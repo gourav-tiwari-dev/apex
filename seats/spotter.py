@@ -106,6 +106,8 @@ class Spotter:
         )
 
     def update(self, moment):
+        """Car left, car right, three wide, still there, clear. Only on track and moving, and
+        only with side-by-side calls on (off since 25 Sep: SIDE_BY_SIDE_CALLS)."""
         now = moment.now
         # in the garage the cars in the next stalls are "alongside" (23 Sep: "car right,
         # three wide" while waiting for the race): the spotter only works on track, moving
@@ -118,44 +120,61 @@ class Spotter:
             return []
         left, right = sides_taken(moment)
         calls = []
-
-        if left and right and not self.three_wide:
-            calls.append(
-                self.call("THREE_WIDE", "Three wide. You're in the middle.", now)
-            )
-            self.three_wide = True
-        elif left and not self.left and not right:
-            calls.append(self.call("CAR_LEFT", "Car left.", now))
-        elif right and not self.right and not left:
-            calls.append(self.call("CAR_RIGHT", "Car right.", now))
-        if calls:
+        arrived = self.arrival(left, right, now)
+        if arrived is not None:
+            calls.append(arrived)
             self.still_every = STILL_THERE_EVERY_S
-
         if left or right:
-            # someone is beside me: remember which side, and cancel any pending "clear"
-            if self.alongside_since is None:
-                self.alongside_since = now
-            elif (
-                not calls
-                and now - (self.last_said_at or self.alongside_since)
-                >= self.still_every
-            ):
-                calls.append(self.call("STILL_THERE", "Still there.", now))
-                self.still_every = min(self.still_every * 2, STILL_THERE_MAX_S)
-            self.left = left
-            self.right = right
-            self.empty_since = None
+            still = self.alongside(left, right, arrived is not None, now)
+            if still is not None:
+                calls.append(still)
         elif self.left or self.right:
-            # both sides just emptied. Wait before saying "clear": a car flickering at the
-            # edge of the lane must not fire "car left" twice
-            if self.empty_since is None:
-                self.empty_since = now
-            if now - self.empty_since >= CLEAR_AFTER_S:
-                if self.empty_since - self.alongside_since >= CLEAR_NEEDS_ALONGSIDE_S:
-                    calls.append(self.call("CLEAR", "Clear.", now))
-                self.alongside_since = None
-                self.left = False
-                self.right = False
-                self.three_wide = False
-                self.empty_since = None
+            clear = self.emptied(now)
+            if clear is not None:
+                calls.append(clear)
         return calls
+
+    def arrival(self, left, right, now):
+        """A car has just arrived beside me: three wide, car left or car right. Else None."""
+        if left and right and not self.three_wide:
+            call = self.call("THREE_WIDE", "Three wide. You're in the middle.", now)
+            self.three_wide = True
+            return call
+        if left and not self.left and not right:
+            return self.call("CAR_LEFT", "Car left.", now)
+        if right and not self.right and not left:
+            return self.call("CAR_RIGHT", "Car right.", now)
+        return None
+
+    def alongside(self, left, right, just_called, now):
+        """Someone is beside me: remember which side and cancel any pending "clear". "Still
+        there" once it has lasted still_every, which doubles each time up to STILL_THERE_MAX_S."""
+        call = None
+        if self.alongside_since is None:
+            self.alongside_since = now
+        elif (
+            not just_called
+            and now - (self.last_said_at or self.alongside_since) >= self.still_every
+        ):
+            call = self.call("STILL_THERE", "Still there.", now)
+            self.still_every = min(self.still_every * 2, STILL_THERE_MAX_S)
+        self.left = left
+        self.right = right
+        self.empty_since = None
+        return call
+
+    def emptied(self, now):
+        """Both sides are empty. "Clear" only after CLEAR_AFTER_S (a car flickering at the edge
+        of the lane must not fire "car left" twice), and only after a real overlap."""
+        if self.empty_since is None:
+            self.empty_since = now
+        call = None
+        if now - self.empty_since >= CLEAR_AFTER_S:
+            if self.empty_since - self.alongside_since >= CLEAR_NEEDS_ALONGSIDE_S:
+                call = self.call("CLEAR", "Clear.", now)
+            self.alongside_since = None
+            self.left = False
+            self.right = False
+            self.three_wide = False
+            self.empty_since = None
+        return call

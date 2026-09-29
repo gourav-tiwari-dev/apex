@@ -92,52 +92,58 @@ class RaceSettle:
         return moment.race.session.session in RACE_SESSIONS
 
     def update(self, moment):
+        """Lights out or a restart starts the chaos; once it has settled, the one summary line."""
         race = moment.race
         if race is None or race.me is None:
             return []
         phase = race.session.game_phase
+        if self.chaos_starts(race, phase) and self.is_race(moment):
+            self.start_chaos(race, moment)
+        self.last_phase = phase
+        if self.settled or not self.has_settled(moment):
+            return []
+        self.settled = True
+        return [self.summary(race, moment.now, moment.model)]
+
+    def chaos_starts(self, race, phase):
+        """The phase has just gone green: lights out or a restart. Or Apex joined on lap 1 (24
+        Sep: restarted mid lap 1 at P24, it would have counted the start as settled)."""
         went_green = (
             phase == GREEN_FLAG
             and self.last_phase is not None
             and self.last_phase != GREEN_FLAG
         )
-        # 24 Sep: Apex was restarted mid lap 1 (P24) and would have counted it as settled
         joined_on_lap_1 = (
             self.last_phase is None and phase == GREEN_FLAG and race.me.laps == 0
         )
-        if (went_green or joined_on_lap_1) and self.is_race(moment):
-            # lights out, or a restart after a full-course yellow: chaos until proven calm
-            self.settled = False
-            self.calm_since = None
-            self.last_neighbourhood = None
-            self.chaos_lap = moment.lap_count
-            self.chaos_since = moment.now
-            if self.place_at_start is None or self.last_phase != SAFETY_CAR:
-                self.place_at_start = race.me.place
-                self.class_place_at_start = class_place(
-                    race, race.me.place, race.me.car_class
-                )
-        self.last_phase = phase
-        if self.settled:
-            return []
+        return went_green or joined_on_lap_1
 
+    def start_chaos(self, race, moment):
+        """Lights out, or a restart after a full-course yellow: chaos until proven calm."""
+        self.settled = False
+        self.calm_since = None
+        self.last_neighbourhood = None
+        self.chaos_lap = moment.lap_count
+        self.chaos_since = moment.now
+        if self.place_at_start is None or self.last_phase != SAFETY_CAR:
+            self.place_at_start = race.me.place
+            self.class_place_at_start = class_place(
+                race, race.me.place, race.me.car_class
+            )
+
+    def has_settled(self, moment):
+        """Calm for SETTLE_S in a row, or a brawl that has run too long (SETTLE_WITHIN_LAPS
+        laps, or CHAOS_MAX_S)."""
         now = moment.now
         brawl_too_long = moment.lap_count - self.chaos_lap >= SETTLE_WITHIN_LAPS or (
             self.chaos_since is not None and now - self.chaos_since >= CHAOS_MAX_S
         )
         if not self.calm(moment):
             self.calm_since = None
-            if not brawl_too_long:
-                return []
-        elif self.calm_since is None:
+            return brawl_too_long
+        if self.calm_since is None:
             self.calm_since = now
-        calm_long_enough = (
-            self.calm_since is not None and now - self.calm_since >= SETTLE_S
-        )
-        if not calm_long_enough and not brawl_too_long:
-            return []
-        self.settled = True
-        return [self.summary(race, now, moment.model)]
+        return now - self.calm_since >= SETTLE_S or brawl_too_long
 
     def calm(self, moment):
         race = moment.race
