@@ -45,81 +45,87 @@ class CornerStats:
         return self.corner_map.at(real_lap_distance)
 
     def update(self, frame, lap_count, real_lap_distance):
+        """One frame: the CornerStat of a corner he has just left, else None."""
         now = self.current_corner(real_lap_distance)
         was = self.corner
         stat = None
         step = 0.0
         seconds = 0.0
-        coast = 0.0
-        slow_zone = 0
         if self.prev_time is not None:
             seconds = frame.elapsed_time - self.prev_time
             step = frame.speed_kmh / 3.6 * seconds
         if now is None and was is not None:
-            # LEAVING - hand back the row, then forget everything
-            time_s = 0.0
-            slowest = 0
-            for index, (speed, meters, throttle, brake, seconds, distance) in enumerate(
-                self.frames
-            ):
-                if speed <= self.min_speed + SLOW_ZONE_X:
-                    slow_zone += meters
-                if brake < PEDAL_OFF and throttle < PEDAL_OFF:
-                    coast += meters
-                time_s += seconds
-                if speed == self.min_speed:
-                    slowest = index
-            throttle_on = None
-            for speed, meters, throttle, brake, seconds, distance in self.frames[
-                slowest:
-            ]:
-                if throttle >= THROTTLE_ON:
-                    throttle_on = distance
-                    break
-            stat = CornerStat(
-                self.lap_count,
-                self.corner,
-                self.brake_onset,
-                self.min_speed,
-                slow_zone,
-                coast,
-                round(time_s, 3),
-                throttle_on,
-            )
-            self.corner = None
-            self.lap_count = None
-            self.brake_onset = None
-            self.min_speed = None
-            self.frames = []
-
+            stat = self.leave_corner()
         elif now is not None:
             if now != was:
-                # just arrived - start a fresh corner
-                self.corner = now
-                self.lap_count = lap_count
-                self.brake_onset = None
-                self.min_speed = None
-                self.frames = []
-
-            # measure - runs on the arrival frame too
-            if self.min_speed is None or frame.speed_kmh < self.min_speed:
-                self.min_speed = frame.speed_kmh
-
-            self.frames.append(
-                (
-                    frame.speed_kmh,
-                    step,
-                    frame.throttle,
-                    frame.brake,
-                    seconds,
-                    real_lap_distance,
-                )
-            )
-            # brake just crossed BRAKE_ON this frame: below it last frame, at or above it now
-            brake_crossed = self.prev_brake < BRAKE_ON and frame.brake >= BRAKE_ON
-            if self.brake_onset is None and brake_crossed:
-                self.brake_onset = real_lap_distance
-
+                self.arrive(now, lap_count)
+            self.measure(frame, step, seconds, real_lap_distance)
         self.prev_brake = frame.brake
         self.prev_time = frame.elapsed_time
         return stat
+
+    def leave_corner(self):
+        """Leaving: hand back the corner's row, then forget everything."""
+        slow_zone = 0
+        coast = 0.0
+        time_s = 0.0
+        slowest = 0
+        for index, (speed, meters, throttle, brake, seconds, distance) in enumerate(
+            self.frames
+        ):
+            if speed <= self.min_speed + SLOW_ZONE_X:
+                slow_zone += meters
+            if brake < PEDAL_OFF and throttle < PEDAL_OFF:
+                coast += meters
+            time_s += seconds
+            if speed == self.min_speed:
+                slowest = index
+        throttle_on = None
+        for speed, meters, throttle, brake, seconds, distance in self.frames[slowest:]:
+            if throttle >= THROTTLE_ON:
+                throttle_on = distance
+                break
+        stat = CornerStat(
+            self.lap_count,
+            self.corner,
+            self.brake_onset,
+            self.min_speed,
+            slow_zone,
+            coast,
+            round(time_s, 3),
+            throttle_on,
+        )
+        self.corner = None
+        self.lap_count = None
+        self.brake_onset = None
+        self.min_speed = None
+        self.frames = []
+        return stat
+
+    def arrive(self, corner, lap_count):
+        """Just arrived: start a fresh corner."""
+        self.corner = corner
+        self.lap_count = lap_count
+        self.brake_onset = None
+        self.min_speed = None
+        self.frames = []
+
+    def measure(self, frame, step, seconds, real_lap_distance):
+        """In the corner (the arrival frame too): the slowest speed, the frame, and where the
+        braking began."""
+        if self.min_speed is None or frame.speed_kmh < self.min_speed:
+            self.min_speed = frame.speed_kmh
+        self.frames.append(
+            (
+                frame.speed_kmh,
+                step,
+                frame.throttle,
+                frame.brake,
+                seconds,
+                real_lap_distance,
+            )
+        )
+        # brake just crossed BRAKE_ON this frame: below it last frame, at or above it now
+        brake_crossed = self.prev_brake < BRAKE_ON and frame.brake >= BRAKE_ON
+        if self.brake_onset is None and brake_crossed:
+            self.brake_onset = real_lap_distance

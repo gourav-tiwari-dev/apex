@@ -94,9 +94,19 @@ class TrackMapLearner:
         return [lap for lap in self.busy_by_lap if lap < current_lap]
 
     def corners(self, current_lap):
+        """The corner map learned from his complete laps so far, or None before MIN_LAPS."""
         laps = self.complete_laps(current_lap)
         if len(laps) < MIN_LAPS:
             return None
+        share = self.busy_share(laps)
+        windows = corner_windows(busy_cores(share), share)
+        corners = []
+        for number, (start, end) in enumerate(windows, start=1):
+            corners.append({"name": f"Turn {number}", "start": start, "end": end})
+        return corners
+
+    def busy_share(self, laps):
+        """For every 5 m slice of the track, the share of these laps it was busy on."""
         slices = int(self.track_length // SLICE_M) + 1
         share = []
         for s in range(slices):
@@ -105,42 +115,48 @@ class TrackMapLearner:
                 if s in self.busy_by_lap[lap]:
                     busy_laps += 1
             share.append(busy_laps / len(laps))
+        return share
 
-        # the cores: slices busy on at least half the laps, joined across small gaps
-        cores = []
-        current = None
-        for s in range(slices):
-            if share[s] < CORE_SHARE:
-                continue
-            if current is not None and (s - current[1]) * SLICE_M <= MERGE_GAP_M:
-                current[1] = s
-            else:
-                if current is not None:
-                    cores.append(current)
-                current = [s, s]
-        if current is not None:
-            cores.append(current)
 
-        windows = []
-        for first, last in cores:
-            if (last - first) * SLICE_M < MIN_CORNER_M:
-                continue
-            while first > 0 and share[first - 1] >= EDGE_SHARE:
-                first -= 1
-            while last < slices - 1 and share[last + 1] >= EDGE_SHARE:
-                last += 1
-            start = first * SLICE_M - PAD_M
-            end = (last + 1) * SLICE_M + PAD_M
-            # two corners that touch after padding are one corner (e.g. T1's exit)
-            if windows and start <= windows[-1][1]:
-                windows[-1][1] = max(windows[-1][1], end)
-            else:
-                windows.append([start, end])
+def busy_cores(share):
+    """The cores: slices busy on at least half the laps, joined across small gaps. Each is a
+    [first slice, last slice] pair."""
+    cores = []
+    current = None
+    for s in range(len(share)):
+        if share[s] < CORE_SHARE:
+            continue
+        if current is not None and (s - current[1]) * SLICE_M <= MERGE_GAP_M:
+            current[1] = s
+        else:
+            if current is not None:
+                cores.append(current)
+            current = [s, s]
+    if current is not None:
+        cores.append(current)
+    return cores
 
-        corners = []
-        for number, (start, end) in enumerate(windows, start=1):
-            corners.append({"name": f"Turn {number}", "start": start, "end": end})
-        return corners
+
+def corner_windows(cores, share):
+    """Each core long enough to be a corner, widened to where EDGE_SHARE of the laps were busy
+    and padded by PAD_M; two that touch after padding are one corner (e.g. T1's exit).
+    [start, end] in metres."""
+    slices = len(share)
+    windows = []
+    for first, last in cores:
+        if (last - first) * SLICE_M < MIN_CORNER_M:
+            continue
+        while first > 0 and share[first - 1] >= EDGE_SHARE:
+            first -= 1
+        while last < slices - 1 and share[last + 1] >= EDGE_SHARE:
+            last += 1
+        start = first * SLICE_M - PAD_M
+        end = (last + 1) * SLICE_M + PAD_M
+        if windows and start <= windows[-1][1]:
+            windows[-1][1] = max(windows[-1][1], end)
+        else:
+            windows.append([start, end])
+    return windows
 
 
 def overlap(a, b):
