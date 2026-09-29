@@ -186,71 +186,57 @@ class OpponentCorners:
         self.rows = []  # finished CornerPass
 
     def update(self, race, corners, my_class):
+        """One race snapshot: every car of my class, into the corner it is in."""
         bounds = {c["name"]: (c["start"], c["end"]) for c in corners}
         for opponent in race.opponents:
             if opponent.speed_kmh is None or opponent.car_class != my_class:
                 continue
-            sample = {
-                "t": race.sim_time,
-                "dist": opponent.lap_dist,
-                "speed": opponent.speed_kmh,
-                "brake": opponent.brake or 0.0,
-                "throttle": opponent.throttle or 0.0,
+            self.follow(opponent, race.sim_time, corners, bounds)
+
+    def follow(self, opponent, sim_time, corners, bounds):
+        """One car's sample: a corner it has just left is finished, the one it is in grows.
+        In the pits it is in no corner."""
+        sample = {
+            "t": sim_time,
+            "dist": opponent.lap_dist,
+            "speed": opponent.speed_kmh,
+            "brake": opponent.brake or 0.0,
+            "throttle": opponent.throttle or 0.0,
+        }
+        previous = self.last_sample.get(opponent.id)
+        self.last_sample[opponent.id] = sample
+        corner = corner_at(corners, opponent.lap_dist)
+        if opponent.in_pits:
+            corner = None
+        current = self.inside.get(opponent.id)
+        if current is not None and current["corner"] != corner:
+            self.finish(opponent, current, sample, bounds)
+            del self.inside[opponent.id]
+            current = None
+        if corner is None:
+            return
+        if current is None:
+            self.inside[opponent.id] = {
+                "corner": corner,
+                "lap": opponent.laps,
+                "before": previous,
+                "samples": [sample],
             }
-            previous = self.last_sample.get(opponent.id)
-            self.last_sample[opponent.id] = sample
-            corner = corner_at(corners, opponent.lap_dist)
-            if opponent.in_pits:
-                corner = None
-            current = self.inside.get(opponent.id)
-            if current is not None and current["corner"] != corner:
-                self.finish(opponent, current, sample, bounds)
-                del self.inside[opponent.id]
-                current = None
-            if corner is None:
-                continue
-            if current is None:
-                self.inside[opponent.id] = {
-                    "corner": corner,
-                    "lap": opponent.laps,
-                    "before": previous,
-                    "samples": [sample],
-                }
-            else:
-                current["samples"].append(sample)
+        else:
+            current["samples"].append(sample)
 
     def finish(self, opponent, current, after, bounds):
+        """A car has left a corner: its time through it, its slowest speed, where it braked
+        and where it was back on the power after the slowest point, as one CornerPass."""
         samples = current["samples"]
         start, end = bounds.get(current["corner"], (None, None))
         slowest = 0
         for index, sample in enumerate(samples):
             if sample["speed"] < samples[slowest]["speed"]:
                 slowest = index
-
         time_s = None
         if start is not None:
-            entered = crossing(current["before"], samples[0], start, "dist")
-            left = crossing(samples[-1], after, end, "dist")
-            if entered is not None and left is not None:
-                time_s = round(left[0] - entered[0], 3)
-
-        brake_onset = None
-        chain = [current["before"]] + samples
-        for before, sample in zip(chain, chain[1:]):
-            if before is not None and before["brake"] < BRAKE_ON <= sample["brake"]:
-                point = crossing(before, sample, BRAKE_ON, "brake")
-                if point is not None:
-                    brake_onset = round(point[1], 1)
-                break
-
-        throttle_on = None
-        for before, sample in zip(samples[slowest:], samples[slowest + 1 :]):
-            if before["throttle"] < THROTTLE_ON <= sample["throttle"]:
-                point = crossing(before, sample, THROTTLE_ON, "throttle")
-                if point is not None:
-                    throttle_on = round(point[1], 1)
-                break
-
+            time_s = time_through(current, after, start, end)
         self.rows.append(
             CornerPass(
                 who=identity(opponent),
@@ -261,8 +247,10 @@ class OpponentCorners:
                 lap=current["lap"],
                 min_speed=round(samples[slowest]["speed"], 1),
                 time_s=time_s,
-                brake_onset=brake_onset,
-                throttle_on=throttle_on,
+                brake_onset=pedal_point(
+                    [current["before"]] + samples, "brake", BRAKE_ON
+                ),
+                throttle_on=pedal_point(samples[slowest:], "throttle", THROTTLE_ON),
             )
         )
 
@@ -270,6 +258,22 @@ class OpponentCorners:
         """How the quickest car through this corner drives it: the median of its laps.
         Cars of my own model first (a Porsche and a BMW take a hairpin differently, 23 Sep),
         and only if none of them has the laps, the quickest of my class. None if nobody does."""
+        ready = self.cars_with_laps(corner)
+        same_model = {}
+        for who, rows in ready.items():
+            if my_model and rows[0].car_model == my_model:
+                same_model[who] = rows
+        pool = same_model or ready
+        fastest = None
+        for rows in pool.values():
+            summary = car_summary(rows, bool(same_model))
+            if fastest is None or summary["time_s"] < fastest["time_s"]:
+                fastest = summary
+        return fastest
+
+    def cars_with_laps(self, corner):
+        """Each car's timed passes through this corner, for the cars with enough of them to be
+        a reference (LAPS_FOR_A_REFERENCE)."""
         by_car = {}
         for row in self.rows:
             if row.corner == corner and row.time_s is not None:
@@ -278,25 +282,52 @@ class OpponentCorners:
         for who, rows in by_car.items():
             if len(rows) >= LAPS_FOR_A_REFERENCE:
                 ready[who] = rows
-        same_model = {}
-        for who, rows in ready.items():
-            if my_model and rows[0].car_model == my_model:
-                same_model[who] = rows
-        pool = same_model or ready
-        fastest = None
-        for who, rows in pool.items():
-            summary = {
-                "driver": rows[0].driver,
-                "same_model": bool(same_model),
-                "car_model": rows[0].car_model,
-                "time_s": median_of(r.time_s for r in rows),
-                "min_speed": median_of(r.min_speed for r in rows),
-                "brake_onset": median_of(r.brake_onset for r in rows),
-                "throttle_on": median_of(r.throttle_on for r in rows),
-            }
-            if fastest is None or summary["time_s"] < fastest["time_s"]:
-                fastest = summary
-        return fastest
+        return ready
+
+
+def time_through(current, after, start, end):
+    """Seconds from the corner's start to its end, each crossing placed between two samples;
+    None when either cannot be placed."""
+    samples = current["samples"]
+    entered = crossing(current["before"], samples[0], start, "dist")
+    left = crossing(samples[-1], after, end, "dist")
+    if entered is None or left is None:
+        return None
+    return round(left[0] - entered[0], 3)
+
+
+def pedal_point(samples, pedal, value):
+    """Where the pedal first went up past value, in metres into the lap, or None. The first
+    sample may be None: there was no sample before the corner."""
+    for before, sample in zip(samples, samples[1:]):
+        if before is not None and before[pedal] < value <= sample[pedal]:
+            point = crossing(before, sample, value, pedal)
+            if point is None:
+                return None
+            return round(point[1], 1)
+    return None
+
+
+def car_summary(rows, same_model):
+    """One car through one corner: who, and the median of its laps."""
+    summary = {
+        "driver": rows[0].driver,
+        "same_model": same_model,
+        "car_model": rows[0].car_model,
+    }
+    summary.update(medians(rows))
+    return summary
+
+
+def medians(passes):
+    """The median time through the corner, slowest speed, brake point and power point of
+    these passes: one odd lap does not move a median."""
+    return {
+        "time_s": median_of(p.time_s for p in passes),
+        "min_speed": median_of(p.min_speed for p in passes),
+        "brake_onset": median_of(p.brake_onset for p in passes),
+        "throttle_on": median_of(p.throttle_on for p in passes),
+    }
 
 
 def what_to_change(mine, theirs, brake_margin_m):
@@ -304,24 +335,10 @@ def what_to_change(mine, theirs, brake_margin_m):
     the measurements do not explain it (then nothing is said: advice has to be actionable).
     mine / theirs: dicts with brake_onset, min_speed, throttle_on (any may be None).
     Returns (change, car lengths or None)."""
-    brake_diff = None
-    if mine.get("brake_onset") is not None and theirs.get("brake_onset") is not None:
-        brake_diff = (
-            theirs["brake_onset"] - mine["brake_onset"]
-        )  # > 0: they brake later
-        if abs(brake_diff) > MAX_BRAKE_DIFF_M:
-            brake_diff = None
-    roll_diff = None
-    if mine.get("min_speed") is not None and theirs.get("min_speed") is not None:
-        roll_diff = theirs["min_speed"] - mine["min_speed"]  # > 0: they carry more
-    power_diff = None
-    if mine.get("throttle_on") is not None and theirs.get("throttle_on") is not None:
-        power_diff = (
-            mine["throttle_on"] - theirs["throttle_on"]
-        )  # > 0: they power earlier
-        if abs(power_diff) > MAX_POWER_DIFF_M:
-            power_diff = None
-
+    # each > 0 when THEY do it better: they brake later, carry more speed, power on earlier
+    brake_diff = difference(theirs, mine, "brake_onset", MAX_BRAKE_DIFF_M)
+    roll_diff = difference(theirs, mine, "min_speed")
+    power_diff = difference(mine, theirs, "throttle_on", MAX_POWER_DIFF_M)
     # braking later AND slower in the middle: in too deep, the classic overdriving
     if (
         brake_diff is not None
@@ -345,6 +362,17 @@ def what_to_change(mine, theirs, brake_margin_m):
         return None
     options.sort(key=lambda option: option[0], reverse=True)
     return options[0][1], options[0][2]
+
+
+def difference(first, second, key, limit=None):
+    """first[key] minus second[key]; None when either is missing, or when they are more than
+    limit apart (then it is not the same thing measured twice)."""
+    if first.get(key) is None or second.get(key) is None:
+        return None
+    diff = first[key] - second[key]
+    if limit is not None and abs(diff) > limit:
+        return None
+    return diff
 
 
 # the one thing to do, in a driver's words
@@ -444,24 +472,9 @@ class PerformanceEngineer:
         """The corner of this lap that lost the most against my own best there today."""
         worst = None
         for stat in self.this_lap:
-            if stat.time_s is None:
-                continue
-            others = [
-                p
-                for p in self.my_passes[stat.corner]
-                if p is not stat and p.time_s is not None
-            ]
-            if not others:
-                continue
-            best = min(others, key=lambda p: p.time_s)
-            loss = round(stat.time_s - best.time_s, 2)
-            if loss < OWN_BEST_LOSS_S:
-                continue
-            change = what_to_change(as_dict(stat), as_dict(best), BRAKE_DIFF_MINE_M)
-            if change is None:
-                continue
-            if worst is None or loss > worst[0]:
-                worst = (loss, stat.corner, change)
+            found = self.loss_to_own_best(stat)
+            if found is not None and (worst is None or found[0] > worst[0]):
+                worst = found
         if worst is None:
             return None
         loss, corner, (change, lengths) = worst
@@ -480,32 +493,55 @@ class PerformanceEngineer:
             template=f"{corner}: {tenths_words(loss)} off your best. {advice}",
         )
 
+    def loss_to_own_best(self, stat):
+        """(loss, corner, change) for one corner of this lap against his best there today;
+        None when it lost too little to be worth a call or the measurements do not say why."""
+        if stat.time_s is None:
+            return None
+        best = None
+        for other in self.my_passes[stat.corner]:
+            if other is stat or other.time_s is None:
+                continue
+            if best is None or other.time_s < best.time_s:
+                best = other
+        if best is None:
+            return None
+        loss = round(stat.time_s - best.time_s, 2)
+        if loss < OWN_BEST_LOSS_S:
+            return None
+        change = what_to_change(as_dict(stat), as_dict(best), BRAKE_DIFF_MINE_M)
+        if change is None:
+            return None
+        return loss, stat.corner, change
+
     def rival_gaps(self):
         """Every corner where the fastest car of my model gains a tenth or more on me and the
         measurements say why: (gap, corner, fastest, change), biggest first."""
         found = []
         for corner, passes in self.my_passes.items():
-            timed = [p for p in passes if p.time_s is not None]
-            if len(timed) < LAPS_FOR_A_REFERENCE:
-                continue
-            fastest = self.opponents.fastest_through(corner, self.my_model)
-            if fastest is None:
-                continue
-            mine = {
-                "time_s": median_of(p.time_s for p in timed),
-                "brake_onset": median_of(p.brake_onset for p in timed),
-                "min_speed": median_of(p.min_speed for p in timed),
-                "throttle_on": median_of(p.throttle_on for p in timed),
-            }
-            gap = round(mine["time_s"] - fastest["time_s"], 2)
-            if gap < RIVAL_LOSS_S:
-                continue
-            change = what_to_change(mine, fastest, BRAKE_DIFF_THEIRS_M)
-            if change is None:
-                continue
-            found.append((gap, corner, fastest, change))
+            gap = self.gap_to_fastest(corner, passes)
+            if gap is not None:
+                found.append(gap)
         found.sort(key=lambda item: item[0], reverse=True)
         return found
+
+    def gap_to_fastest(self, corner, passes):
+        """(gap, corner, fastest, change) for one corner: my median lap through it against the
+        fastest car's. None with too few laps, a small gap, or no measured reason."""
+        timed = [p for p in passes if p.time_s is not None]
+        if len(timed) < LAPS_FOR_A_REFERENCE:
+            return None
+        fastest = self.opponents.fastest_through(corner, self.my_model)
+        if fastest is None:
+            return None
+        mine = medians(timed)
+        gap = round(mine["time_s"] - fastest["time_s"], 2)
+        if gap < RIVAL_LOSS_S:
+            return None
+        change = what_to_change(mine, fastest, BRAKE_DIFF_THEIRS_M)
+        if change is None:
+            return None
+        return gap, corner, fastest, change
 
     def focus(self):
         """For "where am I losing time?": the biggest measured gap, or None."""
