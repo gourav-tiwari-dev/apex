@@ -195,6 +195,7 @@ class Strategist:
         return statistics.median(used[-3:])
 
     def update(self, moment):
+        """Fuel (or energy) to the flag, the tyres, rain, and the last lap."""
         race = moment.race
         if race is None or race.me is None:
             return []
@@ -205,88 +206,95 @@ class Strategist:
         # fuel-to-the-flag and last-lap calls are race calls: in qualifying (live 25 Sep) they said
         # "Box this lap for fuel" and "Last lap. Bring it home." Old tapes carry no session type.
         racing = moment.session_type is None or moment.session_type in RACE_SESSIONS
-
         if moment.new_race and racing:
             calls.extend(self.live_fuel(race, moment, now))
             calls.extend(self.leader_over_the_line(race, now))
-
-        # the game's sector numbers: 1, 2, then 0 for sector 3
-        if moment.new_race and me.sector != self.last_sector:
-            if self.last_sector == 1 and me.sector == 2:
-                self.sector_marks[1] = now
-            elif self.last_sector == 2 and me.sector == 0:
-                self.sector_marks[2] = now
-            self.last_sector = me.sector
-
+        if moment.new_race:
+            self.time_sectors(me, now)
         if moment.lap_wrapped and me.laps == 0:
             self.line_time = now
         # a line crossing counts once the game has a race lap done: at lights out he crosses the
         # line with none, and Apex timed the formation as a 2:23 "lap" (live 25 Sep)
         if moment.lap_wrapped and moment.lap_count >= 1 and me.laps >= 1:
-            self.fuel_at_line.append(me.fuel)
-            self.energy_at_line.append(me.virtual_energy)
-            lap_time = measured_lap(me.last_lap, self.line_time, now)
-            if (
-                lap_time is not None and me.laps >= 2
-            ):  # lap 1 is a standing start: not pace
-                self.lap_times.append(lap_time)
-                self.lap_records.append(
-                    self.lap_record(moment.lap_count, lap_time, me, now)
-                )
-            self.sector_marks = {}
-            self.line_time = now
-            # the live picture (burn per metre) wins; the line picture fills in before it exists
-            self.fuel_now = self.live_picture(race, 0.0) or self.fuel_picture(race)
-            # the line check only while the live picture has nothing yet (they said "tight" twice)
-            live = self.live_picture(race, 0.0) is not None
-            fuel_call = (
-                self.fuel_check(race, moment.lap_count, now)
-                if racing and not live
-                else None
-            )
-            if fuel_call is not None:
-                calls.append(fuel_call)
-            calls.extend(self.tyre_check(me, now))
-            # laps to go is exact only at the line: mid-lap it would say "last lap" a lap early.
-            # A last lap that starts mid-lap (the leader's flag) is the race engineer's call.
-            laps_left = self.laps_left(race)
-            if (
-                racing
-                and laps_left is not None
-                and laps_left <= 1
-                and not self.last_lap_called
-            ):
-                self.last_lap_called = True
-                margin = leader_margin(race, self.model)
-                words = "Last lap. Bring it home."
-                if margin is not None and 0 <= margin < CLOSE_CALL_S:
-                    words = (
-                        "Last lap, unless the leader beats the clock. I'll tell you."
-                    )
-                calls.append(
-                    call(
-                        "LAST_LAP",
-                        words,
-                        now,
-                        {"leader_margin_s": margin},
-                        words,
-                        priority=ENGINEER,
-                    )
-                )
-
+            calls.extend(self.at_the_line(race, moment, racing, now))
         if moment.new_race:
-            if race.session.raining >= 0.1 and not self.rain_called:
-                self.rain_called = True
-                calls.append(
-                    call(
-                        "RAIN",
-                        f"Rain is starting, severity {race.session.raining}. Grip will drop.",
-                        now,
-                        {"rain": race.session.raining},
-                        "Rain's coming. Grip's going away.",
-                    )
-                )
+            calls.extend(self.rain(race, now))
         return calls
+
+    def time_sectors(self, me, now):
+        """The game's sector numbers: 1, 2, then 0 for sector 3."""
+        if me.sector == self.last_sector:
+            return
+        if self.last_sector == 1 and me.sector == 2:
+            self.sector_marks[1] = now
+        elif self.last_sector == 2 and me.sector == 0:
+            self.sector_marks[2] = now
+        self.last_sector = me.sector
+
+    def at_the_line(self, race, moment, racing, now):
+        """A lap done: its time and fuel, the fuel picture, the tyres, and the last lap."""
+        me = race.me
+        calls = []
+        self.fuel_at_line.append(me.fuel)
+        self.energy_at_line.append(me.virtual_energy)
+        lap_time = measured_lap(me.last_lap, self.line_time, now)
+        if lap_time is not None and me.laps >= 2:  # lap 1 is a standing start: not pace
+            self.lap_times.append(lap_time)
+            self.lap_records.append(
+                self.lap_record(moment.lap_count, lap_time, me, now)
+            )
+        self.sector_marks = {}
+        self.line_time = now
+        # the live picture (burn per metre) wins; the line picture fills in before it exists
+        self.fuel_now = self.live_picture(race, 0.0) or self.fuel_picture(race)
+        # the line check only while the live picture has nothing yet (they said "tight" twice)
+        live = self.live_picture(race, 0.0) is not None
+        fuel_call = (
+            self.fuel_check(race, moment.lap_count, now)
+            if racing and not live
+            else None
+        )
+        if fuel_call is not None:
+            calls.append(fuel_call)
+        calls.extend(self.tyre_check(me, now))
+        last_lap = self.last_lap_call(race, racing, now)
+        if last_lap is not None:
+            calls.append(last_lap)
+        return calls
+
+    def last_lap_call(self, race, racing, now):
+        """Laps to go is exact only at the line: mid-lap it would say "last lap" a lap early.
+        A last lap that starts mid-lap (the leader's flag) is the race engineer's call."""
+        laps_left = self.laps_left(race)
+        if not racing or laps_left is None or laps_left > 1 or self.last_lap_called:
+            return None
+        self.last_lap_called = True
+        margin = leader_margin(race, self.model)
+        words = "Last lap. Bring it home."
+        if margin is not None and 0 <= margin < CLOSE_CALL_S:
+            words = "Last lap, unless the leader beats the clock. I'll tell you."
+        return call(
+            "LAST_LAP",
+            words,
+            now,
+            {"leader_margin_s": margin},
+            words,
+            priority=ENGINEER,
+        )
+
+    def rain(self, race, now):
+        if race.session.raining < 0.1 or self.rain_called:
+            return []
+        self.rain_called = True
+        return [
+            call(
+                "RAIN",
+                f"Rain is starting, severity {race.session.raining}. Grip will drop.",
+                now,
+                {"rain": race.session.raining},
+                "Rain's coming. Grip's going away.",
+            )
+        ]
 
     def leader_over_the_line(self, race, now):
         """After "last lap": the leader crossing with time still on the clock means one more lap
@@ -313,27 +321,12 @@ class Strategist:
 
     # ---- fuel, measured all the time ------------------------------------------------------------
     def see_burn(self, race, lap_dist):
-        length = getattr(race.session, "lap_length", None)
-        if length and length > 1000:
-            self.track_m = length  # the session's lap, not the farthest car so far
-        for car in race.opponents:
-            if not (length and length > 1000) and (
-                self.track_m is None or car.lap_dist > self.track_m
-            ):
-                self.track_m = car.lap_dist
+        """Fuel and energy against the distance driven since the last refuel, under green only:
+        the live burn every fuel call is measured from."""
+        self.learn_track_length(race)
         if self.track_m is None or self.track_m < 1000:
             return
-        if (
-            self.last_lap_dist is not None
-            and lap_dist < self.last_lap_dist - self.track_m / 2
-        ):
-            self.wraps += 1
-        elif (
-            self.last_lap_dist is not None
-            and lap_dist > self.last_lap_dist + self.track_m / 2
-        ):
-            self.wraps -= 1  # rolled back over the line in a spin
-        self.last_lap_dist = lap_dist
+        self.count_wraps(lap_dist)
         me = race.me
         if race.session.game_phase != GREEN_FLAG:
             self.burn = []  # the formation lap burns at half pace: not race burn
@@ -348,16 +341,46 @@ class Strategist:
             # (25 Sep night, in the traffic: 7.53 litres against 7.74-7.78 for the clean laps)
             self.first_lap_until = distance + self.track_m
         self.was_green = True
+        if not self.burn_goes_on(me, distance):
+            return
+        self.burn.append((distance, me.fuel, me.virtual_energy))
+        while self.burn and distance - self.burn[0][0] > LIVE_KEEP_LAPS * self.track_m:
+            self.burn.pop(0)
+
+    def learn_track_length(self, race):
+        length = getattr(race.session, "lap_length", None)
+        if length and length > 1000:
+            self.track_m = length  # the session's lap, not the farthest car so far
+            return
+        for car in race.opponents:
+            if self.track_m is None or car.lap_dist > self.track_m:
+                self.track_m = car.lap_dist
+
+    def count_wraps(self, lap_dist):
+        """Line crossings: forwards over the line, or back over it in a spin."""
+        if (
+            self.last_lap_dist is not None
+            and lap_dist < self.last_lap_dist - self.track_m / 2
+        ):
+            self.wraps += 1
+        elif (
+            self.last_lap_dist is not None
+            and lap_dist > self.last_lap_dist + self.track_m / 2
+        ):
+            self.wraps -= 1  # rolled back over the line in a spin
+        self.last_lap_dist = lap_dist
+
+    def burn_goes_on(self, me, distance):
+        """False for a point to skip (he rolled back in a spin: the lap's burn is kept); a
+        refuel or a jump back starts the burn again."""
         if self.burn and me.fuel > self.burn[-1][1] + 0.5:
             self.burn = []  # refuelled
         elif self.burn and distance < self.burn[-1][0]:
             if self.burn[-1][0] - distance > BACKWARDS_RESET_M:
                 self.burn = []  # a jump back, not a spin: start again
             else:
-                return  # spun and rolled back: skip it, keep the lap's burn
-        self.burn.append((distance, me.fuel, me.virtual_energy))
-        while self.burn and distance - self.burn[0][0] > LIVE_KEEP_LAPS * self.track_m:
-            self.burn.pop(0)
+                return False  # spun and rolled back: skip it, keep the lap's burn
+        return True
 
     def live_usage(self):
         """(litres a lap, energy a lap, whole lap?) or None. Over exactly the last lap once a whole
