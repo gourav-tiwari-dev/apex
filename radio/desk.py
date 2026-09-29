@@ -52,7 +52,35 @@ class RadioDesk:
         self.orders[id(call)] = self.kitchen.submit(self.cook, call)
 
     def cook(self, call):
-        line = None
+        """A call's line and its audio: the words (words_of), then the voice bank or a live
+        render. A render that fails leaves the line without audio."""
+        line, reason = self.words_of(call)
+        if line is None:
+            return {"line": line, "audio": None, "reason": reason}
+        if hasattr(self.voice, "from_bank"):
+            banked, engine = self.voice.from_bank(line, spotter=call.voice == "spotter")
+            if banked is not None:
+                call.facts["voice"] = engine
+                call.facts["banked"] = (
+                    True  # measured in the radio log: how often it hits
+                )
+                return {"line": line, "audio": banked, "reason": reason}
+        try:
+            audio, engine = self.render(line, call)
+        except Exception as error:
+            return {
+                "line": line,
+                "audio": None,
+                "reason": f"voice render failed: {error.__class__.__name__}",
+            }
+        if engine:
+            call.facts["voice"] = engine
+        return {"line": line, "audio": audio, "reason": reason}
+
+    def words_of(self, call):
+        """(line, reason): his answers and the spotter's lines as they are, code's own words with
+        a Max closer, or the model's wording when the call asks for it; code's own words
+        whenever the model gives none."""
         reason = None
         if call.asked or call.voice == "spotter":
             # his answers are already in Max's voice; spotter lines get no Max closer
@@ -61,73 +89,54 @@ class RadioDesk:
             # code's own words plus a Max closer: no model, so no 1.8 s wait and no cost
             line = self.max_lines.line(call)
         elif self.budget.allows_llm():
-            text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
-            if tokens_in or tokens_out:
-                cost = self.budget.charge(tokens_in, tokens_out)
-                # cost is logged even if the line never goes on air
-                self.results.put(
-                    {
-                        "llm_only": True,
-                        "call": call,
-                        "llm": {
-                            "tokens_in": tokens_in,
-                            "tokens_out": tokens_out,
-                            "seconds": round(seconds, 3),
-                            "cost_rs": round(cost, 5),
-                        },
-                    }
-                )
-            if text is not None:
-                ok, reason = gate(text, call, self.clean)
-                if ok:
-                    line = text
+            line, reason = self.model_line(call)
         else:
-            reason = "over budget"
+            line, reason = None, "over budget"
         # the gate failed or the model is away: fall back to code's own words
         if line is None and call.template:
             line = call.template
-        audio = None
-        if line is not None and hasattr(self.voice, "from_bank"):
-            banked, engine = self.voice.from_bank(line, spotter=call.voice == "spotter")
-            if banked is not None:
-                call.facts["voice"] = engine
-                call.facts["banked"] = (
-                    True  # measured in the radio log: how often it hits
-                )
-                return {"line": line, "audio": banked, "reason": reason}
-        if line is not None:
-            try:
-                if call.voice == "spotter":
-                    # the spotter keeps its own voice (his call, 24 Sep): Azure's Guy, or edge-tts
-                    if hasattr(self.voice, "render_spotter"):
-                        audio, engine = self.voice.render_spotter(
-                            line, mood_of(call.kind)
-                        )
-                    else:
-                        audio = (
-                            self.voice.render(line, voice=SPOTTER_VOICE)
-                            if getattr(self.voice, "out_loud", False)
-                            else None
-                        )
-                        engine = "standard"
-                elif hasattr(self.voice, "render_with_engine"):
-                    audio, engine = self.voice.render_with_engine(
-                        line, mood=mood_of(call.kind)
-                    )
-                else:
-                    audio, engine = (
-                        self.voice.render(line, mood=mood_of(call.kind)),
-                        None,
-                    )
-                if engine:
-                    call.facts["voice"] = engine
-            except Exception as error:
-                return {
-                    "line": line,
-                    "audio": None,
-                    "reason": f"voice render failed: {error.__class__.__name__}",
+        return line, reason
+
+    def model_line(self, call):
+        """The model's wording of a call, if the gate passes it: (line or None, reason). Its cost
+        is charged, and logged even if the line never goes on air."""
+        text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
+        if tokens_in or tokens_out:
+            cost = self.budget.charge(tokens_in, tokens_out)
+            self.results.put(
+                {
+                    "llm_only": True,
+                    "call": call,
+                    "llm": {
+                        "tokens_in": tokens_in,
+                        "tokens_out": tokens_out,
+                        "seconds": round(seconds, 3),
+                        "cost_rs": round(cost, 5),
+                    },
                 }
-        return {"line": line, "audio": audio, "reason": reason}
+            )
+        if text is None:
+            return None, None
+        ok, reason = gate(text, call, self.clean)
+        if ok:
+            return text, reason
+        return None, reason
+
+    def render(self, line, call):
+        """(audio, engine) of a live render. The spotter keeps its own voice (his call, 24 Sep):
+        Azure's Guy, or edge-tts."""
+        if call.voice == "spotter":
+            if hasattr(self.voice, "render_spotter"):
+                return self.voice.render_spotter(line, mood_of(call.kind))
+            audio = (
+                self.voice.render(line, voice=SPOTTER_VOICE)
+                if getattr(self.voice, "out_loud", False)
+                else None
+            )
+            return audio, "standard"
+        if hasattr(self.voice, "render_with_engine"):
+            return self.voice.render_with_engine(line, mood=mood_of(call.kind))
+        return self.voice.render(line, mood=mood_of(call.kind)), None
 
     def submit(self, call):
         if self.synchronous:
