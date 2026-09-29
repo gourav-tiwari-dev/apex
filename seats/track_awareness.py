@@ -22,6 +22,7 @@ import math
 import statistics
 
 from driving.track_map import corner_at
+from race.facts import same_lap
 
 from race.gaps import TrackClock
 from radio.calls import Call, SPOTTER, RACECRAFT
@@ -190,6 +191,27 @@ class TrackAwareness:
         )
 
     def update(self, moment):
+        """Hazards on the road ahead (slow or stopped cars, three wide), faster classes behind,
+        and fights up the road he can close on."""
+        race = moment.race
+        self.see(moment)
+        if race is None or race.me is None or not moment.new_race:
+            return []
+        self.learn_lap_length(race, moment.frame.lap_dist)
+        if not self.watching(race, moment):
+            return []
+        now = moment.now
+        corners = moment.corners or []
+        calls = []
+        calls += self.slow_or_stopped_ahead(race, moment, corners, now)
+        calls += self.three_wide_ahead(race, moment, now)
+        calls += self.faster_class_behind(race, moment.frame.lap_dist, now)
+        calls += self.fights_ahead(race, now)
+        return calls
+
+    def see(self, moment):
+        """Read the team's clock (or feed my own), watch for parked cars, and learn the normal
+        speed at every point of the track from the cars driving it."""
         race = moment.race
         shared = moment.model is not None
         self.model = moment.model
@@ -208,29 +230,26 @@ class TrackAwareness:
                     self.normal.see(car.id, car.lap_dist, car.speed_kmh)
         if not shared:
             self.clock.see_me(moment.frame.lap_dist, moment.now)
-        if race is None or race.me is None or not moment.new_race:
-            return []
+
+    def learn_lap_length(self, race, my_lap_dist):
+        """The lap's length: the farthest any car (or he) has been from the line."""
         for opponent in race.opponents:
             if self.lap_length is None or opponent.lap_dist > self.lap_length:
                 self.lap_length = opponent.lap_dist
-        if moment.frame.lap_dist > (self.lap_length or 0):
-            self.lap_length = moment.frame.lap_dist
+        if my_lap_dist > (self.lap_length or 0):
+            self.lap_length = my_lap_dist
+
+    def watching(self, race, moment):
+        """Only under green, out of the pits, in a race, once the lap length is known."""
         if (
             race.session.game_phase != GREEN_FLAG
             or race.me.in_pits
             or not self.lap_length
         ):
-            return []
+            return False
         if moment.session_type is not None and moment.session_type not in RACE_SESSIONS:
-            return []
-        now = moment.now
-        corners = moment.corners or []
-        calls = []
-        calls += self.slow_or_stopped_ahead(race, moment, corners, now)
-        calls += self.three_wide_ahead(race, moment, now)
-        calls += self.faster_class_behind(race, moment.frame.lap_dist, now)
-        calls += self.fights_ahead(race, now)
-        return calls
+            return False
+        return True
 
     def watch_parked(self, car):
         """A car that jumped hundreds of metres in one snapshot did not drive there: "return to
@@ -259,19 +278,7 @@ class TrackAwareness:
         my_speed = moment.frame.speed_kmh
         if my_speed < 60:
             return []
-        worst = None
-        for car in race.opponents:
-            if car.in_pits or car.speed_kmh is None or car.id in self.parked:
-                continue
-            ahead = self.ahead_of_me(car, moment.frame.lap_dist)
-            if not 30 < ahead <= LOOK_AHEAD_M:
-                continue
-            if car.speed_kmh >= STOPPED_KMH:
-                normal = self.normal.at(car.lap_dist)
-                if normal is None or car.speed_kmh > normal * SLOW_SHARE:
-                    continue
-            if worst is None or car.speed_kmh < worst[0].speed_kmh:
-                worst = (car, ahead)
+        worst = self.slowest_ahead(race, moment.frame.lap_dist)
         if worst is None:
             return []
         car, ahead = worst
@@ -296,6 +303,24 @@ class TrackAwareness:
             )
         ]
 
+    def slowest_ahead(self, race, my_lap_dist):
+        """The slowest car on the road just ahead that is stopped, or far under the normal speed
+        there: (car, metres ahead), or None."""
+        worst = None
+        for car in race.opponents:
+            if car.in_pits or car.speed_kmh is None or car.id in self.parked:
+                continue
+            ahead = self.ahead_of_me(car, my_lap_dist)
+            if not 30 < ahead <= LOOK_AHEAD_M:
+                continue
+            if car.speed_kmh >= STOPPED_KMH:
+                normal = self.normal.at(car.lap_dist)
+                if normal is None or car.speed_kmh > normal * SLOW_SHARE:
+                    continue
+            if worst is None or car.speed_kmh < worst[0].speed_kmh:
+                worst = (car, ahead)
+        return worst
+
     def place_on_track(self, lap_dist, corners, corner_at):
         """ "T1 Rettifilo" inside a corner, "before Arnage" on the straight leading to one."""
         if not corners:
@@ -313,38 +338,49 @@ class TrackAwareness:
         return f"before {following[0]}"
 
     def three_wide_ahead(self, race, moment, now):
+        before = self.remember_positions(race)
+        cars = self.cars_just_ahead(race, moment.frame.lap_dist)
+        for i in range(len(cars) - 2):
+            first, third = cars[i], cars[i + 2]
+            if third[0] - first[0] > ALONGSIDE_M:
+                continue
+            across = self.across_the_track([c for _, c in cars[i : i + 3]], before)
+            if across is not None and across < THREE_WIDE_ACROSS_M:
+                continue  # two alongside and one behind
+            # once in 20 s, not once per trio: replay of 24 Sep, 22 calls in one race (18 really
+            # three wide), 5 of them in 12 s as one pack jostled into new trios (27 Sep)
+            if self.fresh(("three_wide",), now, HAZARD_REARM_S):
+                return [
+                    self.hazard(
+                        "THREE_WIDE_AHEAD",
+                        "Three wide ahead. Stay out of it, let them fight.",
+                        now,
+                        {"metres": round(first[0])},
+                    )
+                ]
+            return []
+        return []
+
+    def remember_positions(self, race):
+        """Every car's position now, kept for the next snapshot; returns the ones from before."""
         before = self.positions
         self.positions = {}
         for car in race.opponents:
             if car.x is not None and car.z is not None:
                 self.positions[car.id] = (car.x, car.z)
+        return before
+
+    def cars_just_ahead(self, race, my_lap_dist):
+        """(metres ahead, car) for cars 20 m to THREE_WIDE_LOOK_M up the road, nearest first."""
         cars = []
         for car in race.opponents:
             if car.in_pits:
                 continue
-            ahead = self.ahead_of_me(car, moment.frame.lap_dist)
+            ahead = self.ahead_of_me(car, my_lap_dist)
             if 20 < ahead <= THREE_WIDE_LOOK_M:
                 cars.append((ahead, car))
         cars.sort(key=lambda item: item[0])
-        for i in range(len(cars) - 2):
-            first, third = cars[i], cars[i + 2]
-            if third[0] - first[0] <= ALONGSIDE_M:
-                across = self.across_the_track([c for _, c in cars[i : i + 3]], before)
-                if across is not None and across < THREE_WIDE_ACROSS_M:
-                    continue  # two alongside and one behind
-                # once in 20 s, not once per trio: replay of 24 Sep, 22 calls in one race (18 really
-                # three wide), 5 of them in 12 s as one pack jostled into new trios (27 Sep)
-                if self.fresh(("three_wide",), now, HAZARD_REARM_S):
-                    return [
-                        self.hazard(
-                            "THREE_WIDE_AHEAD",
-                            "Three wide ahead. Stay out of it, let them fight.",
-                            now,
-                            {"metres": round(first[0])},
-                        )
-                    ]
-                return []
-        return []
+        return cars
 
     def across_the_track(self, trio, before):
         """Metres between the outside cars of three, across the lead car's direction of travel (from
@@ -366,37 +402,12 @@ class TrackAwareness:
         return max(offsets) - min(offsets)
 
     def faster_class_behind(self, race, my_lap_dist, now):
-        me = race.me
-        mine = class_rank(me.car_class)
-        coming = []
-        watched = []  # every faster car within the watch, closing or not
-        for car in race.opponents:
-            if car.in_pits or class_rank(car.car_class) <= mine:
-                continue
-            metres = self.metres_behind_on_road(car, my_lap_dist)
-            if metres is None:
-                continue
-            gap = self.road_gap_behind(metres)
-            if gap is None or gap > FASTER_CLASS_WATCH_S:
-                continue
-            arrives = self.arrives_in(car, gap, now)
-            watched.append((gap, car))
-            soon = arrives is not None and arrives <= FASTER_CLASS_ARRIVES_S
-            stuck_behind = (
-                arrives is None and gap <= RIGHT_BEHIND_S
-            )  # right there, not getting by
-            if soon or stuck_behind:
-                coming.append((gap, arrives, car))
+        coming, watched = self.faster_cars_behind(race, my_lap_dist, now)
         if not coming:
             return []
         coming.sort(key=lambda item: item[0])
         gap, arrives, car = coming[0]
-        # a fight: another faster car right with the first, whether or not its own arrival is known yet
-        partner = None
-        for other_gap, other in watched:
-            if other.id != car.id and abs(other_gap - gap) <= BATTLE_GAP_S:
-                partner = other
-                break
+        partner = self.fight_partner(car, gap, watched)
         if partner is not None:
             key = ("faster_fight", tuple(sorted((car.id, partner.id))))
             if self.fresh(key, now, OPPORTUNITY_REARM_S):
@@ -420,6 +431,38 @@ class TrackAwareness:
         if arrives is not None:
             facts["arrives_in_s"] = round(arrives)
         return [self.hazard("FASTER_CLASS_BEHIND", text, now, facts)]
+
+    def faster_cars_behind(self, race, my_lap_dist, now):
+        """Faster-class cars behind him on the road: (coming, watched). coming = (gap, arrives,
+        car) for the ones on him soon or stuck right behind; watched = every one in the watch."""
+        mine = class_rank(race.me.car_class)
+        coming = []
+        watched = []  # every faster car within the watch, closing or not
+        for car in race.opponents:
+            if car.in_pits or class_rank(car.car_class) <= mine:
+                continue
+            metres = self.metres_behind_on_road(car, my_lap_dist)
+            if metres is None:
+                continue
+            gap = self.road_gap_behind(metres)
+            if gap is None or gap > FASTER_CLASS_WATCH_S:
+                continue
+            arrives = self.arrives_in(car, gap, now)
+            watched.append((gap, car))
+            soon = arrives is not None and arrives <= FASTER_CLASS_ARRIVES_S
+            # right there, not getting by
+            stuck_behind = arrives is None and gap <= RIGHT_BEHIND_S
+            if soon or stuck_behind:
+                coming.append((gap, arrives, car))
+        return coming, watched
+
+    def fight_partner(self, car, gap, watched):
+        """A fight: another faster car right with the first, whether or not its own arrival is
+        known yet."""
+        for other_gap, other in watched:
+            if other.id != car.id and abs(other_gap - gap) <= BATTLE_GAP_S:
+                return other
+        return None
 
     def arrives_in(self, car, gap, now):
         """Seconds until that car is on him: the gap over how fast it is shrinking, measured on the
@@ -469,19 +512,8 @@ class TrackAwareness:
         10 s on 24 Sep. The group must hold together for FIGHT_FOR_S, and it is named by the
         car directly ahead of him, so cars joining or leaving the front of a train do not make
         it "new" (the first version keyed on every car in it and called it 57 times)."""
-        me = race.me
-        from race.facts import same_lap
-
-        rivals = [
-            car
-            for car in race.opponents
-            if car.car_class == me.car_class
-            and same_lap(me, car, self.model)
-            and not car.in_pits
-            and car.place < me.place
-        ]
-        rivals.sort(key=lambda car: car.place, reverse=True)  # nearest first
-        if not rivals or rivals[0].place != me.place - 1:
+        rivals = self.rivals_ahead(race)
+        if not rivals or rivals[0].place != race.me.place - 1:
             self.group_since = None
             return []
         nearest = rivals[0]
@@ -489,30 +521,12 @@ class TrackAwareness:
         if reach is None or not ALREADY_IN_IT_S < reach <= OPPORTUNITY_REACH_S:
             self.group_since = None
             return []
-        chain = [nearest]
-        gaps = []
-        for car in rivals[1:]:
-            if car.place != chain[-1].place - 1 or len(chain) == TRAIN_MAX_CARS:
-                break
-            gap = self.clock.gap_between(car.id, chain[-1].id)
-            if gap is None or gap > TRAIN_GAP_S:
-                break
-            chain.append(car)
-            gaps.append(gap)
+        chain, gaps = self.chain_ahead(nearest, rivals)
         is_battle = len(chain) == 2 and gaps[0] <= BATTLE_GAP_S
         if len(chain) < 3 and not is_battle:
             self.group_since = None
             return []
-        if self.group_since is None or self.group_since[0] != nearest.id:
-            self.group_since = (nearest.id, now)
-        if now - self.group_since[1] < FIGHT_FOR_S:
-            return []
-        if (
-            self.last_group_call is not None
-            and now - self.last_group_call < OPPORTUNITY_REARM_S
-        ):
-            return []
-        if not self.fresh(("group", nearest.id), now, GROUP_REARM_S):
+        if not self.group_worth_a_call(nearest, now):
             return []
         self.last_group_call = now
         if is_battle:
@@ -536,3 +550,43 @@ class TrackAwareness:
                 "TRAIN_AHEAD", text, now, {"cars": len(chain), "gap_s": round(reach, 1)}
             )
         ]
+
+    def rivals_ahead(self, race):
+        """His class, on his lap, out of the pits, ahead of him: nearest first."""
+        me = race.me
+        rivals = []
+        for car in race.opponents:
+            if car.car_class != me.car_class or car.in_pits or car.place >= me.place:
+                continue
+            if same_lap(me, car, self.model):
+                rivals.append(car)
+        rivals.sort(key=lambda car: car.place, reverse=True)  # nearest first
+        return rivals
+
+    def chain_ahead(self, nearest, rivals):
+        """The cars in a row from the one directly ahead of him, each within TRAIN_GAP_S of the
+        next: (chain, gaps between them)."""
+        chain = [nearest]
+        gaps = []
+        for car in rivals[1:]:
+            if car.place != chain[-1].place - 1 or len(chain) == TRAIN_MAX_CARS:
+                break
+            gap = self.clock.gap_between(car.id, chain[-1].id)
+            if gap is None or gap > TRAIN_GAP_S:
+                break
+            chain.append(car)
+            gaps.append(gap)
+        return chain, gaps
+
+    def group_worth_a_call(self, nearest, now):
+        """The group has held for FIGHT_FOR_S, no group call was made lately, and not this one."""
+        if self.group_since is None or self.group_since[0] != nearest.id:
+            self.group_since = (nearest.id, now)
+        if now - self.group_since[1] < FIGHT_FOR_S:
+            return False
+        if (
+            self.last_group_call is not None
+            and now - self.last_group_call < OPPORTUNITY_REARM_S
+        ):
+            return False
+        return self.fresh(("group", nearest.id), now, GROUP_REARM_S)
