@@ -31,6 +31,7 @@ coach/llm.py (the model).
 import json
 import threading
 import time
+from dataclasses import dataclass
 from queue import Queue, Empty
 
 from radio.calls import Call, RACE_CONTROL
@@ -66,18 +67,13 @@ MAX_TOKENS = 1500
 # and an answer came 38 s after the question. On track that is worse than no answer, so each
 # model call gets 10 s, and past that the team's own call is said at once (see fallback()).
 MODEL_TIMEOUT_S = 10
-FOLLOW_UP_WINDOW_S = (
-    60.0  # a question within a minute of the last one may be a follow-up
-)
-FOLLOW_UP_EXCHANGES = (
-    3  # v3 5b: "and what about the one behind?" can lean on 3 exchanges
-)
+# a question within a minute of the last one may be a follow-up
+FOLLOW_UP_WINDOW_S = 60.0
+# v3 5b: "and what about the one behind?" can lean on 3 exchanges
+FOLLOW_UP_EXCHANGES = 3
 
 MAX_WORDS_EXPLAIN = 110
 HEAVY_TIMEOUT_S = 20
-
-
-# ---- the snapshot: everything the tools can see, taken on the main thread when he asks ------
 
 
 def without_empty(value):
@@ -94,7 +90,18 @@ def without_empty(value):
     return value
 
 
-# ---- the gate for agent answers --------------------------------------------------------------
+@dataclass
+class Asked:
+    """What goes with one question to the coach, and the limits its answer is checked
+    against."""
+
+    system: str  # the system prompt (with the clean rule in clean mode)
+    picture: str  # the race picture, as JSON
+    given: str  # the cars either side, his habits, his standing orders, as JSON
+    voice: str  # the voice reminder sent right next to the question
+    max_words: int
+    timeout: float  # seconds the model gets for each turn
+    speeds_ok: bool  # he asked about speed: km/h may be said
 
 
 # ---- the agent -------------------------------------------------------------------------------
@@ -231,8 +238,78 @@ class RaceAgent:
         return response.choices[0].message, spent
 
     def think(self, question, snapshot, earlier=""):
+        """(answer, info): ask the model, run the tools it calls, check the answer; one rewrite
+        if refused, then an honest "no clean answer". The model down or slow: the team's own
+        call, from code (fallback)."""
         # no budget check: push-to-talk never stops (his call, 25 Sep - the Rs 5 cap silenced the
         # coach after 7 answers in a live race). Every call is still charged and logged.
+        asked = self.asked_with(question, snapshot)
+        messages = [
+            {"role": "system", "content": asked.system},
+            {
+                "role": "user",
+                "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {asked.picture})"
+                f"\n(Already given, no need to call driver or my_habits for these: {asked.given})\n\n{asked.voice}",
+            },
+        ]
+        costs = []
+        tools_used = ["race_picture"]
+        tool_texts = [asked.picture, asked.given]
+        refused = None
+        # tool rounds, then the answer, then at most one rewrite
+        for round_number in range(1, MAX_ROUNDS + 3):
+            try:
+                message, spent = self.model_turn(messages, asked.timeout)
+            except Exception as error:
+                # slow or down: the decision still gets through, from code
+                return fallback(snapshot, question), {
+                    "costs": costs,
+                    "tools": tools_used,
+                    "rounds": None,
+                    "refused": f"model {error.__class__.__name__}",
+                    "call": "TEAM",
+                }
+            costs.append(spent)
+            if message.tool_calls and round_number <= MAX_ROUNDS:
+                messages.append(message.model_dump(exclude_none=True))
+                self.run_tools(message, snapshot, messages, tools_used, tool_texts)
+                continue
+            raw = message.content or ""
+            given_orders, raw = split_orders(raw)
+            call, override, text = split_call(raw)  # the CALL line is never spoken
+            # a free fix instead of a paid rewrite round (25 Sep)
+            text = neutral_pronouns(text)
+            ok, reason = self.check_spoken(
+                question, snapshot, (call, override, text), tool_texts, asked
+            )
+            if ok:
+                return text, {
+                    "costs": costs,
+                    "tools": tools_used,
+                    "rounds": round_number,
+                    "refused": refused,
+                    "call": call,
+                    "override": override,
+                    "orders": given_orders,
+                }
+            if refused is not None:
+                break  # one rewrite only
+            refused = reason
+            messages.append({"role": "assistant", "content": raw})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {asked.voice}",
+                }
+            )
+        return (
+            "No clean answer on that one, mate. Ask it another way.",
+            {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused},
+        )
+
+    def asked_with(self, question, snapshot):
+        """What goes with this question: the system prompt, the race picture, the cars either
+        side and his habits, and the voice reminder (longer for "why", speeds only if asked)."""
         system = AGENT_PROMPT + ("\n" + CLEAN_RULE if self.clean else "")
         if snapshot.picture.get("session") == "race":
             snapshot.picture["plan_now"] = current_plan(
@@ -277,108 +354,57 @@ class RaceAgent:
                 **standing,
             }
         )
-        messages = [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {picture})"
-                f"\n(Already given, no need to call driver or my_habits for these: {given})\n\n{voice}",
-            },
-        ]
-        costs = []
-        tools_used = ["race_picture"]
-        tool_texts_given = [given]
-        tool_texts = [picture] + tool_texts_given
-        refused = None
-        # tool rounds, then the answer, then at most one rewrite
-        for round_number in range(1, MAX_ROUNDS + 3):
+        return Asked(system, picture, given, voice, max_words, timeout, speeds_ok)
+
+    def run_tools(self, message, snapshot, messages, tools_used, tool_texts):
+        """Every tool the model called this round, run on the snapshot; the results go back
+        into the conversation (and every number in them may be said)."""
+        for tool_call in message.tool_calls:
             try:
-                message, spent = self.model_turn(messages, timeout)
-            except Exception as error:
-                # slow or down: the decision still gets through, from code
-                return fallback(snapshot, question), {
-                    "costs": costs,
-                    "tools": tools_used,
-                    "rounds": None,
-                    "refused": f"model {error.__class__.__name__}",
-                    "call": "TEAM",
-                }
-            costs.append(spent)
-            if message.tool_calls and round_number <= MAX_ROUNDS:
-                messages.append(message.model_dump(exclude_none=True))
-                for tool_call in message.tool_calls:
-                    try:
-                        arguments = json.loads(tool_call.function.arguments or "{}")
-                    except json.JSONDecodeError:
-                        arguments = {}
-                    result = json.dumps(
-                        without_empty(
-                            snapshot.run_tool(tool_call.function.name, arguments)
-                        )
-                    )
-                    tools_used.append(tool_call.function.name)
-                    tool_texts.append(result)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": result,
-                        }
-                    )
-                continue
-            raw = message.content or ""
-            given_orders, raw = split_orders(raw)
-            call, override, text = split_call(raw)  # the CALL line is never spoken
-            text = neutral_pronouns(
-                text
-            )  # a free fix instead of a paid rewrite round (25 Sep)
-            ok, reason = snapshot.check_call(call, override, question)
-            if ok:
-                ok, reason = check_answer(
-                    text,
-                    numbers_seen(question, *tool_texts),
-                    self.clean,
-                    snapshot.driver_names(),
-                    max_words,
-                    speeds_ok,
-                )
-            if ok:
-                ok, reason = fuel_honest(
-                    question, text, snapshot.car_state.get("fuel_at_the_flag")
-                )
-            if ok:
-                ok, reason = trend_honest(text, snapshot.picture)
-            if ok and tacked_on(question, text, bool(snapshot.team_calls)):
-                ok, reason = (
-                    False,
-                    (
-                        "it talks about the car ahead or behind, but he did not ask about them "
-                        "and nobody is within a second: answer only his question"
-                    ),
-                )
-            if ok:
-                ok, reason = snapshot.check_orders(call, override)
-            if ok:
-                return text, {
-                    "costs": costs,
-                    "tools": tools_used,
-                    "rounds": round_number,
-                    "refused": refused,
-                    "call": call,
-                    "override": override,
-                    "orders": given_orders,
-                }
-            if refused is not None:
-                break  # one rewrite only
-            refused = reason
-            messages.append({"role": "assistant", "content": raw})
+                arguments = json.loads(tool_call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+            result = json.dumps(
+                without_empty(snapshot.run_tool(tool_call.function.name, arguments))
+            )
+            tools_used.append(tool_call.function.name)
+            tool_texts.append(result)
             messages.append(
                 {
-                    "role": "user",
-                    "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {voice}",
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
                 }
             )
-        return (
-            "No clean answer on that one, mate. Ask it another way.",
-            {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused},
-        )
+
+    def check_spoken(self, question, snapshot, answer, tool_texts, asked):
+        """(ok, reason): the checks an answer passes before it goes on air, in order - the team
+        call, the words and numbers, fuel, the trend, tacked on, his standing orders."""
+        call, override, text = answer
+        ok, reason = snapshot.check_call(call, override, question)
+        if ok:
+            ok, reason = check_answer(
+                text,
+                numbers_seen(question, *tool_texts),
+                self.clean,
+                snapshot.driver_names(),
+                asked.max_words,
+                asked.speeds_ok,
+            )
+        if ok:
+            ok, reason = fuel_honest(
+                question, text, snapshot.car_state.get("fuel_at_the_flag")
+            )
+        if ok:
+            ok, reason = trend_honest(text, snapshot.picture)
+        if ok and tacked_on(question, text, bool(snapshot.team_calls)):
+            ok, reason = (
+                False,
+                (
+                    "it talks about the car ahead or behind, but he did not ask about them "
+                    "and nobody is within a second: answer only his question"
+                ),
+            )
+        if ok:
+            ok, reason = snapshot.check_orders(call, override)
+        return ok, reason
