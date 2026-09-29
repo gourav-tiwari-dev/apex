@@ -82,28 +82,59 @@ SITUATIONS = {
 NEXT_SITUATION = ("next situation", "next scenario", "next one")
 
 
-def set_situation(
-    frozen,
-    seats,
-    ahead_gap=None,
-    ahead_pace=0.0,
-    behind_gap=None,
-    behind_pace=0.0,
-    laps_left=None,
-    damage=False,
-    contacts=0,
-    hypercar_m=None,
-    tyres_c=None,
-):
+def set_situation(frozen, seats, situation):
     """Move the cars just ahead and behind to the gaps and pace asked for, and rebuild the
-    picture the coach sees. pace = seconds a lap quicker than him (negative = slower)."""
+    picture the coach sees. situation: a SITUATIONS entry; pace = seconds a lap quicker
+    than him (negative = slower)."""
     race = frozen["base_race"]  # always from the real moment, not the last situation
     engineer = seats["RaceEngineer"]
     engineer.gaps_at_line = dict(frozen["base_gaps"])
     engineer.to_go_at_line = frozen["base_to_go"]
     me = race.me
-    my_lap = me.last_lap if me.last_lap > 0 else me.best_lap
     ahead, _, behind, _ = same_class_neighbours(race)
+    opponents = moved_cars(race, engineer, ahead, behind, situation)
+    if situation.get("hypercar_m") is not None:
+        opponents.append(
+            a_hypercar(
+                opponents, ahead, behind, frozen["lap_dist"] - situation["hypercar_m"]
+            )
+        )
+    changes = {}
+    if situation.get("damage", False):
+        changes["dents"] = [0, 2, 0, 1, 0, 0, 0, 0]
+    if situation.get("tyres_c") is not None:
+        changes["tyre_temps"] = [[situation["tyres_c"]] * 3] * 4
+    race = replace(race, opponents=opponents, me=replace(me, **changes))
+    if situation.get("laps_left") is not None:
+        engineer.to_go_at_line = situation["laps_left"]
+    contacts_this_race = {}
+    if situation.get("contacts", 0) and behind is not None:
+        contacts_this_race[identity(behind)] = situation["contacts"]
+    frozen["race"] = race
+    frozen["snapshot"] = Snapshot(
+        race,
+        frozen["lap"],
+        frozen["lap_dist"],
+        frozen["corners"],
+        engineer,
+        seats["Strategist"],
+        seats["PerformanceEngineer"],
+        seats["Racecraft"],
+        seats["Governor"],
+        frozen["habits"],
+        contacts_this_race,
+    )
+
+
+def moved_cars(race, engineer, ahead, behind, situation):
+    """Every opponent, the cars just ahead and behind moved to the situation's gaps and pace;
+    the engineer's gaps at the line set to what they were a lap ago."""
+    me = race.me
+    my_lap = me.last_lap if me.last_lap > 0 else me.best_lap
+    ahead_gap = situation.get("ahead")
+    ahead_pace = situation.get("ahead_pace", 0.0)
+    behind_gap = situation.get("behind")
+    behind_pace = situation.get("behind_pace", 0.0)
     opponents = []
     for opponent in race.opponents:
         if ahead is not None and opponent is ahead and ahead_gap is not None:
@@ -128,44 +159,20 @@ def set_situation(
                 round(behind_gap + behind_pace, 2),
             )
         opponents.append(opponent)
-    if hypercar_m is not None:
-        # a faster-class car on the road just behind: a copy of a far-away car, reclassed
-        spare = [o for o in opponents if o is not ahead and o is not behind][0]
-        opponents.append(
-            replace(
-                spare,
-                id=999,
-                driver="a Hypercar",
-                steam_id=999,
-                car_class="Hypercar",
-                lap_dist=frozen["lap_dist"] - hypercar_m,
-                in_pits=False,
-            )
-        )
-    changes = {}
-    if damage:
-        changes["dents"] = [0, 2, 0, 1, 0, 0, 0, 0]
-    if tyres_c is not None:
-        changes["tyre_temps"] = [[tyres_c] * 3] * 4
-    race = replace(race, opponents=opponents, me=replace(me, **changes))
-    if laps_left is not None:
-        engineer.to_go_at_line = laps_left
-    contacts_this_race = {}
-    if contacts and behind is not None:
-        contacts_this_race[identity(behind)] = contacts
-    frozen["race"] = race
-    frozen["snapshot"] = Snapshot(
-        race,
-        frozen["lap"],
-        frozen["lap_dist"],
-        frozen["corners"],
-        engineer,
-        seats["Strategist"],
-        seats["PerformanceEngineer"],
-        seats["Racecraft"],
-        seats["Governor"],
-        frozen["habits"],
-        contacts_this_race,
+    return opponents
+
+
+def a_hypercar(opponents, ahead, behind, lap_dist):
+    """A faster-class car on the road just behind: a copy of a far-away car, reclassed."""
+    spare = [o for o in opponents if o is not ahead and o is not behind][0]
+    return replace(
+        spare,
+        id=999,
+        driver="a Hypercar",
+        steam_id=999,
+        car_class="Hypercar",
+        lap_dist=lap_dist,
+        in_pits=False,
     )
 
 
@@ -244,7 +251,7 @@ def frozen_race(tape, lap):
     return frozen, made
 
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--lap", type=int, default=4)
     parser.add_argument("--tape", default=DEFAULT_TAPE)
@@ -268,18 +275,17 @@ def main():
         help="how much quicker a lap the car behind is",
     )
     parser.add_argument("--laps-left", type=int)
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    print(f"Replaying {args.tape} silently up to lap {args.lap}...")
-    frozen, seats = frozen_race(args.tape, args.lap)
-    # the queue of situations: one from the flags, or several to step through by voice
+
+def situation_queue(args):
+    """The situations to step through: the one or several named, then "custom" when the gap
+    flags make one."""
     queue = []
     if args.situations:
-        queue = [
-            name.strip()
-            for name in args.situations.split(",")
-            if name.strip() in SITUATIONS
-        ]
+        for name in args.situations.split(","):
+            if name.strip() in SITUATIONS:
+                queue.append(name.strip())
     elif args.situation:
         queue = [args.situation]
     custom = {}
@@ -297,98 +303,118 @@ def main():
     if custom:
         SITUATIONS["custom"] = custom
         queue.append("custom")
-    step = {"index": 0}
+    return queue
 
-    def go_to(index):
-        name = queue[index]
-        chosen = SITUATIONS[name]
-        set_situation(
-            frozen,
-            seats,
-            chosen.get("ahead"),
-            chosen.get("ahead_pace", 0.0),
-            chosen.get("behind"),
-            chosen.get("behind_pace", 0.0),
-            chosen.get("laps_left"),
-            chosen.get("damage", False),
-            chosen.get("contacts", 0),
-            chosen.get("hypercar_m"),
-            chosen.get("tyres_c"),
+
+def show_situation(frozen, seats, queue, index):
+    """Set the situation at index of the queue and print what the coach now sees. Returns
+    its name."""
+    name = queue[index]
+    set_situation(frozen, seats, SITUATIONS[name])
+    picture = frozen["snapshot"].picture
+    print(f"\n=== Situation {index + 1} of {len(queue)}: {name} ===")
+    print(f"P{picture['place']}, {picture['laps_to_go']} laps to go.")
+    for side in ("ahead", "behind"):
+        car = picture.get(side)
+        if car:
+            print(
+                f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}, {car.get('fight', '')}"
+            )
+            if car.get("team_call"):
+                print(f"    team call: {car['team_call'].split(':')[0]}")
+    extras = frozen["snapshot"].override_evidence()
+    if extras:
+        print(f"  the data would back an override for: {', '.join(sorted(extras))}")
+    return name
+
+
+class CoachRadio:
+    """The radio of the frozen race: short everyday questions get the fixed answer, anything
+    else goes to the race agent, "next situation" moves on, and every answer is spoken."""
+
+    def __init__(self, frozen, seats, queue, clean):
+        self.frozen = frozen
+        self.seats = seats
+        self.queue = queue
+        self.index = 0
+        self.voice = Voice(out_loud=True)
+        self.budget = Budget(cap_rs=5.0)
+        self.agent = RaceAgent(self.budget, clean)
+        self.answers = Answers(
+            seats["Governor"],
+            seats["RaceEngineer"],
+            seats["Strategist"],
+            seats["PerformanceEngineer"],
+            clean,
         )
-        picture = frozen["snapshot"].picture
-        print(f"\n=== Situation {index + 1} of {len(queue)}: {name} ===")
-        print(f"P{picture['place']}, {picture['laps_to_go']} laps to go.")
-        for side in ("ahead", "behind"):
-            car = picture.get(side)
-            if car:
-                print(
-                    f"  {side}: {car['driver']}, {car['gap_s']} s, {car.get('their_pace', '')}, {car.get('fight', '')}"
-                )
-                if car.get("team_call"):
-                    print(f"    team call: {car['team_call'].split(':')[0]}")
-        extras = frozen["snapshot"].override_evidence()
-        if extras:
-            print(f"  the data would back an override for: {', '.join(sorted(extras))}")
-        return name
 
+    def hear(self, heard):
+        """One thing he said."""
+        if not heard.text:
+            print("  (heard nothing)")
+            return
+        print(f"you: {heard.text}")
+        said = heard.text.lower()
+        if any(words in said for words in NEXT_SITUATION):
+            self.next_situation()
+            return
+        if needs_agent(heard.text):
+            self.voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
+            self.agent.ask(heard.text, self.frozen["snapshot"], 0.0)
+            return
+        answer = self.answers.answer(
+            heard.text, self.frozen["race"], self.frozen["lap"], 0.0
+        )
+        print(f"apex: {answer.template}")
+        self.voice.say(answer.template)
+
+    def next_situation(self):
+        if self.index + 1 < len(self.queue):
+            self.index += 1
+            name = show_situation(self.frozen, self.seats, self.queue, self.index)
+            self.voice.say(f"Next situation: {name}.")
+        else:
+            self.voice.say("That was the last situation, mate.")
+
+    def say_answers(self):
+        """The agent's answers that have come back: printed with the call and cost, spoken."""
+        for result in self.agent.finished():
+            call = result["call"]
+            cost = sum(spent["cost_rs"] for spent in result["costs"])
+            decided = call.facts.get("call") or "-"
+            if call.facts.get("override"):
+                decided += f" (OVERRIDE: {call.facts['override']})"
+            print(
+                f"apex [{decided}]: {call.template}   ({call.facts['seconds']} s, Rs {cost:.2f})"
+            )
+            self.voice.say(call.template)
+
+
+def main():
+    args = parse_args()
+    print(f"Replaying {args.tape} silently up to lap {args.lap}...")
+    frozen, seats = frozen_race(args.tape, args.lap)
+    # the queue of situations: one from the flags, or several to step through by voice
+    queue = situation_queue(args)
     if queue:
-        go_to(0)
+        show_situation(frozen, seats, queue, 0)
 
     talk = push_to_talk.start_if_set_up(
         verbose=True
     )  # every step shows: a silent failure shows where
     if talk is None:
         return
-    voice = Voice(out_loud=True)
-    budget = Budget(cap_rs=5.0)
-    agent = RaceAgent(budget, args.clean)
-    answers = Answers(
-        seats["Governor"],
-        seats["RaceEngineer"],
-        seats["Strategist"],
-        seats["PerformanceEngineer"],
-        args.clean,
-    )
+    radio = CoachRadio(frozen, seats, queue, args.clean)
     print("\nHold R1 and ask anything. Ctrl+C to stop.\n")
     try:
         while True:
             for heard in talk.poll():
-                if not heard.text:
-                    print("  (heard nothing)")
-                    continue
-                print(f"you: {heard.text}")
-                said = heard.text.lower()
-                if any(words in said for words in NEXT_SITUATION):
-                    if step["index"] + 1 < len(queue):
-                        step["index"] += 1
-                        name = go_to(step["index"])
-                        voice.say(f"Next situation: {name}.")
-                    else:
-                        voice.say("That was the last situation, mate.")
-                    continue
-                if needs_agent(heard.text):
-                    voice.play_bank_if_free("STAND_BY", "Copy. Stand by.")
-                    agent.ask(heard.text, frozen["snapshot"], 0.0)
-                else:
-                    answer = answers.answer(
-                        heard.text, frozen["race"], frozen["lap"], 0.0
-                    )
-                    print(f"apex: {answer.template}")
-                    voice.say(answer.template)
-            for result in agent.finished():
-                call = result["call"]
-                cost = sum(spent["cost_rs"] for spent in result["costs"])
-                decided = call.facts.get("call") or "-"
-                if call.facts.get("override"):
-                    decided += f" (OVERRIDE: {call.facts['override']})"
-                print(
-                    f"apex [{decided}]: {call.template}   ({call.facts['seconds']} s, Rs {cost:.2f})"
-                )
-                voice.say(call.template)
+                radio.hear(heard)
+            radio.say_answers()
             time.sleep(0.01)
     except KeyboardInterrupt:
         talk.close()
-        print(f"\nSpent Rs {budget.spent_rs:.2f} on the agent.")
+        print(f"\nSpent Rs {radio.budget.spent_rs:.2f} on the agent.")
 
 
 if __name__ == "__main__":

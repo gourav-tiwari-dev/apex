@@ -68,6 +68,58 @@ def check(conn, session_id, answers):
         (session_id,),
     ).fetchone()
 
+    problems = race_problems(session_type, end_reason, first_phase)
+    seats = seat_calls(conn, session_id, launch_id)
+    for seat in SEATS:
+        if seats[seat]["calls"] == 0:
+            problems.append(f"the {seat} seat made no real call")
+
+    # D3: qualifying in the same launch
+    quali = qualifying_in_launch(conn, launch_id)
+    if quali == 0:
+        problems.append("no qualifying session in the same launch (D3)")
+
+    # D4: what the LLM cost
+    cost = one_number(conn, LLM_COST, session_id)
+    if cost > COST_CAP_RS:
+        problems.append(
+            f"LLM cost Rs {cost:.2f} is over the Rs {COST_CAP_RS:.0f} cap (D4)"
+        )
+    problems += answer_problems(answers)
+
+    return {
+        "session_id": session_id,
+        "verdict": "DONE" if not problems else "NOT YET",
+        "problems": problems,
+        "seats": seats,
+        "cost_rs": round(cost, 2),
+        "latency": reflective_latency(conn, session_id),
+        "lines_refused_by_the_gate": one_number(conn, REFUSED, session_id),
+        # D5: how often he asked for quiet on push-to-talk, and how many lines it held back
+        "quiet_used": one_number(conn, QUIET_ASKED, session_id),
+        "lines_held_by_quiet": one_number(conn, HELD_BY_QUIET, session_id),
+        "qualifying_in_launch": quali,
+    }
+
+
+LLM_COST = "SELECT COALESCE(SUM(cost_rs), 0) FROM llm_calls WHERE session_id = ?"
+REFUSED = "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND reason IS NOT NULL AND reason != 'ok' AND reason != 'over budget'"
+QUIET_ASKED = (
+    "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND kind = 'ANSWER_QUIET'"
+)
+HELD_BY_QUIET = (
+    "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND status = 'quiet'"
+)
+
+
+def one_number(conn, sql, session_id):
+    """The one number a query gives for this session (a count or a sum)."""
+    return conn.execute(sql, (session_id,)).fetchone()[0]
+
+
+def race_problems(session_type, end_reason, first_phase):
+    """What makes this session not a race run to the flag with Apex on from before the
+    green flag."""
     problems = []
     if session_type not in RACE_SESSIONS:
         problems.append("not a race session")
@@ -77,16 +129,19 @@ def check(conn, session_id, answers):
         problems.append(
             f"the race did not run to the flag with Apex on (ended: {end_reason})"
         )
+    return problems
 
-    # the setup engineer works between sessions: its brief before the race counts too
+
+def seat_calls(conn, session_id, launch_id):
+    """seat -> how many real calls it made on air, and the first one. The setup engineer works
+    between sessions: its brief before the race counts too."""
     launch_sessions = [session_id]
     if launch_id is not None:
-        launch_sessions = [
-            row[0]
-            for row in conn.execute(
-                "SELECT id FROM sessions WHERE launch_id = ?", (launch_id,)
-            )
-        ]
+        launch_sessions = []
+        for row in conn.execute(
+            "SELECT id FROM sessions WHERE launch_id = ?", (launch_id,)
+        ):
+            launch_sessions.append(row[0])
     seats = {}
     for seat in SEATS:
         sessions = launch_sessions if seat in BETWEEN_SESSIONS else [session_id]
@@ -97,60 +152,41 @@ def check(conn, session_id, answers):
         ).fetchall()
         real = [(kind, line) for kind, line in rows if kind not in NOT_REAL]
         seats[seat] = {"calls": len(real), "example": real[0][1] if real else None}
-        if not real:
-            problems.append(f"the {seat} seat made no real call")
+    return seats
 
-    # D3: qualifying in the same launch
-    quali = 0
-    if launch_id is not None:
-        quali = conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE launch_id = ? AND session_type BETWEEN 5 AND 8",
-            (launch_id,),
-        ).fetchone()[0]
-    if quali == 0:
-        problems.append("no qualifying session in the same launch (D3)")
 
-    # D4: what the LLM cost, and how fast the reflective lines were
-    cost = conn.execute(
-        "SELECT COALESCE(SUM(cost_rs), 0) FROM llm_calls WHERE session_id = ?",
-        (session_id,),
-    ).fetchone()[0]
-    if cost > COST_CAP_RS:
-        problems.append(
-            f"LLM cost Rs {cost:.2f} is over the Rs {COST_CAP_RS:.0f} cap (D4)"
-        )
-    latencies = [
-        row[0]
-        for row in conn.execute(
-            "SELECT latency_ms FROM radio_log WHERE session_id = ? AND status = 'spoken' AND urgent = 0 AND latency_ms IS NOT NULL",
-            (session_id,),
-        )
-    ]
-    latency = None
-    if latencies:
-        latencies.sort()
-        latency = {
-            "p50_ms": statistics.median(latencies),
-            "p95_ms": latencies[int(len(latencies) * 0.95) - 1]
-            if len(latencies) >= 20
-            else max(latencies),
-        }
-
-    refused = conn.execute(
-        "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND reason IS NOT NULL AND reason != 'ok' AND reason != 'over budget'",
-        (session_id,),
-    ).fetchone()[0]
-    # D5: how often he asked for quiet on push-to-talk, and how many lines it held back
-    quiet = conn.execute(
-        "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND kind = 'ANSWER_QUIET'",
-        (session_id,),
-    ).fetchone()[0]
-    held_by_quiet = conn.execute(
-        "SELECT COUNT(*) FROM radio_log WHERE session_id = ? AND status = 'quiet'",
-        (session_id,),
+def qualifying_in_launch(conn, launch_id):
+    """How many qualifying sessions the same launch holds (D3)."""
+    if launch_id is None:
+        return 0
+    return conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE launch_id = ? AND session_type BETWEEN 5 AND 8",
+        (launch_id,),
     ).fetchone()[0]
 
-    # his own verdict: did he switch it off, and was any seat wrong (D1)
+
+def reflective_latency(conn, session_id):
+    """How fast the non-urgent lines went on air: p50 and p95 in ms, or None without any."""
+    latencies = []
+    for row in conn.execute(
+        "SELECT latency_ms FROM radio_log WHERE session_id = ? AND status = 'spoken' AND urgent = 0 AND latency_ms IS NOT NULL",
+        (session_id,),
+    ):
+        latencies.append(row[0])
+    if not latencies:
+        return None
+    latencies.sort()
+    return {
+        "p50_ms": statistics.median(latencies),
+        "p95_ms": latencies[int(len(latencies) * 0.95) - 1]
+        if len(latencies) >= 20
+        else max(latencies),
+    }
+
+
+def answer_problems(answers):
+    """His own verdict: did he switch it off, was any seat wrong (D1), is any seat not rated."""
+    problems = []
     if answers.get("switched_off"):
         problems.append("you switched it off")
     ratings = answers.get("ratings", {})
@@ -160,19 +196,7 @@ def check(conn, session_id, answers):
     missing = [seat for seat in SEATS if seat not in ratings]
     if missing:
         problems.append("seats not rated yet: " + ", ".join(missing))
-
-    return {
-        "session_id": session_id,
-        "verdict": "DONE" if not problems else "NOT YET",
-        "problems": problems,
-        "seats": seats,
-        "cost_rs": round(cost, 2),
-        "latency": latency,
-        "lines_refused_by_the_gate": refused,
-        "quiet_used": quiet,
-        "lines_held_by_quiet": held_by_quiet,
-        "qualifying_in_launch": quali,
-    }
+    return problems
 
 
 def save_result(conn, result):

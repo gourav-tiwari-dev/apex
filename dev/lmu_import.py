@@ -104,6 +104,8 @@ def read_metadata(con):
 
 
 def convert(path, out_folder=TAPE_FOLDER):
+    """One LMU recording to one Apex tape. Returns what was converted, or None for a
+    recording with no laps."""
     con = duckdb.connect(path, read_only=True)
     meta = read_metadata(con)
     rate_of = dict(
@@ -116,218 +118,230 @@ def convert(path, out_folder=TAPE_FOLDER):
     laps = events(con, "Lap")
     if not laps:
         return None
-    start = laps[0][0]
-
-    speed = channel(con, "Ground Speed")
-    throttle = channel(con, "Throttle Pos")
-    brake = channel(con, "Brake Pos")
-    steering = channel(con, "Steering Pos Unfiltered")
-    steering_filtered = channel(con, "Steering Pos")
-    rpm = channel(con, "Engine RPM")
-    lap_dist = channel(con, "Lap Dist")
-    # swapped on purpose: LMU labels them the wrong way round (see the top of this file)
-    g_lat = channel(con, "G Force Long")
-    g_long = channel(con, "G Force Lat")
-    wheels = channel(con, "Wheel Speed", "value1, value2, value3, value4")
-    surfaces = channel(con, "SurfaceTypes", "value1, value2, value3, value4")
-    gear_events = events(con, "Gear")
-    max_rpm = events(con, "Engine Max RPM")[0][1]
-    impacts = [ts for ts, hit in events(con, "LastImpactMagnitude") if hit]
-
-    fuel = channel(con, "Fuel Level")
-    energy = channel(con, "Virtual Energy")
-    temps = {
-        side: channel(con, f"TyresTemp{side}", "value1, value2, value3, value4")
-        for side in ("Left", "Centre", "Right")
-    }
-    pressures = channel(con, "TyresPressure", "value1, value2, value3, value4")
-    wear = channel(con, "Tyres Wear", "value1, value2, value3, value4")
-    brake_temps = channel(con, "Brakes Temp", "value1, value2, value3, value4")
-    behind_next = channel(con, "Time Behind Next")
-    lap_times = events(con, "Lap Time")
-    tc = events(con, "TCLevel")
-    abs_level = events(con, "ABSLevel")
-    bias = events(con, "Brake Bias Rear")
-
-    duration = len(speed) / rate_of["Ground Speed"]
-    end = start + duration
-    session_type = SESSION_TYPES.get(meta.get("SessionType"), 1)
-    track = meta.get("TrackName", "unknown")
+    recording = Recording(con, meta, rate_of, laps)
 
     os.makedirs(out_folder, exist_ok=True)
     name = os.path.basename(path).replace(".duckdb", "")
     tape_path = os.path.join(
         out_folder, "tape_lmu_" + name.replace(" ", "_") + ".jsonl.gz"
     )
-    frames = int(duration * RATE_HZ)
-    last_race_second = None
-    best = 0.0
-
-    with gzip.open(tape_path, "wt") as out:
-        for i in range(frames):
-            t = start + i / RATE_HZ
-
-            second = int(t)
-            if second != last_race_second:
-                last_race_second = second
-                laps_done = event_at(laps, t)
-                last_lap = event_at(lap_times, t, 0.0)
-                if last_lap > 0 and (best == 0 or last_lap < best):
-                    best = last_lap
-                temp_rows = [
-                    [
-                        round(
-                            value_at(
-                                temps[side], rate_of[f"TyresTemp{side}"], t, start
-                            )[w],
-                            1,
-                        )
-                        for side in ("Left", "Centre", "Right")
-                    ]
-                    for w in range(4)
-                ]
-                me = Me(
-                    driver=meta.get("DriverName", ""),
-                    car_class=meta.get("CarClass", ""),
-                    place=0,
-                    grid=0,
-                    laps=laps_done,
-                    time_behind_next=round(
-                        value_at(behind_next, rate_of["Time Behind Next"], t, start), 3
-                    ),
-                    time_behind_leader=0.0,
-                    laps_behind_leader=0,
-                    best_lap=round(best, 3),
-                    last_lap=round(last_lap, 3),
-                    sector=0,
-                    cur_sector1=0.0,
-                    cur_sector2=0.0,
-                    pitstops=0,
-                    penalties=0,
-                    in_pits=False,
-                    pit_state=0,
-                    finish_status=0,
-                    flag=0,
-                    under_yellow=False,
-                    count_lap_flag=2,
-                    fuel=round(value_at(fuel, rate_of["Fuel Level"], t, start), 3),
-                    fuel_capacity=0.0,
-                    virtual_energy=round(
-                        value_at(energy, rate_of["Virtual Energy"], t, start) / 100.0, 4
-                    ),
-                    battery=0.0,
-                    lift_and_coast=0,
-                    track_limit_steps=0,
-                    gap_car_ahead=0.0,
-                    gap_car_behind=0.0,
-                    gap_place_ahead=0.0,
-                    gap_place_behind=0.0,
-                    tyre_temps=temp_rows,
-                    tyre_pressures=[
-                        round(p, 1)
-                        for p in value_at(pressures, rate_of["TyresPressure"], t, start)
-                    ],
-                    # LMU's export counts tread LEFT (100 = new); Apex counts wear done
-                    tyre_wear=[
-                        round((100.0 - w) / 100.0, 4)
-                        for w in value_at(wear, rate_of["Tyres Wear"], t, start)
-                    ],
-                    brake_temps=[
-                        round(b, 1)
-                        for b in value_at(brake_temps, rate_of["Brakes Temp"], t, start)
-                    ],
-                    compound="",
-                    dents=[0] * 8,
-                    detached=False,
-                    overheating=False,
-                    brake_bias_rear=round(event_at(bias, t, 0.0), 4),
-                    tc=int(event_at(tc, t, 0)),
-                    abs=int(event_at(abs_level, t, 0)),
-                    motor_map=0,
-                    arb_front=0,
-                    arb_rear=0,
-                    car_model=meta.get("CarName", ""),
-                )
-                phase = 8 if t >= end - 1.0 else 5
-                session = Session(
-                    track=track,
-                    session=session_type,
-                    game_phase=phase,
-                    time_remaining=round(end - t, 1),
-                    end_time=round(end, 1),
-                    max_laps=2147483647,
-                    yellow_flag_state=0,
-                    sector_flags=[0, 0, 0],
-                    start_light=0,
-                    red_lights=0,
-                    raining=0.0,
-                    ambient_temp=0.0,
-                    track_temp=0.0,
-                    wetness=0.0,
-                    grip_level=0,
-                    fixed_setup=True,
-                    limit_steps_per_penalty=0,
-                    in_realtime=True,
-                )
-                out.write(
-                    json.dumps(
-                        asdict(
-                            RaceSnapshot(sim_time=round(t, 3), session=session, me=me)
-                        )
-                    )
-                    + "\n"
-                )
-
-            wheel_mps = value_at(wheels, rate_of["Wheel Speed"], t, start)
-            radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
-            hits_so_far = bisect.bisect_right(impacts, t)
-            last_impact = impacts[hits_so_far - 1] if hits_so_far else None
-            frame = CarState(
-                speed_kmh=round(value_at(speed, rate_of["Ground Speed"], t, start), 3),
-                throttle=round(
-                    value_at(throttle, rate_of["Throttle Pos"], t, start) / 100.0, 4
-                ),
-                brake=round(value_at(brake, rate_of["Brake Pos"], t, start) / 100.0, 4),
-                gear=int(event_at(gear_events, t, 0)),
-                rpm=round(value_at(rpm, rate_of["Engine RPM"], t, start), 1),
-                max_rpm=max_rpm,
-                lap_dist=round(value_at(lap_dist, rate_of["Lap Dist"], t, start), 2),
-                lap_invalidated=False,
-                # Apex keeps wheel rotation in rad/s, like the shared memory, with forward negative
-                wheel_rot=[round(-wheel_mps[w] / radii[w], 3) for w in range(4)],
-                accel_long=round(
-                    value_at(g_long, rate_of["G Force Lat"], t, start) * G, 3
-                ),
-                accel_lat=round(
-                    value_at(g_lat, rate_of["G Force Long"], t, start) * G, 3
-                ),
-                surface=list(value_at(surfaces, rate_of["SurfaceTypes"], t, start)),
-                yaw_rate=0.0,  # no yaw channel in LMU's export (see top)
-                elapsed_time=round(t, 4),
-                steering=round(
-                    value_at(steering, rate_of["Steering Pos Unfiltered"], t, start)
-                    / STEERING_FULL_DEG,
-                    4,
-                ),
-                steering_filtered=round(
-                    value_at(steering_filtered, rate_of["Steering Pos"], t, start)
-                    / STEERING_FULL_DEG,
-                    4,
-                ),
-                last_impact_time=last_impact,
-                last_impact_magnitude=1.0 if last_impact is not None else None,
-            )
-            out.write(json.dumps(asdict(frame)) + "\n")
+    write_tape(tape_path, recording)
     con.close()
     return {
         "tape": tape_path,
-        "track": track,
+        "track": recording.track,
         "session": meta.get("SessionType"),
         "car": meta.get("CarName"),
         "laps": len(laps) - 1,
-        "minutes": round(duration / 60, 1),
+        "minutes": round(recording.duration / 60, 1),
         "setup": meta.get("CarSetup"),
     }
+
+
+def write_tape(tape_path, recording):
+    """A car frame every 1 / RATE_HZ s, and a race line whenever a new second starts."""
+    last_race_second = None
+    with gzip.open(tape_path, "wt") as out:
+        for i in range(int(recording.duration * RATE_HZ)):
+            t = recording.start + i / RATE_HZ
+            second = int(t)
+            if second != last_race_second:
+                last_race_second = second
+                snapshot = RaceSnapshot(
+                    sim_time=round(t, 3),
+                    session=recording.session_at(t),
+                    me=recording.me_at(t),
+                )
+                out.write(json.dumps(asdict(snapshot)) + "\n")
+            out.write(json.dumps(asdict(recording.frame_at(t))) + "\n")
+
+
+class Recording:
+    """One LMU recording, every channel Apex uses read once. A channel has no timestamps:
+    sample i of a channel at f Hz is at start + i / f."""
+
+    def __init__(self, con, meta, rate_of, laps):
+        self.meta = meta
+        self.rate_of = rate_of
+        self.laps = laps
+        self.start = laps[0][0]
+        self.speed = channel(con, "Ground Speed")
+        self.throttle = channel(con, "Throttle Pos")
+        self.brake = channel(con, "Brake Pos")
+        self.steering = channel(con, "Steering Pos Unfiltered")
+        self.steering_filtered = channel(con, "Steering Pos")
+        self.rpm = channel(con, "Engine RPM")
+        self.lap_dist = channel(con, "Lap Dist")
+        # swapped on purpose: LMU labels them the wrong way round (see the top of this file)
+        self.g_lat = channel(con, "G Force Long")
+        self.g_long = channel(con, "G Force Lat")
+        self.wheels = channel(con, "Wheel Speed", "value1, value2, value3, value4")
+        self.surfaces = channel(con, "SurfaceTypes", "value1, value2, value3, value4")
+        self.gear_events = events(con, "Gear")
+        self.max_rpm = events(con, "Engine Max RPM")[0][1]
+        self.impacts = [ts for ts, hit in events(con, "LastImpactMagnitude") if hit]
+
+        self.fuel = channel(con, "Fuel Level")
+        self.energy = channel(con, "Virtual Energy")
+        self.temps = {}
+        for side in ("Left", "Centre", "Right"):
+            self.temps[side] = channel(
+                con, f"TyresTemp{side}", "value1, value2, value3, value4"
+            )
+        self.pressures = channel(con, "TyresPressure", "value1, value2, value3, value4")
+        self.wear = channel(con, "Tyres Wear", "value1, value2, value3, value4")
+        self.brake_temps = channel(con, "Brakes Temp", "value1, value2, value3, value4")
+        self.behind_next = channel(con, "Time Behind Next")
+        self.lap_times = events(con, "Lap Time")
+        self.tc = events(con, "TCLevel")
+        self.abs_level = events(con, "ABSLevel")
+        self.bias = events(con, "Brake Bias Rear")
+
+        self.duration = len(self.speed) / rate_of["Ground Speed"]
+        self.end = self.start + self.duration
+        self.session_type = SESSION_TYPES.get(meta.get("SessionType"), 1)
+        self.track = meta.get("TrackName", "unknown")
+        self.best = 0.0  # his best lap so far: race lines are built in time order
+
+    def at(self, samples, name, t):
+        """The latest sample at time t of the channel called name."""
+        return value_at(samples, self.rate_of[name], t, self.start)
+
+    def tyre_temps_at(self, t):
+        """Each tyre's left, centre and right temperature."""
+        rows = []
+        for w in range(4):
+            row = []
+            for side in ("Left", "Centre", "Right"):
+                row.append(
+                    round(self.at(self.temps[side], f"TyresTemp{side}", t)[w], 1)
+                )
+            rows.append(row)
+        return rows
+
+    def me_at(self, t):
+        """My car in the race line at time t. Keeps the best lap as it goes."""
+        laps_done = event_at(self.laps, t)
+        last_lap = event_at(self.lap_times, t, 0.0)
+        if last_lap > 0 and (self.best == 0 or last_lap < self.best):
+            self.best = last_lap
+        return Me(
+            driver=self.meta.get("DriverName", ""),
+            car_class=self.meta.get("CarClass", ""),
+            place=0,
+            grid=0,
+            laps=laps_done,
+            time_behind_next=round(self.at(self.behind_next, "Time Behind Next", t), 3),
+            time_behind_leader=0.0,
+            laps_behind_leader=0,
+            best_lap=round(self.best, 3),
+            last_lap=round(last_lap, 3),
+            sector=0,
+            cur_sector1=0.0,
+            cur_sector2=0.0,
+            pitstops=0,
+            penalties=0,
+            in_pits=False,
+            pit_state=0,
+            finish_status=0,
+            flag=0,
+            under_yellow=False,
+            count_lap_flag=2,
+            fuel=round(self.at(self.fuel, "Fuel Level", t), 3),
+            fuel_capacity=0.0,
+            virtual_energy=round(self.at(self.energy, "Virtual Energy", t) / 100.0, 4),
+            battery=0.0,
+            lift_and_coast=0,
+            track_limit_steps=0,
+            gap_car_ahead=0.0,
+            gap_car_behind=0.0,
+            gap_place_ahead=0.0,
+            gap_place_behind=0.0,
+            tyre_temps=self.tyre_temps_at(t),
+            tyre_pressures=rounded(self.at(self.pressures, "TyresPressure", t), 1),
+            # LMU's export counts tread LEFT (100 = new); Apex counts wear done
+            tyre_wear=wear_done(self.at(self.wear, "Tyres Wear", t)),
+            brake_temps=rounded(self.at(self.brake_temps, "Brakes Temp", t), 1),
+            compound="",
+            dents=[0] * 8,
+            detached=False,
+            overheating=False,
+            brake_bias_rear=round(event_at(self.bias, t, 0.0), 4),
+            tc=int(event_at(self.tc, t, 0)),
+            abs=int(event_at(self.abs_level, t, 0)),
+            motor_map=0,
+            arb_front=0,
+            arb_rear=0,
+            car_model=self.meta.get("CarName", ""),
+        )
+
+    def session_at(self, t):
+        """The session in the race line at time t: the phase turns to over in the last second."""
+        return Session(
+            track=self.track,
+            session=self.session_type,
+            game_phase=8 if t >= self.end - 1.0 else 5,
+            time_remaining=round(self.end - t, 1),
+            end_time=round(self.end, 1),
+            max_laps=2147483647,
+            yellow_flag_state=0,
+            sector_flags=[0, 0, 0],
+            start_light=0,
+            red_lights=0,
+            raining=0.0,
+            ambient_temp=0.0,
+            track_temp=0.0,
+            wetness=0.0,
+            grip_level=0,
+            fixed_setup=True,
+            limit_steps_per_penalty=0,
+            in_realtime=True,
+        )
+
+    def frame_at(self, t):
+        """My car's telemetry frame at time t, in Apex's units."""
+        wheel_mps = self.at(self.wheels, "Wheel Speed", t)
+        radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
+        hits_so_far = bisect.bisect_right(self.impacts, t)
+        last_impact = self.impacts[hits_so_far - 1] if hits_so_far else None
+        return CarState(
+            speed_kmh=round(self.at(self.speed, "Ground Speed", t), 3),
+            throttle=round(self.at(self.throttle, "Throttle Pos", t) / 100.0, 4),
+            brake=round(self.at(self.brake, "Brake Pos", t) / 100.0, 4),
+            gear=int(event_at(self.gear_events, t, 0)),
+            rpm=round(self.at(self.rpm, "Engine RPM", t), 1),
+            max_rpm=self.max_rpm,
+            lap_dist=round(self.at(self.lap_dist, "Lap Dist", t), 2),
+            lap_invalidated=False,
+            # Apex keeps wheel rotation in rad/s, like the shared memory, with forward negative
+            wheel_rot=[round(-wheel_mps[w] / radii[w], 3) for w in range(4)],
+            accel_long=round(self.at(self.g_long, "G Force Lat", t) * G, 3),
+            accel_lat=round(self.at(self.g_lat, "G Force Long", t) * G, 3),
+            surface=list(self.at(self.surfaces, "SurfaceTypes", t)),
+            yaw_rate=0.0,  # no yaw channel in LMU's export (see top)
+            elapsed_time=round(t, 4),
+            steering=round(
+                self.at(self.steering, "Steering Pos Unfiltered", t)
+                / STEERING_FULL_DEG,
+                4,
+            ),
+            steering_filtered=round(
+                self.at(self.steering_filtered, "Steering Pos", t) / STEERING_FULL_DEG,
+                4,
+            ),
+            last_impact_time=last_impact,
+            last_impact_magnitude=1.0 if last_impact is not None else None,
+        )
+
+
+def rounded(values, digits):
+    """Each value rounded."""
+    return [round(value, digits) for value in values]
+
+
+def wear_done(tread_left):
+    """LMU's tread left (100 = new) as Apex's wear done (0 = new, 1 = gone)."""
+    return [round((100.0 - w) / 100.0, 4) for w in tread_left]
 
 
 class NoVoice:

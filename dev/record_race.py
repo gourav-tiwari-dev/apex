@@ -30,6 +30,8 @@ def open_game():
 
 
 def record(info, tape_path):
+    """Every frame, race snapshot and near-cars line onto the tape, with a progress line every
+    STATUS_EVERY_S of sim time, until the session is over (or Ctrl+C)."""
     source = LiveSource(info)
     recorder = Recorder(tape_path)
     frames = 0
@@ -53,19 +55,7 @@ def record(info, tape_path):
                 next_status = frame.elapsed_time
             if frame.elapsed_time >= next_status and source.race is not None:
                 next_status = frame.elapsed_time + STATUS_EVERY_S
-                me = source.race.me
-                opponents = len(source.race.opponents)
-                matched = len([o for o in source.race.opponents if o.x is not None])
-                place = me.place if me else "?"
-                laps = me.laps if me else "?"
-                print(
-                    f"  frames {frames}  snapshots {snapshots}  near lines {near_lines}  "
-                    f"P{place}  laps {laps}  opponents {matched}/{opponents} with telemetry"
-                )
-                if opponents and matched == 0:
-                    print(
-                        "  ! no opponent telemetry - are you in the monitor view? Get in the car."
-                    )
+                print_status(source.race, frames, snapshots, near_lines)
 
             if (
                 source.race is not None
@@ -79,6 +69,24 @@ def record(info, tape_path):
             f"Saved {frames} frames, {snapshots} race snapshots, {near_lines} near lines to {tape_path}"
         )
         print(f"Check it with:  python dev/audit_tape.py {tape_path}")
+
+
+def print_status(race, frames, snapshots, near_lines):
+    """One progress line: what is on the tape so far, his place and laps, and how many
+    opponents come with telemetry (none: he is in the monitor view, not in the car)."""
+    me = race.me
+    opponents = len(race.opponents)
+    matched = len([o for o in race.opponents if o.x is not None])
+    place = me.place if me else "?"
+    laps = me.laps if me else "?"
+    print(
+        f"  frames {frames}  snapshots {snapshots}  near lines {near_lines}  "
+        f"P{place}  laps {laps}  opponents {matched}/{opponents} with telemetry"
+    )
+    if opponents and matched == 0:
+        print(
+            "  ! no opponent telemetry - are you in the monitor view? Get in the car."
+        )
 
 
 if __name__ == "__main__":

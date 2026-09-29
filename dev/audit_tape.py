@@ -53,103 +53,131 @@ def print_table(title, seen):
         print(f"  {name:26s} {verdict(values):9s} e.g. {str(example)[:60]}")
 
 
-def main(tape_path):
-    car_frames = 0
-    race_lines = 0
-    near_lines = 0
-    near_cars_total = 0
-    first_time = None
-    last_time = None
-    first_race_time = None
-    last_race_time = None
-    car_fields = {}
-    session_fields = {}
-    me_fields = {}
-    opponent_fields = {}
-    opponents_per_snapshot = []
-    opponents_without_telemetry = 0
+CAR_FIELDS = (
+    "steering",
+    "steering_filtered",
+    "pos",
+    "ori",
+    "delta_best",
+    "last_impact_time",
+    "last_impact_magnitude",
+)
 
+
+class TapeAudit:
+    """What one tape holds: how many lines of each kind, over what time, and every value each
+    field took."""
+
+    def __init__(self):
+        self.car_frames = 0
+        self.race_lines = 0
+        self.near_lines = 0
+        self.near_cars_total = 0
+        self.first_time = None
+        self.last_time = None
+        self.first_race_time = None
+        self.last_race_time = None
+        self.car_fields = {}
+        self.session_fields = {}
+        self.me_fields = {}
+        self.opponent_fields = {}
+        self.opponents_per_snapshot = []
+        self.opponents_without_telemetry = 0
+
+    def read(self, row):
+        """One line of the tape: a race snapshot, a near-cars line, or a car frame."""
+        kind = row.get("t")
+        if kind == "race":
+            self.read_race(row)
+        elif kind == "near":
+            self.near_lines += 1
+            self.near_cars_total += len(row["cars"])
+        else:
+            self.read_car(row)
+
+    def read_race(self, row):
+        """A race snapshot: the session, my car, and every opponent."""
+        self.race_lines += 1
+        if self.first_race_time is None:
+            self.first_race_time = row["sim_time"]
+        self.last_race_time = row["sim_time"]
+        for name, value in row["session"].items():
+            add(self.session_fields, name, value)
+        if row["me"] is not None:
+            for name, value in row["me"].items():
+                add(self.me_fields, name, value)
+        self.opponents_per_snapshot.append(len(row["opponents"]))
+        for opponent in row["opponents"]:
+            if opponent["x"] is None:
+                self.opponents_without_telemetry += 1
+            for name, value in opponent.items():
+                # judge each field per car: "live" must mean it moved for a car
+                add(self.opponent_fields, name, [opponent["id"], value])
+
+    def read_car(self, row):
+        """A frame of my car's telemetry."""
+        self.car_frames += 1
+        if self.first_time is None:
+            self.first_time = row["elapsed_time"]
+        self.last_time = row["elapsed_time"]
+        for name in CAR_FIELDS:
+            add(self.car_fields, name, row.get(name))
+
+
+def main(tape_path):
+    audit = TapeAudit()
     with gzip.open(tape_path, "rt") as f:
         for line in f:
-            row = json.loads(line)
-            kind = row.get("t")
+            audit.read(json.loads(line))
 
-            if kind == "race":
-                race_lines += 1
-                if first_race_time is None:
-                    first_race_time = row["sim_time"]
-                last_race_time = row["sim_time"]
-                for name, value in row["session"].items():
-                    add(session_fields, name, value)
-                if row["me"] is not None:
-                    for name, value in row["me"].items():
-                        add(me_fields, name, value)
-                opponents_per_snapshot.append(len(row["opponents"]))
-                for opponent in row["opponents"]:
-                    if opponent["x"] is None:
-                        opponents_without_telemetry += 1
-                    for name, value in opponent.items():
-                        # judge each field per car: "live" must mean it moved for a car
-                        add(opponent_fields, name, [opponent["id"], value])
-                continue
-
-            if kind == "near":
-                near_lines += 1
-                near_cars_total += len(row["cars"])
-                continue
-
-            car_frames += 1
-            if first_time is None:
-                first_time = row["elapsed_time"]
-            last_time = row["elapsed_time"]
-            for name in (
-                "steering",
-                "steering_filtered",
-                "pos",
-                "ori",
-                "delta_best",
-                "last_impact_time",
-                "last_impact_magnitude",
-            ):
-                add(car_fields, name, row.get(name))
-
-    if car_frames == 0:
+    if audit.car_frames == 0:
         print("No car frames on this tape.")
         return
-    duration = last_time - first_time
+    if not print_counts(tape_path, audit):
+        return
+
+    print_table("MY CAR, every frame", audit.car_fields)
+    print_table("SESSION", audit.session_fields)
+    print_table("ME, each snapshot", audit.me_fields)
+    print_opponents(audit.opponent_fields)
+
+
+def print_counts(tape_path, audit):
+    """The tape's frames, race snapshots and near-car lines. False when it has no race
+    snapshots: then there is nothing more to report."""
+    duration = audit.last_time - audit.first_time
     print(f"tape: {tape_path}")
     print(
-        f"car frames: {car_frames} over {duration:.1f} s  ({car_frames / max(duration, 0.001):.1f} per second)"
+        f"car frames: {audit.car_frames} over {duration:.1f} s  ({audit.car_frames / max(duration, 0.001):.1f} per second)"
     )
     if duration <= 0:
         print(
             "BUFFER FROZEN: the sim clock never moved. Was the game paused or in a menu?"
         )
-    if race_lines == 0:
+    if audit.race_lines == 0:
         print(
             "No race snapshots: this is a v1 tape (or the game was not in a session)."
         )
-        return
-    race_span = last_race_time - first_race_time
+        return False
+    race_span = audit.last_race_time - audit.first_race_time
     print(
-        f"race snapshots: {race_lines}  ({race_lines / max(race_span, 0.001):.1f} per second)"
+        f"race snapshots: {audit.race_lines}  ({audit.race_lines / max(race_span, 0.001):.1f} per second)"
     )
     print(
-        f"opponents per snapshot: min {min(opponents_per_snapshot)}  max {max(opponents_per_snapshot)}"
+        f"opponents per snapshot: min {min(audit.opponents_per_snapshot)}  max {max(audit.opponents_per_snapshot)}"
     )
-    print(f"opponent rows with no telemetry: {opponents_without_telemetry}")
-    if near_lines:
+    print(f"opponent rows with no telemetry: {audit.opponents_without_telemetry}")
+    if audit.near_lines:
         print(
-            f"near-car lines: {near_lines}  (average {near_cars_total / near_lines:.1f} cars when someone was near)"
+            f"near-car lines: {audit.near_lines}  (average {audit.near_cars_total / audit.near_lines:.1f} cars when someone was near)"
         )
     else:
         print("near-car lines: 0  (nobody came within the spotter radius)")
+    return True
 
-    print_table("MY CAR, every frame", car_fields)
-    print_table("SESSION", session_fields)
-    print_table("ME, each snapshot", me_fields)
 
-    # opponent fields: a field is LIVE if it changed for at least one car
+def print_opponents(opponent_fields):
+    """Opponent fields: a field is LIVE if it changed for at least one car."""
     print()
     print("OPPONENTS, each snapshot")
     print("------------------------")

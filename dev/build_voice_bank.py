@@ -71,7 +71,6 @@ def azure_bank():
     (voice_bank/azure/). Paced under the free tier's 20 requests a minute; run it again to
     finish or retry - what is already there is kept."""
     import time
-    from radio import phrasebook
     from radio.azure_voice import AzureVoice, FREE_TIER_PER_MINUTE
 
     azure = AzureVoice()
@@ -79,43 +78,16 @@ def azure_bank():
         raise SystemExit(
             "No Azure key: put AZURE_SPEECH_KEY and AZURE_SPEECH_REGION in .env"
         )
-    wanted = phrasebook.units()
-    jobs = [
-        ("azure_spotter", "spotter", "urgent", text)
-        for text in phrasebook.missing("azure_spotter", wanted["spotter"])
-    ]
-    jobs += [
-        ("azure_engineer", "engineer", wanted["engineer"][text], text)
-        for text in phrasebook.missing("azure_engineer", wanted["engineer"])
-    ]
-    os.makedirs(voice.AZURE_BANK_FOLDER, exist_ok=True)
-    for key, (_, text) in BANK_LINES.items():
-        if not os.path.exists(os.path.join(voice.AZURE_BANK_FOLDER, key + ".wav")):
-            role = "spotter" if key in SPOTTER_KINDS else "engineer"
-            jobs.append(("whole", role, mood_of(key), (key, text)))
+    jobs = azure_jobs()
     gap_s = 60.0 / (FREE_TIER_PER_MINUTE - 1)
     print(
         f"{len(jobs)} to render, about {round(len(jobs) * gap_s / 60)} minutes (free tier pace)"
     )
     failed = 0
-    for n, (book, role, mood, text) in enumerate(jobs, 1):
+    for n, job in enumerate(jobs, 1):
         started = time.perf_counter()
-        words = text[1] if book == "whole" else text
-        audio = azure.render(speakable(words), role, mood, timeout=15)
-        if audio is None:
+        if not render_job(azure, job):
             failed += 1
-            print(f"  FAILED ({azure.last_error}): {words}")
-            if not azure.ready:
-                raise SystemExit(
-                    "Azure stopped answering (key, region or quota): run again later"
-                )
-        elif book == "whole":
-            with open(
-                os.path.join(voice.AZURE_BANK_FOLDER, text[0] + ".wav"), "wb"
-            ) as f:
-                f.write(audio)
-        else:
-            phrasebook.save_piece(book, text, audio)
         if n % 25 == 0:
             print(f"  {n}/{len(jobs)}")
         time.sleep(max(0.0, gap_s - (time.perf_counter() - started)))
@@ -124,42 +96,63 @@ def azure_bank():
     )
 
 
-def phrases_standard():
+def azure_jobs():
+    """What the Azure bank is still missing, as (book, role, mood, text): each sentence of the
+    instant lines, then each urgent whole line (its text is (key, words))."""
     from radio import phrasebook
 
     wanted = phrasebook.units()
-    jobs = [
-        ("spotter", SPOTTER_VOICE_NAME, text)
-        for text in phrasebook.missing("spotter", wanted["spotter"])
-    ]
-    jobs += [
-        ("engineer", voice.ENGINEER_VOICE, text)
-        for text in phrasebook.missing("engineer", wanted["engineer"])
-    ]
-    moods = wanted["engineer"]
+    jobs = []
+    for text in phrasebook.missing("azure_spotter", wanted["spotter"]):
+        jobs.append(("azure_spotter", "spotter", "urgent", text))
+    for text in phrasebook.missing("azure_engineer", wanted["engineer"]):
+        jobs.append(("azure_engineer", "engineer", wanted["engineer"][text], text))
+    os.makedirs(voice.AZURE_BANK_FOLDER, exist_ok=True)
+    for key, (_, text) in BANK_LINES.items():
+        if not os.path.exists(os.path.join(voice.AZURE_BANK_FOLDER, key + ".wav")):
+            role = "spotter" if key in SPOTTER_KINDS else "engineer"
+            jobs.append(("whole", role, mood_of(key), (key, text)))
+    return jobs
+
+
+def render_job(azure, job):
+    """One job rendered by Azure and saved. False when Azure gave nothing back; the run stops
+    when Azure has stopped answering altogether."""
+    from radio import phrasebook
+
+    book, role, mood, text = job
+    words = text[1] if book == "whole" else text
+    audio = azure.render(speakable(words), role, mood, timeout=15)
+    if audio is None:
+        print(f"  FAILED ({azure.last_error}): {words}")
+        if not azure.ready:
+            raise SystemExit(
+                "Azure stopped answering (key, region or quota): run again later"
+            )
+        return False
+    if book == "whole":
+        with open(os.path.join(voice.AZURE_BANK_FOLDER, text[0] + ".wav"), "wb") as f:
+            f.write(audio)
+    else:
+        phrasebook.save_piece(book, text, audio)
+    return True
+
+
+def phrases_standard():
+    """The sentences of the instant lines in the standard voices (edge-tts), what is not
+    rendered yet, EDGE_AT_ONCE at a time."""
+    from radio import phrasebook
+
+    wanted = phrasebook.units()
+    jobs = []
+    for text in phrasebook.missing("spotter", wanted["spotter"]):
+        jobs.append(("spotter", SPOTTER_VOICE_NAME, text))
+    for text in phrasebook.missing("engineer", wanted["engineer"]):
+        jobs.append(("engineer", voice.ENGINEER_VOICE, text))
     print(f"{len(jobs)} sentences to render in the standard voices")
 
-    async def all_of_them():
-        gate = asyncio.Semaphore(EDGE_AT_ONCE)
-
-        async def one(book, speaker, text):
-            async with gate:
-                for attempt in range(3):
-                    try:
-                        mood = "urgent" if book == "spotter" else moods[text]
-                        return (
-                            book,
-                            text,
-                            await render(speakable(text), speaker, book, mood),
-                        )
-                    except Exception as error:
-                        failure = error
-                return book, text, failure
-
-        return await asyncio.gather(*(one(*job) for job in jobs))
-
     failed = 0
-    for book, text, audio in asyncio.run(all_of_them()):
+    for book, text, audio in asyncio.run(render_all(jobs, wanted["engineer"])):
         if isinstance(audio, Exception) or not audio:
             failed += 1
             print(f"  FAILED {book:8s} {text}  ({audio!r})")
@@ -168,6 +161,30 @@ def phrases_standard():
     print(
         f"done: {len(jobs) - failed} saved, {failed} failed (run again to retry the failed ones)"
     )
+
+
+async def render_all(jobs, moods):
+    """Every job rendered, EDGE_AT_ONCE at a time: (book, text, audio or the last error)."""
+    gate = asyncio.Semaphore(EDGE_AT_ONCE)
+    return await asyncio.gather(
+        *(render_one(gate, moods, book, speaker, text) for book, speaker, text in jobs)
+    )
+
+
+async def render_one(gate, moods, book, speaker, text):
+    """One sentence, tried up to 3 times: (book, text, audio or the last error)."""
+    async with gate:
+        for _ in range(3):
+            try:
+                mood = "urgent" if book == "spotter" else moods[text]
+                return (
+                    book,
+                    text,
+                    await render(speakable(text), speaker, book, mood),
+                )
+            except Exception as error:
+                failure = error
+        return book, text, failure
 
 
 SPOTTER_VOICE_NAME = voice.SPOTTER_VOICE
