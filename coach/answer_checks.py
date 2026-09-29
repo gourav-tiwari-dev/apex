@@ -271,29 +271,44 @@ def trend_honest(text, picture):
     """(ok, reason). The direction of a SURE road trend is a fact: an answer may not say the car
     behind is catching when the race model is sure it is dropping back, or the reverse."""
     said = text.lower()
-    for row in (picture or {}).get("field_around_you", []):
+    trend = sure_trend_behind(picture)
+    if trend is None:
+        return True, "ok"
+    if "growing" in trend and any(w in said for w in CATCHING_WORDS):
+        return (
+            False,
+            f"the road says the car behind is NOT catching ({trend}): don't say it is",
+        )
+    if "catching" in trend and any(w in said for w in DROPPING_WORDS):
+        return (
+            False,
+            f"the road says the car behind IS catching ({trend}): don't say it isn't",
+        )
+    return True, "ok"
+
+
+def sure_trend_behind(picture):
+    """The road trend to the car right behind him when the race model is sure of it (2 laps),
+    else None."""
+    rows = (picture or {}).get("field_around_you", [])
+    for row in rows:
         if row.get("side") != "behind" or row.get("place") is None:
             continue
         trend = row.get("trend", "")
-        if "sure, 2 laps" not in trend:
+        if "sure, 2 laps" in trend and row is nearest_behind(rows):
+            return trend
+    return None
+
+
+def nearest_behind(rows):
+    """The row of the car right behind him: the best place among the cars behind."""
+    nearest = None
+    for row in rows:
+        if row.get("side") != "behind":
             continue
-        nearest = min(
-            (r for r in picture["field_around_you"] if r.get("side") == "behind"),
-            key=lambda r: r["place"],
-        )
-        if row is not nearest:
-            continue
-        if "growing" in trend and any(w in said for w in CATCHING_WORDS):
-            return (
-                False,
-                f"the road says the car behind is NOT catching ({trend}): don't say it is",
-            )
-        if "catching" in trend and any(w in said for w in DROPPING_WORDS):
-            return (
-                False,
-                f"the road says the car behind IS catching ({trend}): don't say it isn't",
-            )
-    return True, "ok"
+        if nearest is None or row["place"] < nearest["place"]:
+            nearest = row
+    return nearest
 
 
 def fuel_honest(question, text, picture):

@@ -41,6 +41,8 @@ GRIP = {
 }
 SESSIONS = {0: "test day", 9: "warmup"}
 MAX_SQL_ROWS = 30
+HISTORY_LAPS = 10  # the lap history shows his last this many laps
+RECENT_LAPS = 3  # ...and the average and spread of the last three
 SQL_STEPS_LIMIT = 2_000_000  # sqlite VM steps before a query is cut off (~0.1-0.3 s)
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the project folder
 KNOWLEDGE_FILE = os.path.join(HERE, "knowledge.md")
@@ -74,28 +76,11 @@ def standings(race):
     class_places = {}
     table = []
     for place, car in rows:
-        car_class = me.car_class if car is None else car.car_class
-        class_places[car_class] = class_places.get(car_class, 0) + 1
         who = me if car is None else car
-        entry = {
-            "place": place,
-            "class": car_class,
-            "class_place": class_places[car_class],
-            "best_lap": lap_text(who.best_lap),
-            "last_lap": lap_text(who.last_lap),
-            "pitstops": who.pitstops,
-        }
-        if car is None:
-            entry["you"] = True
-        else:
-            entry["car"] = car.car_model or car.car_name
-            if car.in_pits:
-                entry["in_pits"] = True
-        if who.laps_behind_leader > 0:
-            entry["laps_down"] = who.laps_behind_leader
-        else:
-            entry["gap_to_leader_s"] = round(who.time_behind_leader, 1)
-        table.append(entry)
+        class_places[who.car_class] = class_places.get(who.car_class, 0) + 1
+        table.append(
+            standings_row(place, who, car is None, class_places[who.car_class])
+        )
     mine = next(entry for entry in table if entry.get("you"))
     return {
         "your_place_overall": mine["place"],
@@ -103,6 +88,29 @@ def standings(race):
         "cars_in_your_class": class_places[me.car_class],
         "cars": table,
     }
+
+
+def standings_row(place, who, is_me, class_place):
+    """One car's row of the standings: his own says "you", another car says which car."""
+    entry = {
+        "place": place,
+        "class": who.car_class,
+        "class_place": class_place,
+        "best_lap": lap_text(who.best_lap),
+        "last_lap": lap_text(who.last_lap),
+        "pitstops": who.pitstops,
+    }
+    if is_me:
+        entry["you"] = True
+    else:
+        entry["car"] = who.car_model or who.car_name
+        if who.in_pits:
+            entry["in_pits"] = True
+    if who.laps_behind_leader > 0:
+        entry["laps_down"] = who.laps_behind_leader
+    else:
+        entry["gap_to_leader_s"] = round(who.time_behind_leader, 1)
+    return entry
 
 
 def full_car(race, strategist):
@@ -186,11 +194,11 @@ def qualifying_picture(race):
     gives, and whether the clock allows another run. Live 25 Sep he crashed on his push lap,
     said "qualifying is fucked up", and the coach had nothing to answer with."""
     me, session = race.me, race.session
-    rivals = sorted(
-        o.best_lap
-        for o in race.opponents
-        if o.car_class == me.car_class and o.best_lap > 0
-    )
+    rivals = []
+    for o in race.opponents:
+        if o.car_class == me.car_class and o.best_lap > 0:
+            rivals.append(o.best_lap)
+    rivals.sort()
     mine = me.best_lap if me.best_lap > 0 else None
     picture = {
         "his_best": lap_text(mine) if mine else "no time set",
@@ -198,27 +206,10 @@ def qualifying_picture(race):
         "class_cars": 1 + sum(1 for o in race.opponents if o.car_class == me.car_class),
         "pole": lap_text(rivals[0]) if rivals else None,
     }
-    if mine:
-        position = 1 + sum(1 for t in rivals if t < mine)
-        picture["his_class_position"] = position
-        if rivals and position > 1:
-            picture["off_pole_s"] = round(mine - rivals[0], 2)
-    else:
-        picture["his_class_position"] = (
-            f"none: without a time he starts behind every car that set one (class P{len(rivals) + 1} or lower)"
-        )
-    lap = mine or (rivals[len(rivals) // 2] if rivals else None)
-    if lap and session.time_remaining > 0:
-        # a lap started before the clock runs out still counts; a run from the pits is an out lap + a flying lap
-        picture["time_for_another_run"] = (
-            "yes, an out lap and a flying lap fit"
-            if session.time_remaining > 2 * lap
-            else "only if he is already on track: a lap started before the clock ends still counts"
-            if session.time_remaining > 0
-            else "no"
-        )
-    elif session.time_remaining <= 0:
-        picture["time_for_another_run"] = "no: the clock has run out"
+    add_class_position(picture, mine, rivals)
+    another = another_run(mine, rivals, session.time_remaining)
+    if another is not None:
+        picture["time_for_another_run"] = another
     if len(rivals) >= 3:
         picture["class_times_spread"] = (
             f"{lap_text(rivals[0])} to {lap_text(rivals[-1])}"
@@ -226,26 +217,44 @@ def qualifying_picture(race):
     return picture
 
 
+def add_class_position(picture, mine, rivals):
+    """His place in the class order and his gap to pole, or what having no time means."""
+    if not mine:
+        picture["his_class_position"] = (
+            f"none: without a time he starts behind every car that set one (class P{len(rivals) + 1} or lower)"
+        )
+        return
+    position = 1 + sum(1 for t in rivals if t < mine)
+    picture["his_class_position"] = position
+    if rivals and position > 1:
+        picture["off_pole_s"] = round(mine - rivals[0], 2)
+
+
+def another_run(mine, rivals, remaining):
+    """Whether the clock allows another run; None when there is no lap time to judge it by.
+    A lap started before the clock runs out still counts; a run from the pits is an out lap
+    and a flying lap."""
+    lap = mine or (rivals[len(rivals) // 2] if rivals else None)
+    if lap and remaining > 0:
+        if remaining > 2 * lap:
+            return "yes, an out lap and a flying lap fit"
+        return "only if he is already on track: a lap started before the clock ends still counts"
+    if remaining <= 0:
+        return "no: the clock has run out"
+    return None
+
+
 def lap_history(records):
     """His laps this session, timed at the line by Apex, with sectors where all three were seen."""
     if not records:
         return {"laps": [], "note": "no full lap timed yet this session"}
     laps = []
-    for record in records[-10:]:
-        entry = {
-            "lap": record["lap"],
-            "time": lap_text(record["time_s"]),
-            "valid": record["valid"],
-        }
-        if record.get("sectors_s"):
-            entry["sectors_s"] = record["sectors_s"]
-        if record.get("fuel_used"):
-            entry["fuel_used_litres"] = record["fuel_used"]
-        laps.append(entry)
+    for record in records[-HISTORY_LAPS:]:
+        laps.append(lap_entry(record))
     times = [r["time_s"] for r in records]
     summary = {"laps": laps, "laps_timed": len(records), "best": lap_text(min(times))}
-    if len(times) >= 3:
-        recent = times[-3:]
+    if len(times) >= RECENT_LAPS:
+        recent = times[-RECENT_LAPS:]
         summary["last_3_average"] = lap_text(statistics.mean(recent))
         summary["last_3_spread_s"] = round(max(recent) - min(recent), 2)
     with_sectors = [r["sectors_s"] for r in records if r.get("sectors_s")]
@@ -254,6 +263,20 @@ def lap_history(records):
         summary["best_sectors_s"] = best
         summary["best_possible_lap"] = lap_text(sum(best))
     return summary
+
+
+def lap_entry(record):
+    """One lap of the history: its number, time and validity, sectors and fuel when known."""
+    entry = {
+        "lap": record["lap"],
+        "time": lap_text(record["time_s"]),
+        "valid": record["valid"],
+    }
+    if record.get("sectors_s"):
+        entry["sectors_s"] = record["sectors_s"]
+    if record.get("fuel_used"):
+        entry["fuel_used_litres"] = record["fuel_used"]
+    return entry
 
 
 # ---- from the database (own read-only connection) -----------------------------------------

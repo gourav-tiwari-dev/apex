@@ -32,6 +32,10 @@ from game.constants import RACE_SESSIONS
 
 
 OTHER_CLASS_NEAR_M = 400  # an other-class car this close behind is about to arrive
+FIELD_PLACES = 3  # the field tool: the cars this many places either side
+LET_BY_AFTER_CONTACTS = (
+    2  # hit this many times, a car may be let by even if not quicker
+)
 
 
 class Snapshot:
@@ -165,26 +169,36 @@ class Snapshot:
             )
         if call in team_words and override is None:
             return True, "ok"
-        # live 25 Sep: "that Mercedes has hit you once and it's 1.9 s a lap SLOWER, let it go".
-        # Never give a place to a slower car; contact alone is not enough - the car must also be
-        # quicker, or have hit him at least twice (his rule: no place without a fight unless it is
-        # genuinely fast, or his situation is bad).
         if call == "LET BY":
-            quicker = self.quicker_by.get("behind")
-            if quicker is not None and quicker < 0:
-                return False, (
-                    f"the car behind is {-quicker:.1f} s a lap SLOWER: never let a slower car by. "
-                    "Defend one line, or follow the team call"
-                )
-            if (
-                override == "contact"
-                and self.contacts_in_fight < 2
-                and (quicker is None or quicker < CONTACT_LET_BY_QUICKER_S)
-            ):
-                return False, (
-                    "one contact is not a reason to give the place to a car that is not clearly quicker: "
-                    "defend, give it room, one line"
-                )
+            refused = self.let_by_refused(override)
+            if refused is not None:
+                return False, refused
+        return self.override_backed(override, team_words)
+
+    def let_by_refused(self, override):
+        """Why a LET BY is refused, or None. Live 25 Sep: "that Mercedes has hit you once and
+        it's 1.9 s a lap SLOWER, let it go". Never give a place to a slower car; contact alone
+        is not enough - the car must also be quicker, or have hit him at least twice (his rule:
+        no place without a fight unless it is genuinely fast, or his situation is bad)."""
+        quicker = self.quicker_by.get("behind")
+        if quicker is not None and quicker < 0:
+            return (
+                f"the car behind is {-quicker:.1f} s a lap SLOWER: never let a slower car by. "
+                "Defend one line, or follow the team call"
+            )
+        if (
+            override == "contact"
+            and self.contacts_in_fight < LET_BY_AFTER_CONTACTS
+            and (quicker is None or quicker < CONTACT_LET_BY_QUICKER_S)
+        ):
+            return (
+                "one contact is not a reason to give the place to a car that is not clearly quicker: "
+                "defend, give it room, one line"
+            )
+        return None
+
+    def override_backed(self, override, team_words):
+        """(ok, reason): an override the data supports, or else the team call to follow."""
         supported = self.override_evidence()
         if override in supported:
             return True, "ok"
@@ -313,35 +327,41 @@ class Snapshot:
         return f"{who} {amount:.1f} s a lap ({sure})"
 
     def field(self, race):
-        """The same-class cars 3 places either side, as the race model sees them on the road."""
+        """The same-class cars FIELD_PLACES places either side, as the race model sees them on
+        the road."""
         me = race.me
         rows = []
         for o in sorted(race.opponents, key=lambda o: o.place):
-            if o.car_class != me.car_class or abs(o.place - me.place) > 3 or o.in_pits:
+            if (
+                o.car_class != me.car_class
+                or abs(o.place - me.place) > FIELD_PLACES
+                or o.in_pits
+            ):
                 continue
-            ahead = o.place < me.place
-            gap = self.model.gap(o.id, "me") if ahead else self.model.gap("me", o.id)
-            row = {
-                "place": o.place,
-                "side": "ahead" if ahead else "behind",
-                "gap_s": gap,
-                "car": o.car_model or o.car_name,
-            }
-            to_go = self.picture_laps_to_go
-            if ahead:
-                row["trend"] = self.trend_words(o.id, "me").replace(
-                    "the car behind is", "you are"
-                )
-                catch = self.model.catch("me", o.id)
-                if catch is not None:
-                    row["you_catch_it"] = catch_words(catch[1], to_go)
-            else:
-                row["trend"] = self.trend_words("me", o.id)
-                catch = self.model.catch(o.id, "me")
-                if catch is not None:
-                    row["it_catches_you"] = catch_words(catch[1], to_go)
-            rows.append(row)
+            rows.append(self.field_row(o, o.place < me.place))
         return rows
+
+    def field_row(self, car, ahead):
+        """One car near him: its gap on the road, the trend, and when one catches the other."""
+        if ahead:
+            front, back = car.id, "me"
+        else:
+            front, back = "me", car.id
+        row = {
+            "place": car.place,
+            "side": "ahead" if ahead else "behind",
+            "gap_s": self.model.gap(front, back),
+            "car": car.car_model or car.car_name,
+        }
+        trend = self.trend_words(front, back)
+        if ahead:
+            trend = trend.replace("the car behind is", "you are")
+        row["trend"] = trend
+        catch = self.model.catch(back, front)
+        if catch is not None:
+            key = "you_catch_it" if ahead else "it_catches_you"
+            row[key] = catch_words(catch[1], self.picture_laps_to_go)
+        return row
 
     def battles_near(self, race):
         places = {o.id: o.place for o in race.opponents}
@@ -465,26 +485,21 @@ class Snapshot:
         return state
 
     def track_ahead(self, lap_dist, corners, race, racecraft):
-        ahead, gap_ahead, behind, gap_behind = same_class_neighbours(race, self.model)
+        """The next 4 corners, how far away, and whether the car ahead or behind is quicker
+        there (the racecraft speed edges)."""
+        ahead, _, behind, _ = same_class_neighbours(race, self.model)
         if not corners:
             return []
-        ordered = sorted(corners, key=lambda c: c["start"])
-        lap_length = max(c["end"] for c in ordered)
-        upcoming = []
-        for corner in ordered:
-            distance = corner["start"] - lap_dist
-            if distance < 0:
-                distance += lap_length
-            upcoming.append((distance, corner["name"]))
-        upcoming.sort()
+        edges = {}
+        for side, car in (("car_ahead", ahead), ("car_behind", behind)):
+            if car is not None:
+                edges[side] = racecraft.edges_against(identity(car))
         result = []
-        for distance, name in upcoming[:4]:
+        for distance, name in corners_coming(lap_dist, corners)[:4]:
             entry = {"corner": name, "metres_away": round(distance)}
-            for side, car in (("car_ahead", ahead), ("car_behind", behind)):
-                if car is None:
-                    continue
-                edge = racecraft.edges_against(identity(car)).get(name)
-                if edge is not None and abs(edge) >= 3.0:
+            for side, by_corner in edges.items():
+                edge = by_corner.get(name)
+                if edge is not None and abs(edge) >= EDGE_WORTH_USING_KMH:
                     entry[side] = (
                         "you are quicker here" if edge > 0 else "they are quicker here"
                     )
@@ -496,67 +511,38 @@ class Snapshot:
 
     def strategy(self):
         """The plan, in order, from code's numbers: the model explains it, never re-derives it."""
-        plan = []
-        fuel = self.car_state.get("fuel_at_the_flag")
-        if isinstance(fuel, dict):
-            spare, what = fuel["spare_laps"], fuel["limit"]
-            if spare < 0:
-                plan.append(
-                    f"SAVE {what}: {-spare} laps short at the flag. Lift and coast before the longest "
-                    "braking zones until it is back above zero."
-                )
-            elif spare < fine_margin(
-                fuel.get("laps_left") or 99.0
-            ):  # the strategist's own line
-                plan.append(f"{what} is tight: {spare} laps spare. No wasted laps.")
-            else:
-                plan.append(f"{what} is no limit: {spare} laps spare. Push.")
-        else:
-            plan.append(
-                "fuel to the flag: not known yet (needs 2 laps measured at the line)"
-            )
+        plan = [fuel_line(self.car_state.get("fuel_at_the_flag"))]
         for side in ("ahead", "behind"):
             car = self.picture.get(side)
-            if not car:
-                continue
-            maths = car.get("race_maths", {})
-            reach = maths.get("at_this_pace", "")
-            if car.get("team_call"):
-                plan.append(f"car {side}, {car['gap_s']} s: {car['team_call']}")
-            elif (
-                side == "ahead" and "before the flag" in reach and "reach them" in reach
-            ):
-                plan.append(f"PUSH: the car ahead, {car['gap_s']} s up, {reach}.")
-            elif (
-                side == "behind" and "before the flag" in reach and "reach you" in reach
-            ):
-                plan.append(
-                    f"DEFEND LATER: the car behind, {car['gap_s']} s back, {reach}. "
-                    f"Keep it behind with a {maths.get('to_keep_them_behind', 'quicker')} lap."
-                )
-            else:
-                plan.append(
-                    f"car {side}, {car['gap_s']} s: {reach or car.get('their_pace', 'pace not known')}"
-                )
+            if car:
+                plan.append(car_line(side, car))
         if self.car_state.get("tyres_overheating"):
             plan.append(
                 f"TYRES are cooking (over {HOT_TYRE_C} C): smoother, less sliding, or the pace goes."
             )
-        losing = sorted(
-            (entry for entry in self.corners.values() if entry.get("fastest_gains_s")),
-            key=lambda entry: -entry["fastest_gains_s"],
-        )[:2]
-        where = [
-            f"{entry['corner']}: the fastest car gains {entry['fastest_gains_s']} s. {entry.get('what_to_change', '')}".strip()
-            for entry in losing
-        ]
         return {
             "laps_to_go": self.picture.get("laps_to_go"),
             "place": self.picture.get("place"),
             "plan_in_order": plan,
-            "where_the_time_is": where or ["not measured yet"],
+            "where_the_time_is": self.where_the_time_is() or ["not measured yet"],
             "his_habits": (self.habits or [])[:2],
         }
+
+    def where_the_time_is(self):
+        """The two corners where the fastest car gains the most on him, with what to change."""
+        losing = []
+        for entry in self.corners.values():
+            if entry.get("fastest_gains_s"):
+                losing.append(entry)
+        losing.sort(key=lambda entry: -entry["fastest_gains_s"])
+        where = []
+        for entry in losing[:2]:
+            words = (
+                f"{entry['corner']}: the fastest car gains {entry['fastest_gains_s']} s. "
+                f"{entry.get('what_to_change', '')}"
+            )
+            where.append(words.strip())
+        return where
 
     def remind(self, arguments):
         try:
@@ -662,3 +648,49 @@ def add_speed_edges(entry, edges):
             yours.append(corner)
     entry["corners_where_they_carry_more_speed_mid_corner"] = sorted(theirs)
     entry["corners_where_you_carry_more_speed_mid_corner"] = sorted(yours)
+
+
+def fuel_line(fuel):
+    """The plan's fuel (or energy) line, in the strategist's own terms."""
+    if not isinstance(fuel, dict):
+        return "fuel to the flag: not known yet (needs 2 laps measured at the line)"
+    spare, what = fuel["spare_laps"], fuel["limit"]
+    if spare < 0:
+        return (
+            f"SAVE {what}: {-spare} laps short at the flag. Lift and coast before the longest "
+            "braking zones until it is back above zero."
+        )
+    if spare < fine_margin(fuel.get("laps_left") or 99.0):  # the strategist's own line
+        return f"{what} is tight: {spare} laps spare. No wasted laps."
+    return f"{what} is no limit: {spare} laps spare. Push."
+
+
+def car_line(side, car):
+    """The plan's line for the car ahead or behind: the team's call first, then a car he
+    reaches (or that reaches him) before the flag, else its gap and pace."""
+    maths = car.get("race_maths", {})
+    reach = maths.get("at_this_pace", "")
+    if car.get("team_call"):
+        return f"car {side}, {car['gap_s']} s: {car['team_call']}"
+    if side == "ahead" and "before the flag" in reach and "reach them" in reach:
+        return f"PUSH: the car ahead, {car['gap_s']} s up, {reach}."
+    if side == "behind" and "before the flag" in reach and "reach you" in reach:
+        return (
+            f"DEFEND LATER: the car behind, {car['gap_s']} s back, {reach}. "
+            f"Keep it behind with a {maths.get('to_keep_them_behind', 'quicker')} lap."
+        )
+    return f"car {side}, {car['gap_s']} s: {reach or car.get('their_pace', 'pace not known')}"
+
+
+def corners_coming(lap_dist, corners):
+    """(metres away, name) of every corner, the nearest first, counting on into the next lap."""
+    ordered = sorted(corners, key=lambda c: c["start"])
+    lap_length = max(c["end"] for c in ordered)
+    upcoming = []
+    for corner in ordered:
+        distance = corner["start"] - lap_dist
+        if distance < 0:
+            distance += lap_length
+        upcoming.append((distance, corner["name"]))
+    upcoming.sort()
+    return upcoming
