@@ -100,30 +100,7 @@ class TrackClock:
         """Every scoring snapshot: the other cars' positions."""
         if race is None or race.me is None:
             return
-        given = getattr(race.session, "lap_length", None)
-        if given and given > 1000 and not self.fixed_length:
-            self.lap_length, self.fixed_length = given, True
-            self.length_known = True
-        if not self.fixed_length:
-            for opponent in race.opponents:
-                if self.lap_length is None or opponent.lap_dist > self.lap_length:
-                    grew = (
-                        self.lap_length is not None
-                        and opponent.lap_dist - self.lap_length > LENGTH_GREW_M
-                    )
-                    self.lap_length = opponent.lap_dist
-                    if grew and self.length_known:
-                        self.forget_trails()  # built on the shorter length: they no longer match
-                before = self.last_seen.get(opponent.id)
-                if (
-                    before is not None
-                    and self.lap_length
-                    and opponent.lap_dist < before - self.lap_length / 2
-                ):
-                    self.length_known = (
-                        True  # it crossed the line: the lap has been seen whole
-                    )
-                self.last_seen[opponent.id] = opponent.lap_dist
+        self.learn_length(race)
         if self.my_laps is None:
             self.my_laps = race.me.laps
         elif self.lap_length and self.last_my_lap_dist is not None:
@@ -140,6 +117,38 @@ class TrackClock:
                 ),
                 now,
             )
+
+    def learn_length(self, race):
+        """The lap's length: the session's when it gives one, else learned from the cars."""
+        given = getattr(race.session, "lap_length", None)
+        if given and given > 1000 and not self.fixed_length:
+            self.lap_length, self.fixed_length = given, True
+            self.length_known = True
+        if self.fixed_length:
+            return
+        for opponent in race.opponents:
+            self.learn_from(opponent)
+
+    def learn_from(self, opponent):
+        """One car's say on the lap: farther than any car before makes the lap longer (and the
+        trails built on the shorter length are forgotten); a car seen crossing the line makes
+        the length known."""
+        if self.lap_length is None or opponent.lap_dist > self.lap_length:
+            grew = (
+                self.lap_length is not None
+                and opponent.lap_dist - self.lap_length > LENGTH_GREW_M
+            )
+            self.lap_length = opponent.lap_dist
+            if grew and self.length_known:
+                self.forget_trails()  # built on the shorter length: they no longer match
+        before = self.last_seen.get(opponent.id)
+        if (
+            before is not None
+            and self.lap_length
+            and opponent.lap_dist < before - self.lap_length / 2
+        ):
+            self.length_known = True  # it crossed the line: the lap has been seen whole
+        self.last_seen[opponent.id] = opponent.lap_dist
 
     def follow_game_laps(self, game_laps):
         """My lap count is the game's, like every other car's. Counting my own line crossings put me a

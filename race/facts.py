@@ -25,6 +25,24 @@ def same_class_neighbours(race, model=None):
     Only cars on my lap: a lapped car is not a fight. With the race model the gaps are its
     same-point road gaps (one number everywhere, 25 Sep); the game's own gap is the fallback."""
     me = race.me
+    ahead, behind = nearest_in_class(race, model)
+    gap_ahead = None
+    gap_behind = None
+    if ahead is not None:
+        gap_ahead = model.gap(ahead.id, "me") if model is not None else None
+        if gap_ahead is None:
+            gap_ahead = round(me.time_behind_leader - ahead.time_behind_leader, 2)
+    if behind is not None:
+        gap_behind = model.gap("me", behind.id) if model is not None else None
+        if gap_behind is None:
+            gap_behind = round(behind.time_behind_leader - me.time_behind_leader, 2)
+    return ahead, gap_ahead, behind, gap_behind
+
+
+def nearest_in_class(race, model=None):
+    """The cars of my class on my lap just ahead of and just behind me in the race:
+    (ahead, behind), either None."""
+    me = race.me
     ahead = None
     behind = None
     for opponent in race.opponents:
@@ -38,17 +56,7 @@ def same_class_neighbours(race, model=None):
             behind is None or opponent.place < behind.place
         ):
             behind = opponent
-    gap_ahead = None
-    gap_behind = None
-    if ahead is not None:
-        gap_ahead = model.gap(ahead.id, "me") if model is not None else None
-        if gap_ahead is None:
-            gap_ahead = round(me.time_behind_leader - ahead.time_behind_leader, 2)
-    if behind is not None:
-        gap_behind = model.gap("me", behind.id) if model is not None else None
-        if gap_behind is None:
-            gap_behind = round(behind.time_behind_leader - me.time_behind_leader, 2)
-    return ahead, gap_ahead, behind, gap_behind
+    return ahead, behind
 
 
 def multiclass(race):
@@ -163,39 +171,7 @@ def laps_to_go(race, lap_time, model=None):
         return math.ceil(
             (session.time_remaining + max(0.0, me.time_behind_leader)) / lap_time
         )
-    # the leader's pace: the rolling lap on the road first. Live 25 Sep, lap 2: the game posted -1
-    # for the leader's laps and his own lap 1 (4:23, a standing start) made the race a lap short
-    # only once the leader's last lap of road is all racing: 5% into lap 2, so the window starts
-    # after the launch (live 25 Sep, lap 1: the window still held formation-lap road and fuel said
-    # "fine, push" at 0.3 laps spare; at 15% the lap-1 line fell back to his 4:23 standing start)
-    length = track_length(race, model)
-    clean = leader.laps >= 2 or (
-        leader.laps == 1 and length > 1000 and leader.lap_dist > 0.05 * length
-    )
-    rolling = rolling_lap(model, "me" if leader is me else leader.id) if clean else None
-    posted = [
-        t
-        for t in (
-            (leader.last_lap, leader.best_lap)
-            if leader is not me
-            else (me.last_lap, me.best_lap)
-        )
-        if t and t > 0
-    ]
-    if (
-        rolling is not None
-        and posted
-        and abs(rolling - min(posted)) > 0.2 * min(posted)
-    ):
-        rolling = (
-            None  # a rolling lap 20% off anything the game posted is a broken trail
-        )
-    candidates = (
-        (rolling, lap_time, me.last_lap, me.best_lap)
-        if leader is me
-        else (rolling, leader.last_lap, leader.best_lap, lap_time)
-    )
-    leader_lap = next((t for t in candidates if t is not None and t > 0), None)
+    leader_lap = leader_lap_time(race, leader, lap_time, model)
     if leader_lap is None:
         return None
     lap_length = track_length(race, model)
@@ -213,6 +189,40 @@ def laps_to_go(race, lap_time, model=None):
         # Apex still counted one more and said "box this lap for fuel")
         leader_finishes_on = leader.laps
     return max(0, leader_finishes_on - me.laps_behind_leader - me.laps)
+
+
+def leader_lap_time(race, leader, lap_time, model):
+    """The leader's pace, or None: its rolling lap on the road first, then the laps the game
+    posted for it, my own lap time last."""
+    me = race.me
+    # the rolling lap on the road first. Live 25 Sep, lap 2: the game posted -1 for the leader's
+    # laps and his own lap 1 (4:23, a standing start) made the race a lap short. Only once the
+    # leader's last lap of road is all racing: 5% into lap 2, so the window starts after the
+    # launch (live 25 Sep, lap 1: the window still held formation-lap road and fuel said "fine,
+    # push" at 0.3 laps spare; at 15% the lap-1 line fell back to his 4:23 standing start)
+    length = track_length(race, model)
+    clean = leader.laps >= 2 or (
+        leader.laps == 1 and length > 1000 and leader.lap_dist > 0.05 * length
+    )
+    rolling = rolling_lap(model, "me" if leader is me else leader.id) if clean else None
+    posted = []
+    for lap in (leader.last_lap, leader.best_lap):
+        if lap and lap > 0:
+            posted.append(lap)
+    if (
+        rolling is not None
+        and posted
+        and abs(rolling - min(posted)) > 0.2 * min(posted)
+    ):
+        rolling = (
+            None  # a rolling lap 20% off anything the game posted is a broken trail
+        )
+    candidates = (
+        (rolling, lap_time, me.last_lap, me.best_lap)
+        if leader is me
+        else (rolling, leader.last_lap, leader.best_lap, lap_time)
+    )
+    return next((t for t in candidates if t is not None and t > 0), None)
 
 
 def leader_margin(race, model=None):
