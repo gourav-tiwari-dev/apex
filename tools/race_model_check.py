@@ -21,8 +21,8 @@ def d1_one_picture():
     live = open(os.path.join(HERE, "session.py"), encoding="utf8").read()
     one_model = (
         live.count("RaceModel()") == 1
-        and "racecraft.share(model)" in live
-        and "model=model" in live
+        and "racecraft.share(self.model)" in live
+        and "model=self.model" in live
     )
     racecraft = open(
         os.path.join(HERE, "seats", "racecraft.py"), encoding="utf8"
@@ -160,7 +160,9 @@ def d8_cost():
 
 
 def d9_claims():
-    agent = open(os.path.join(HERE, "agent.py"), encoding="utf8").read()
+    agent = open(
+        os.path.join(HERE, "coach", "answer_checks.py"), encoding="utf8"
+    ).read()
     ok = all(
         name in agent
         for name in (
