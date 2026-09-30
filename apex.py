@@ -1,7 +1,7 @@
 """Apex: one command for a whole race night.
 
     python apex.py                     live: brief, then every session you drive, then the debrief
-    python apex.py --clean             the same, with no swearing (for recordings)
+    python apex.py --spicy             the same, and the engineer swears (never slurs, in any mode)
     python apex.py --replay            replay the 3-lap test tape
     python apex.py --replay TAPE --speed 1
 
@@ -88,14 +88,19 @@ if __name__ == "__main__":
         default=None,
         help="replay speed: 1 = real time, leave out for max speed",
     )
-    parser.add_argument("--clean", action="store_true", help="no swearing")
+    # Apex is a product now (30 Sep): clean is the default a new driver gets, swearing is opt-in
+    parser.add_argument("--spicy", action="store_true", help="the engineer swears")
+    parser.add_argument(
+        "--clean", action="store_true", help="no swearing (the default; kept for old commands)"
+    )
     parser.add_argument(
         "--record",
         action="store_true",
         help="recording a clip: the standard voice only, never the cloned one",
     )
     args = parser.parse_args()
+    clean = not args.spicy
     if args.replay:
-        replay_night(args.replay, args.speed, args.clean)
+        replay_night(args.replay, args.speed, clean)
     else:
-        race_night(args.clean, args.record)
+        race_night(clean, args.record)

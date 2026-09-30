@@ -95,13 +95,44 @@ LABELS = [
 PROFANITY = [
     "fuck",
     "fucking",
+    "fucked",
+    "fucker",
+    "fuckin",
     "shit",
+    "shite",
+    "shitty",
     "damn",
     "hell",
     "bastard",
     "bloody",
     "crap",
     "ass",
+    "arse",
+    "bollocks",
+    "dickhead",
+    "prick",
+]
+# Apex is a product now (30 Sep): swearing at the situation is a choice (Spicy), but a slur or an
+# insult aimed at who someone is never goes on air, in any mode. The model said "the cunt's
+# defending aggressive" about a rival on 27 Sep; nothing in the code wrote it.
+SLURS = [
+    "cunt",
+    "cunts",
+    "twat",
+    "wanker",
+    "retard",
+    "retarded",
+    "spastic",
+    "fag",
+    "faggot",
+    "dyke",
+    "tranny",
+    "nigger",
+    "nigga",
+    "paki",
+    "chink",
+    "kike",
+    "spic",
 ]
 ACKNOWLEDGEMENTS = ["copy", "understood", "roger"]
 # other drivers are real people: the radio never guesses their gender (23 Sep 2026, the model
@@ -204,6 +235,9 @@ def gate(line, call, clean=False):
     for word in ACKNOWLEDGEMENTS:
         if has_phrase(lowered, word):
             return False, f"acknowledgement: {word}"
+    for word in SLURS:
+        if has_phrase(lowered, word):
+            return False, f"slur: {word}"
     if clean:
         for word in PROFANITY:
             if has_phrase(lowered, word):

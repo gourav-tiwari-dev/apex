@@ -11,6 +11,7 @@ from radio.persona import (
     BANNED,
     GENDERED,
     PROFANITY,
+    SLURS,
     has_phrase,
     number_is_backed,
     numbers_in,
@@ -413,7 +414,7 @@ def form_problem(text, lowered, max_words, speeds_ok):
 
 
 def word_problem(lowered, clean):
-    """He or she for a real person, a banned word, or swearing in clean mode."""
+    """He or she for a real person, a banned word, a slur (any mode), or swearing in clean mode."""
     for word in GENDERED:
         if has_phrase(lowered, word):
             return (
@@ -422,6 +423,9 @@ def word_problem(lowered, clean):
     for phrase in BANNED:
         if has_phrase(lowered, phrase):
             return f"banned word '{phrase}'"
+    for word in SLURS:
+        if has_phrase(lowered, word):
+            return f"slur '{word}': swear at the situation if you must, never call a person a name"
     if clean:
         for word in PROFANITY:
             if has_phrase(lowered, word):

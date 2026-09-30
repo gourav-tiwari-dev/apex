@@ -320,7 +320,8 @@ class Session:
         """The seats, the race model they all read, and the governor that picks what is said."""
         # the seats that watch the whole race (the performance seat rides on the detectors)
         self.performance = PerformanceEngineer()
-        self.racecraft = Racecraft(self.performance)
+        # clean reaches racecraft too (30 Sep): its praise pools swore even with --clean
+        self.racecraft = Racecraft(self.performance, clean=clean)
         # the one picture of the race (25 Sep): fed here, before any seat, and only read by them
         self.model = RaceModel()
         self.racecraft.share(self.model)
