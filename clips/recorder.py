@@ -24,13 +24,25 @@ ENCODERS = [
     ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "12M"],
     ["-c:v", "h264_amf", "-quality", "speed", "-rc", "vbr_peak", "-b:v", "12M"],
     ["-c:v", "h264_qsv", "-preset", "veryfast", "-b:v", "12M"],
+    # Windows' own encoder: always there. Apex ships an LGPL ffmpeg (a paid app can't carry
+    # the GPL build), which has no libx264; it stays last for a developer's GPL ffmpeg.
+    ["-c:v", "h264_mf", "-rate_control", "quality", "-quality", "70", "-hw_encoding", "1"],
     ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"],
 ]
 
+# for the finished short: quality over speed, same order
+SHORT_ENCODERS = [
+    ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "19", "-b:v", "0"],
+    ["-c:v", "h264_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "19"],
+    ["-c:v", "h264_qsv", "-preset", "slow", "-global_quality", "19"],
+    ["-c:v", "h264_mf", "-rate_control", "quality", "-quality", "85"],
+    ["-c:v", "libx264", "-preset", "medium", "-crf", "18"],
+]
 
-def working_encoder():
+
+def working_encoder(choices=ENCODERS):
     """The first encoder that can encode one test frame here."""
-    for encoder in ENCODERS:
+    for encoder in choices:
         test = subprocess.run(
             ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
              *encoder, "-f", "null", "-"],

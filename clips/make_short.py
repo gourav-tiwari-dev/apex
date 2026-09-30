@@ -231,6 +231,18 @@ def audio_count(video):
     return len(out.split())
 
 
+_encoder = None
+
+
+def video_encoder():
+    """The best encoder this machine has for the finished short (clips/recorder.py lists them)."""
+    global _encoder
+    if _encoder is None:
+        from clips.recorder import SHORT_ENCODERS, working_encoder
+        _encoder = working_encoder(SHORT_ENCODERS) or SHORT_ENCODERS[-1]
+    return _encoder
+
+
 def render_segment(video, a, b, path, mics):
     crop = f"scale=-2:{H},crop={W}:{H},setsar=1,fps={FPS}"
     if mics > 1:
@@ -238,7 +250,7 @@ def render_segment(video, a, b, path, mics):
     else:
         audio = "[0:a:0]aresample=48000,aformat=channel_layouts=stereo[a]"
     run(["-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", video, "-filter_complex", f"[0:v]{crop}[v];{audio}",
-         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+         "-map", "[v]", "-map", "[a]", *video_encoder(), "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "192k", path])
 
 
@@ -246,8 +258,8 @@ def render_card_bed(video, at, dur, path):
     """A blurred, darkened stretch of the race behind the end cards."""
     run(["-ss", f"{at:.3f}", "-t", f"{dur:.3f}", "-i", video, "-f", "lavfi", "-t", f"{dur:.3f}", "-i",
          "anullsrc=r=48000:cl=stereo", "-filter_complex",
-         f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1,fps={FPS},gblur=sigma=28,eq=saturation=0.35,colorchannelmixer=rr=0.5:gg=0.5:bb=0.5[v]",
-         "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+         f"[0:v]scale=-2:{H},crop={W}:{H},setsar=1,fps={FPS},gblur=sigma=28,hue=s=0.35,colorchannelmixer=rr=0.5:gg=0.5:bb=0.5[v]",
+         "-map", "[v]", "-map", "1:a", *video_encoder(), "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "192k", "-shortest", path])
 
 
@@ -332,7 +344,7 @@ def make(video, moments_path, out=None, max_s=30.0, ending="launch"):
         afilter = "[0:a]anull[a]"
     out = out or os.path.splitext(video)[0] + ".short.mp4"
     run(["-i", joined, "-filter_complex", f"[0:v]subtitles='{ass_arg}'[v];{afilter}", "-map", "[v]", "-map", "[a]",
-         "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+         *video_encoder(), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
          "-movflags", "+faststart", out])
     print(f"[clips] beats: {[b[0] for b in kept]}; {total:.1f} s; {len(caps.bleeps)} bleeps; wrote {out}")
     return out
