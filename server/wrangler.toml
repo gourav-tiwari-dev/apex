@@ -1,0 +1,8 @@
+# Apex's AI door (worker.js). Deploy: npx wrangler deploy   (after: npx wrangler login)
+# Secrets, set once, never in this file:
+#   npx wrangler secret put AICREDITS_API_KEY     the provider key (same as .env)
+#   npx wrangler secret put TESTER_TOKENS         comma-separated tokens from new_tester.py
+name = "apex-ai-door"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = true

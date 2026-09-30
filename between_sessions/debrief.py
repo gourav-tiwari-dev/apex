@@ -87,13 +87,22 @@ DEBRIEF_PROMPT = (
     "No praise, no greeting, no jargon."
 )
 
-client = open_client(timeout=120)
+_client = None
+
+
+def connect():
+    """Opened on the first debrief, not on import (30 Sep): apex.py imports this module at start,
+    so a machine with no AI access crashed before the race instead of skipping the debrief."""
+    global _client
+    if _client is None:
+        _client = open_client(timeout=120)
+    return _client
 
 
 def ask_once(pack):
     text = ""
     finish = None
-    stream = client.chat.completions.create(
+    stream = connect().chat.completions.create(
         model=DEBRIEF_MODEL,
         max_tokens=16000,
         stream=True,

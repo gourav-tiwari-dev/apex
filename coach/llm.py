@@ -1,10 +1,15 @@
 """The one door to the language model: the provider, the model names, the client, and what
 it costs (Budget).
 
-aicredits.in serves DeepSeek through an OpenAI-compatible API; the key is AICREDITS_API_KEY in
-.env. Until 27 Sep 2026 the coach, the persona and the debrief each built this client
-themselves, and the debrief's model name sat in its own code."""
+aicredits.in serves DeepSeek through an OpenAI-compatible API. Two ways in (30 Sep 2026):
+  - a developer's machine: AICREDITS_API_KEY in .env, straight to the provider (as before);
+  - an early-access driver's machine: server.json holds the Apex AI door's address and the
+    driver's own tester token; the door (server/worker.js) holds the provider key, so the
+    installer never ships it.
+Until 27 Sep 2026 the coach, the persona and the debrief each built this client themselves,
+and the debrief's model name sat in its own code."""
 
+import json
 import os
 
 PROVIDER_URL = "https://aicredits.in/v1"
@@ -12,21 +17,36 @@ LIVE_MODEL = (
     "deepseek-v4-flash"  # during a session: the push-to-talk coach, line phrasing
 )
 DEBRIEF_MODEL = "deepseek-v4.1-flash"  # after the race: the debrief
+PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # .env sits in the project folder, one up from coach/
-ENV_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
-)
+ENV_FILE = os.path.join(PROJECT, ".env")
+SERVER_FILE = os.path.join(PROJECT, "server.json")
+
+
+def where_to_ask(env_file=ENV_FILE, server_file=SERVER_FILE):
+    """(base_url, key): the provider with the developer's key, else the Apex AI door with the
+    driver's tester token. Raises with a plain reason when there is neither."""
+    from dotenv import load_dotenv
+
+    load_dotenv(env_file)
+    key = os.environ.get("AICREDITS_API_KEY")
+    if key:
+        return PROVIDER_URL, key
+    if os.path.exists(server_file):
+        with open(server_file, encoding="utf-8") as f:
+            door = json.load(f)
+        return door["url"].rstrip("/") + "/v1", door["token"]
+    raise RuntimeError("no AI access: neither .env nor server.json - the radio runs, the coach can't answer")
 
 
 def open_client(timeout):
     """A client for the provider. Each caller sets how long it can wait for an answer."""
-    from dotenv import load_dotenv
     from openai import OpenAI
 
-    load_dotenv(ENV_FILE)
+    base_url, key = where_to_ask()
     return OpenAI(
-        base_url=PROVIDER_URL,
-        api_key=os.environ["AICREDITS_API_KEY"],
+        base_url=base_url,
+        api_key=key,
         timeout=timeout,
         max_retries=0,
     )

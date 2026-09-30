@@ -33,3 +33,8 @@ golden/
 .devtools/
 # the driver profile is the user's own (setup wizard, 30 Sep)
 profile.json
+# who has which tester token (server/new_tester.py): private
+server/testers.json
+# a tester's own token for the AI door (written by the installer's invite step)
+server.json
+!server/README.md
