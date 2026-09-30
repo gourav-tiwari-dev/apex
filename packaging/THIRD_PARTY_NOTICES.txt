@@ -1,0 +1,55 @@
+Apex includes software written by others. Their licences are below.
+
+=====================================================================
+game/lmu_data.py and game/sharedmemory.py are based on pyLMUSharedMemory
+(https://github.com/TinyPedal/pyLMUSharedMemory) and pyRfactor2SharedMemory
+(https://github.com/TonyWhitley/pyRfactor2SharedMemory).
+
+MIT License
+
+Copyright (c) 2021 Tony Whitley
+Copyright (c) 2025 Xiang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+=====================================================================
+FFmpeg (ffmpeg/ folder): LGPL build by BtbN (https://github.com/BtbN/FFmpeg-Builds),
+licensed under the GNU Lesser General Public License v3; full text in ffmpeg-LGPL.txt.
+Source: https://ffmpeg.org
+
+=====================================================================
+Python libraries packed into Apex (each under its own licence, text in its project):
+  faster-whisper 1.2.1        MIT            https://github.com/SYSTRAN/faster-whisper
+  CTranslate2 4.8.1           MIT            https://github.com/OpenNMT/CTranslate2
+  onnxruntime 1.27.0          MIT            https://github.com/microsoft/onnxruntime
+  tokenizers 0.23.1           Apache-2.0     https://github.com/huggingface/tokenizers
+  huggingface-hub 1.24.0      Apache-2.0     https://github.com/huggingface/huggingface_hub
+  PyAV (av) 18.0.0            BSD-3-Clause   https://github.com/PyAV-Org/PyAV (bundles FFmpeg libraries)
+  PyAudioWPatch 0.2.12.8      Apache-2.0     https://github.com/s0d3s/PyAudioWPatch
+  sounddevice 0.5.6           MIT            https://github.com/spatialaudio/python-sounddevice
+  pygame 2.6.1                LGPL-2.1       https://github.com/pygame/pygame
+  edge-tts 7.2.8              LGPL-3.0       https://github.com/rany2/edge-tts
+  pyttsx3 2.99                MPL-2.0        https://github.com/nateshmbhat/pyttsx3
+  comtypes 1.4.16             MIT            https://github.com/enthought/comtypes
+  openai 2.44.0               Apache-2.0     https://github.com/openai/openai-python
+  python-dotenv 1.2.2         BSD-3-Clause   https://github.com/theskumar/python-dotenv
+  numpy 2.5.1                 BSD-3-Clause   https://numpy.org
+  pywin32 312                 PSF            https://github.com/mhammond/pywin32
+The LGPL libraries are kept as separate files inside Apex's folder, so they can be replaced.
+The speech model (Whisper small.en) is downloaded on first use; OpenAI Whisper weights: MIT.

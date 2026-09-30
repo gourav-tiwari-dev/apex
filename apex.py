@@ -81,7 +81,7 @@ def replay_night(tape, speed, clean):
     run_debrief()
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Apex race engineer")
     parser.add_argument(
         "--replay",
@@ -111,7 +111,7 @@ if __name__ == "__main__":
         action="store_true",
         help="record the game window and make a short of every race (Videos/Apex)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     # the setup wizard's choices (profile.json); a flag on the command line switches one on
     profile = load_profile()
     clean = not (args.spicy or profile.spicy)
@@ -124,3 +124,7 @@ if __name__ == "__main__":
 
             clips = AutoClips(os.path.abspath("apex.db"))
         race_night(clean, args.record, clips)
+
+
+if __name__ == "__main__":
+    main()

@@ -11,6 +11,7 @@ and the debrief's model name sat in its own code."""
 
 import json
 import os
+import sys
 
 PROVIDER_URL = "https://aicredits.in/v1"
 LIVE_MODEL = (
@@ -18,6 +19,9 @@ LIVE_MODEL = (
 )
 DEBRIEF_MODEL = "deepseek-v4.1-flash"  # after the race: the debrief
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if getattr(sys, "frozen", False):
+    # the installed app: the code is packed inside, a tester's server.json sits next to Apex.exe
+    PROJECT = os.path.dirname(sys.executable)
 # .env sits in the project folder, one up from coach/
 ENV_FILE = os.path.join(PROJECT, ".env")
 SERVER_FILE = os.path.join(PROJECT, "server.json")

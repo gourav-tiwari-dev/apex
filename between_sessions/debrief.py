@@ -1,4 +1,4 @@
-import json, time, sys
+import json, os, time, sys
 from memory.db import connect_db
 from memory.contracts import build_evidence_pack, make_contract, save_contract
 from memory.db import latest_session_id, track_of
@@ -191,13 +191,20 @@ def say_and_log(conn, session_id, seat, kind, line):
     save_radio(conn, session_id, call, "spoken", line)
 
 
+MONZA_REFERENCE = "reference_hymo.json"
+
+
 def reference_for(conn, session_id):
     track = conn.execute(
         "SELECT track FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()[0]
-    # Monza keeps the hand-checked reference lap; old sessions have no track and were Monza
-    if track is None or "monza" in track.lower():
-        return "reference_hymo.json"
+    # Monza keeps the hand-checked reference lap; old sessions have no track and were Monza.
+    # The file is Gourav's notes from a HYMO video, so the installed app doesn't carry it
+    # (30 Sep): without it Monza is measured like every other track.
+    if (track is None or "monza" in track.lower()) and os.path.exists(MONZA_REFERENCE):
+        return MONZA_REFERENCE
+    if track is None:
+        return None
     car_class, car_model = conn.execute(
         "SELECT car_class, car_model FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()
