@@ -1,0 +1,111 @@
+"""Auto-clips (30 Sep): the parts that decide what goes on screen, without ffmpeg or Whisper.
+The full chain (recording -> Whisper -> short) was checked by hand on a synthetic race built
+from session 59's real radio lines (apex-launch/cutter/make_test_clip.py): every line placed
+within 0.3 s of where it was put."""
+
+import os
+
+from clips import auto
+from clips.find_moments import keep_in_order, norm_words, place_all
+from clips.make_short import chunks, pick_ask, pick_hook, star, timed_line_words
+
+
+def words(text):
+    return [{"raw": w} for w in text.split()]
+
+
+def shown(line):
+    return [" ".join(w["raw"] for w in c) for c in chunks(words(line))]
+
+
+def radio_line(kind, t, text, seat="racecraft"):
+    n = len(text.split())
+    return {"kind": kind, "seat": seat, "line": text, "video_t": t, "matched": True,
+            "timed": [{"raw": w, "start": t + i * 0.3, "end": t + (i + 1) * 0.3}
+                      for i, w in enumerate(text.split())][:n]}
+
+
+def test_no_word_ever_flashes_up_alone():
+    for line in ("Indianapolis next. You've had trouble there. Clean exit.",
+                 "You're faster out of Mulsanne Chicane 2. Pass into Mulsanne Corner. Not before.",
+                 "Yeah, you got hit. That fucking BMW in P6 clipped you at the Esses, mate."):
+        assert all(len(chunk.split()) >= 2 for chunk in shown(line)), shown(line)
+
+
+def test_swears_are_starred_on_screen():
+    assert star("fucking") == "f******"
+    assert star("mate.") == "mate."
+
+
+def test_the_hook_is_the_attack_plan_followed_soonest_by_a_pass():
+    radio = [
+        radio_line("ATTACK_PLAN", 10.0, "You're faster out of Dunlop. Pass into Esses. Not before."),
+        radio_line("ATTACK_PLAN", 70.0, "You're faster out of Arnage. Pass into Porsche. Not before."),
+        radio_line("PASS_PRAISE", 85.0, "Simply lovely, mate. Great tow."),
+    ]
+    hook = pick_hook(radio)
+    assert [beat[0] for beat in hook] == ["hook", "hook"]
+    assert hook[0][3][0]["line"].startswith("You're faster out of Arnage")
+    assert hook[0][2] < 70.0 + 6.0 + 0.5            # the call is cut at a sentence end, not run long
+
+
+def test_a_line_with_a_slur_is_never_picked():
+    radio = [
+        radio_line("ATTACK_PLAN", 10.0, "The cunt's slow out of Dunlop. Pass into Esses."),
+        radio_line("PASS_PRAISE", 20.0, "Simply lovely, mate."),
+    ]
+    assert pick_hook(radio) == []
+
+
+def test_a_long_wait_for_the_answer_is_jump_cut():
+    question = {"video_t": 100.0, "video_end": 101.5, "text": "Did I get hit back there?"}
+    answer = radio_line("ANSWER_AGENT", 104.0, "Yeah, you got hit. Damage on the car.", "race_engineer")
+    beats = pick_ask([answer], [question])
+    assert [b[0] for b in beats] == ["ask", "answer"]
+    assert beats[0][2] < 102.0 and beats[1][1] > 103.5
+
+
+def test_captions_show_apex_words_with_whispers_timing():
+    # Whisper heard "toe" for tow; the caption must say what Apex said
+    line = {"line": "Simply lovely, mate. Great tow.", "video_t": 93.8, "video_end": 97.16, "matched": True}
+    heard = [{"w": w, "start": s, "end": e} for w, s, e in
+             [("simply", 93.8, 94.26), ("lovely", 94.26, 94.78), ("mate", 94.78, 95.42),
+              ("great", 96.18, 96.7), ("toe", 96.7, 97.16)]]
+    timed = timed_line_words(line, heard)
+    assert [w["raw"] for w in timed] == ["Simply", "lovely,", "mate.", "Great", "tow."]
+    assert timed[-1]["start"] == 96.7
+
+
+def test_matches_out_of_time_order_are_dropped():
+    hits = [{"sim_time": 10, "video_t": 5}, {"sim_time": 20, "video_t": 400}, {"sim_time": 30, "video_t": 25}]
+    kept = keep_in_order(hits)
+    assert [h["sim_time"] for h in kept] in ([10, 30], [10, 20])
+    assert len(kept) == 2
+
+
+def test_lines_whisper_missed_take_their_neighbours_offset():
+    hits = [{"id": 1, "sim_time": 100.0, "video_t": 20.0}, {"id": 3, "sim_time": 300.0, "video_t": 221.0}]
+    lines = [{"id": 1, "sim_time": 100.0}, {"id": 2, "sim_time": 110.0}, {"id": 3, "sim_time": 300.0}]
+    placed = {p["id"]: p for p in place_all(lines, hits)}
+    assert placed[2]["matched"] is False
+    assert placed[2]["video_t"] == 30.0
+
+
+def test_numbers_match_whether_whisper_writes_them_or_spells_them():
+    assert norm_words("Seven tenths") == norm_words("7 tenths")
+
+
+def test_practice_recordings_are_deleted_and_nothing_is_built(tmp_path):
+    class FakeRecorder:
+        def __init__(self):
+            self.piece_dir = str(tmp_path / "race_x")
+            os.makedirs(self.piece_dir)
+
+        def stop(self):
+            return os.path.join(self.piece_dir, "race.mp4")
+
+    clips = auto.AutoClips("apex.db", str(tmp_path))
+    clips.recorder = FakeRecorder()
+    folder = clips.recorder.piece_dir
+    assert clips.session_over(7, was_a_finished_race=False) is None
+    assert not os.path.exists(folder)

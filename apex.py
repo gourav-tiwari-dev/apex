@@ -2,6 +2,7 @@
 
     python apex.py                     live: brief, then every session you drive, then the debrief
     python apex.py --spicy             the same, and the engineer swears (never slurs, in any mode)
+    python apex.py --clips             also records the game window and makes a short of every race
     python apex.py --replay            replay the 3-lap test tape
     python apex.py --replay TAPE --speed 1
 
@@ -10,6 +11,7 @@ Apex session, and the debrief runs after a race. Ctrl+C when you are done for th
 """
 
 import argparse
+import os
 
 from memory.db import connect_db
 from between_sessions.debrief import run_debrief
@@ -29,7 +31,7 @@ def how_it_ended(conn, session_id):
     return row[0], row[1]
 
 
-def race_night(clean, record=False):
+def race_night(clean, record=False, clips=None):
     conn = connect_db("apex.db")
     # one voice for the whole launch: Azure's voices with emotion when .env has a key,
     # edge-tts otherwise
@@ -37,14 +39,16 @@ def race_night(clean, record=False):
     said = brief(conn)
     launch_id = datetime.now().isoformat(timespec="seconds")
     try:
-        race_sessions(conn, clean, launch_id, voice, said)
+        race_sessions(conn, clean, launch_id, voice, said, clips)
     finally:
         conn.close()
 
 
-def race_sessions(conn, clean, launch_id, voice, said):
+def race_sessions(conn, clean, launch_id, voice, said, clips=None):
     first = True
     while True:
+        if clips is not None:
+            clips.session_starting()
         session_id = run_session(
             False, None, clean=clean, launch_id=launch_id, voice=voice
         )
@@ -54,7 +58,10 @@ def race_sessions(conn, clean, launch_id, voice, said):
         # every drive teaches the team memory, before anything reads from it
         build_profile(conn)
         end_reason, session_type = how_it_ended(conn, session_id)
-        if session_type in RACE_SESSIONS and end_reason == "session_over":
+        finished_race = session_type in RACE_SESSIONS and end_reason == "session_over"
+        if clips is not None:
+            clips.session_over(session_id, finished_race)
+        if finished_race:
             run_debrief()
         if end_reason == "stopped_by_driver":
             break
@@ -98,9 +105,19 @@ if __name__ == "__main__":
         action="store_true",
         help="recording a clip: the standard voice only, never the cloned one",
     )
+    parser.add_argument(
+        "--clips",
+        action="store_true",
+        help="record the game window and make a short of every race (Videos/Apex)",
+    )
     args = parser.parse_args()
     clean = not args.spicy
     if args.replay:
         replay_night(args.replay, args.speed, clean)
     else:
-        race_night(clean, args.record)
+        clips = None
+        if args.clips:
+            from clips.auto import AutoClips
+
+            clips = AutoClips(os.path.abspath("apex.db"))
+        race_night(clean, args.record, clips)
