@@ -13,6 +13,7 @@ Apex session, and the debrief runs after a race. Ctrl+C when you are done for th
 import argparse
 import os
 
+from driver_profile import load_profile
 from memory.db import connect_db
 from between_sessions.debrief import run_debrief
 from session import run_session
@@ -111,12 +112,14 @@ if __name__ == "__main__":
         help="record the game window and make a short of every race (Videos/Apex)",
     )
     args = parser.parse_args()
-    clean = not args.spicy
+    # the setup wizard's choices (profile.json); a flag on the command line switches one on
+    profile = load_profile()
+    clean = not (args.spicy or profile.spicy)
     if args.replay:
         replay_night(args.replay, args.speed, clean)
     else:
         clips = None
-        if args.clips:
+        if args.clips or profile.clips:
             from clips.auto import AutoClips
 
             clips = AutoClips(os.path.abspath("apex.db"))
