@@ -109,3 +109,32 @@ def test_practice_recordings_are_deleted_and_nothing_is_built(tmp_path):
     folder = clips.recorder.piece_dir
     assert clips.session_over(7, was_a_finished_race=False) is None
     assert not os.path.exists(folder)
+
+
+def test_the_hook_cuts_to_the_pass_the_data_saw_not_three_seconds_before_the_praise():
+    # session 59: the pass at ~359 s, the praise waited for a quiet radio until 373.8 s
+    from clips.make_short import passes, pick_hook_measured
+
+    race = [[t / 10, 0.1, None, 8 if t < 3590 else 7, 200.0] for t in range(3400, 3800)]
+    assert passes(race) == [(359.0, 8, 7)]
+    radio = [
+        {**radio_line("STICK_IT", 28.0, "Stick it. They're in your tow."), "sim_time": 308.0},
+        {**radio_line("ATTACK_PLAN", 71.0, "You're faster out of Mulsanne Chicane 2. Pass into Mulsanne Corner. Not before."), "sim_time": 351.0},
+        {**radio_line("PASS_PRAISE", 94.0, "Simply lovely, mate. Great tow."), "sim_time": 374.0},
+    ]
+    beats = pick_hook_measured(radio, race)
+    lines = [ln["kind"] for beat in beats for ln in beat[3]]
+    assert lines[0] == "ATTACK_PLAN"                    # the plan that set THIS pass up, not "stick it"
+    pass_beat = next(b for b in beats if b[0] == "pass")
+    assert pass_beat[4] == {"pass_sim": 359.0, "before": 8, "after": 7}
+    assert pass_beat[1] <= 79.0 <= pass_beat[2]         # sim 359 = video 79: the pass is on screen
+
+
+def test_the_gap_is_shown_in_metres_and_never_as_minus_zero():
+    from clips.make_short import Captions
+
+    caps = Captions()
+    race = [[10.0, 0.14, None, 8, 200.0], [10.1, -0.0, None, 8, 200.0]]
+    caps.gap_ticker(race, 10.2, lambda sim: sim, 0.0, 0.0, 20.0)
+    texts = [e[3] for e in caps.events]
+    assert texts[0].endswith("GAP 7.8 m") and texts[1].endswith("GAP 0.0 m")

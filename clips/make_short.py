@@ -75,6 +75,75 @@ def cut_at_sentence(line, max_len):
     return best if best is not None else tw[-1]["end"]
 
 
+def place_at(race, sim):
+    """His place at sim time `sim`, from the race data (clips/race_data.py)."""
+    place = None
+    for row in race:
+        if row[0] > sim:
+            break
+        place = row[3]
+    return place
+
+
+def passes(race):
+    """Every time his place got better: (sim time, place before, place after). The praise can
+    come 15 s after the pass (it waits for a quiet moment on the radio: session 59, pass at
+    ~359 s, praise at 373.8 s), so the clip cuts to the moment the data says it happened."""
+    found, last = [], None
+    for row in race:
+        place = row[3]
+        if place is None:
+            continue
+        if last is not None and place < last:
+            found.append((row[0], last, place))
+        last = place
+    return found
+
+
+def video_time_of(radio):
+    """sim time -> video time, using the offset of the nearest radio line Whisper heard."""
+    anchors = sorted((r["sim_time"], r["video_t"] - r["sim_time"]) for r in radio if r.get("matched"))
+
+    def to_video(sim):
+        nearest = min(anchors, key=lambda a: abs(a[0] - sim))
+        return sim + nearest[1]
+
+    return to_video
+
+
+def pick_hook_measured(radio, race):
+    """The called shot from the race data: the attack plan, the real pass (gap ticking down, the
+    place changing), the praise. Beats carry what the overlays need."""
+    to_video = video_time_of(radio)
+    for pass_sim, before, after in passes(race):
+        # the call that set THIS pass up: the last attack plan in the 45 s before it (a "stick it"
+        # only when there was no plan), and the praise that followed it
+        calls = [r for r in radio if r["kind"] in ("ATTACK_PLAN", "STICK_IT") and usable(r)
+                 and pass_sim - 45 <= r["sim_time"] < pass_sim]
+        plans = [r for r in calls if r["kind"] == "ATTACK_PLAN"]
+        a = (plans or calls or [None])[-1]
+        praise = next((p for p in radio if p["kind"] == "PASS_PRAISE" and usable(p)
+                       and pass_sim - 1 <= p["sim_time"] <= pass_sim + 30), None)
+        if a is None or praise is None:
+            continue
+        pass_v = to_video(pass_sim)
+        call = ("hook", a["video_t"] - 0.3, cut_at_sentence(a, 6.0) + 0.3, [a])
+        moment = ("pass", pass_v - 5.0, pass_v + 1.2, [], {"pass_sim": pass_sim, "before": before, "after": after})
+        cheer = ("hook", praise["video_t"] - 0.3, cut_at_sentence(praise, 3.0) + 0.5, [praise])
+        beats = [call, moment, cheer]
+        joined = [beats[0]]
+        for beat in beats[1:]:                       # pieces closer than a second play straight through
+            last = joined[-1]
+            if beat[1] - last[2] < 1.0:
+                extra = beat[4] if len(beat) > 4 else (last[4] if len(last) > 4 else None)
+                merged = ("pass" if extra else last[0], last[1], max(last[2], beat[2]), last[3] + beat[3])
+                joined[-1] = merged + ((extra,) if extra else ())
+            else:
+                joined.append(beat)
+        return joined
+    return []
+
+
 def pick_hook(radio):
     """The attack plan that is followed soonest by a completed pass."""
     best = None
@@ -165,6 +234,8 @@ def star(word):
 class Captions:
     def __init__(self):
         self.events, self.bleeps = [], []
+        self.hits = []        # a low hit under the pass
+        self.squelches = []   # the radio's click as each line opens
 
     def radio(self, line, shift, seg_start, seg_end):
         """One radio line: a seat tag for the whole line, the words 3 at a time."""
@@ -173,6 +244,7 @@ class Captions:
         b = min(words[-1]["end"] + 0.4, seg_end)
         tag = "APEX · " + SEAT_NAMES.get(line["seat"], line["seat"].upper())
         self.events.append((a + shift, b + shift, "Tag", tag))
+        self.squelches.append(a + shift)
         groups = chunks(words)
         for i, g in enumerate(groups):
             ga = max(g[0]["start"], seg_start)
@@ -192,6 +264,26 @@ class Captions:
     def card(self, a, b, style, text):
         self.events.append((a, b, style, text))
 
+    def gap_ticker(self, race, pass_sim, to_video, shift, seg_start, seg_end):
+        """The gap to the car ahead as Apex measured it, every 0.1 s up to the pass, in metres
+        (gap x speed): in a tow 0.14 s -> 0.01 s looks frozen, 7.8 m -> 0.6 m you can feel.
+        White, then orange inside 3 m."""
+        rows = [r for r in race if r[1] is not None and len(r) > 4 and to_video(r[0]) >= seg_start
+                and r[0] < pass_sim and to_video(r[0]) < seg_end]
+        for i, row in enumerate(rows):
+            metres = abs(max(row[1], 0.0)) * row[4] / 3.6   # abs: never "-0.0 m"
+            a = to_video(row[0]) + shift
+            b = (to_video(rows[i + 1][0]) if i + 1 < len(rows) else to_video(pass_sim)) + shift
+            colour = ORANGE if metres < 3 else WHITE
+            shown = f"{metres:.1f}" if metres < 10 else f"{metres:.0f}"
+            self.events.append((a, b, "Gap", f"{{\\c{colour}}}GAP {shown} m"))
+
+    def place_pop(self, at, before, after):
+        """P8 > P7, popping in at the moment of the pass."""
+        pop = r"{\fscx140\fscy140\t(0,180,\fscx100\fscy100)}"
+        self.events.append((at, at + 1.8, "Place", f"{pop}P{before} {{\\c{ORANGE}}}▸ P{after}"))
+        self.hits.append(at)
+
     def write(self, path):
         head = f"""[Script Info]
 ScriptType: v4.00+
@@ -209,6 +301,8 @@ Style: CardBig,Bahnschrift,230,{WHITE},{WHITE},{INK},&H00000000,1,0,0,0,100,100,
 Style: CardText,Bahnschrift,68,{WHITE},{WHITE},{INK},&H00000000,1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
 Style: CardHead,Bahnschrift,56,{ORANGE},{ORANGE},{INK},&H00000000,1,0,0,0,100,100,8,0,1,0,0,5,80,80,0,1
 Style: Button,Bahnschrift,62,{INK},{INK},{ORANGE},&H001F5BFF,1,0,0,0,100,100,2,0,3,26,0,5,80,80,0,1
+Style: Gap,Bahnschrift,84,{WHITE},{WHITE},{INK},&H00000000,1,0,0,0,100,100,3,0,1,7,2,8,80,80,560,1
+Style: Place,Bahnschrift,150,{WHITE},{WHITE},{INK},&H00000000,1,0,0,0,100,100,4,0,1,9,3,8,80,80,520,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -216,6 +310,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         body = []
         for a, b, style, text in sorted(self.events):
             fade = r"{\fad(120,80)}" if style in ("Tag", "Ask", "Name") else r"{\fad(60,0)}"
+            if a < 0.05 or style in ("Gap", "Place"):
+                # on frame one, nothing fades in: most viewers start muted, and a caption that's
+                # already there holds them (frame-one captions lift muted retention 25-40%)
+                fade = ""
             body.append(f"Dialogue: 0,{ts(a)},{ts(b)},{style},,0,0,0,,{fade}{text}")
         open(path, "w", encoding="utf-8").write(head + "\n".join(body) + "\n")
 
@@ -263,19 +361,55 @@ def render_card_bed(video, at, dur, path):
          "-c:a", "aac", "-b:a", "192k", "-shortest", path])
 
 
-def make(video, moments_path, out=None, max_s=30.0, ending="launch"):
-    """Builds the short and returns its path, or None when the race gave nothing to show."""
+HOOK_BEATS = ("hook", "pass")
+
+
+def sound_design(caps, total):
+    """The short's sound: the race as recorded, the bleeps over the swearing, a short radio
+    squelch as each line opens, and one low hit under the pass. Nothing else on top."""
+    graph, mix = [], ["[g]"]
+    if caps.bleeps:
+        on = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in caps.bleeps)
+        graph.append(f"[0:a]volume=0:enable='{on}'[g]")
+        graph.append(f"sine=f=1000:r=48000:d={total:.2f},volume=0.18,volume=0:enable='not({on})',"
+                     f"aformat=channel_layouts=stereo[bl]")
+        mix.append("[bl]")
+    else:
+        graph.append("[0:a]anull[g]")
+    for i, at in enumerate(caps.squelches):
+        ms = max(int((at - 0.06) * 1000), 0)
+        graph.append(f"anoisesrc=d=0.07:c=pink:r=48000:a=0.25,highpass=f=1500,lowpass=f=6000,"
+                     f"afade=t=out:st=0.02:d=0.05,aformat=channel_layouts=stereo,adelay={ms}|{ms}[q{i}]")
+        mix.append(f"[q{i}]")
+    for i, at in enumerate(caps.hits):
+        ms = max(int(at * 1000), 0)
+        graph.append(f"sine=f=52:r=48000:d=0.5,volume=1.4,afade=t=out:st=0.04:d=0.46,"
+                     f"aformat=channel_layouts=stereo,adelay={ms}|{ms}[h{i}]")
+        mix.append(f"[h{i}]")
+    graph.append(f"{''.join(mix)}amix=inputs={len(mix)}:duration=first:normalize=0[a]")
+    return ";".join(graph)
+
+
+def make(video, moments_path, out=None, max_s=30.0, ending="launch", race_data=None):
+    """Builds the short and returns its path, or None when the race gave nothing to show.
+    race_data (clips/race_data.py) turns on the measured hook: the real pass, the gap ticking
+    down to it, the place changing."""
     video = os.path.abspath(video)
     m = json.load(open(moments_path))
     radio = sorted(m["radio"], key=lambda r: r["video_t"])
     for r in radio:
         r["timed"] = timed_line_words(r, m["words"])
+    race = json.load(open(race_data)) if race_data else None
+    to_video = video_time_of(radio) if race else None
 
-    beats = pick_hook(radio) + pick_ask(radio, m["questions"]) + pick_memory(radio)
+    hook = pick_hook_measured(radio, race) if race else []
+    if not hook:
+        hook = pick_hook(radio)
+    beats = hook + pick_ask(radio, m["questions"]) + pick_memory(radio)
     if not beats:
         print("[clips] nothing worth a short in this race")
         return None
-    if beats[0][0] != "hook":
+    if beats[0][0] not in HOOK_BEATS:
         print("[clips] no called shot in this race - the short opens on the next best beat")
     cards_len = 2.4 + 3.2 if ending == "launch" else 2.6
     kept, total = [], 0.0
@@ -292,6 +426,9 @@ def make(video, moments_path, out=None, max_s=30.0, ending="launch"):
     os.makedirs(work, exist_ok=True)
     caps, parts, shift_base = Captions(), [], 0.0
     mics = audio_count(video)
+    # the product's name goes on the first beat after the called shot (on the pass itself it
+    # would sit on top of the gap counter), or on the last beat if the short is all hook
+    name_at = next((i for i, beat in enumerate(kept) if beat[0] not in HOOK_BEATS), len(kept) - 1)
     for i, beat in enumerate(kept):
         name, a, b, lines = beat[:4]
         part = os.path.join(work, f"part{i}.mp4")
@@ -300,11 +437,15 @@ def make(video, moments_path, out=None, max_s=30.0, ending="launch"):
         shift = shift_base - a
         if name == "ask":
             caps.question(beat[4], shift)
+        if name == "pass":
+            extra = beat[4]
+            caps.gap_ticker(race, extra["pass_sim"], to_video, shift, a, b)
+            caps.place_pop(to_video(extra["pass_sim"]) + shift, extra["before"], extra["after"])
         for ln in lines:
             caps.radio(ln, shift, a, b)
-        if i == 0 and name == "hook":
+        if i == 0 and name in HOOK_BEATS:
             caps.card(0.0, 3.0, "Name", "MY AI ENGINEER\\N{\\c" + ORANGE + "}CALLED THIS PASS")
-        if (i == 1 and kept[0][0] == "hook") or (i == 0 and name != "hook"):
+        if i == name_at and (i > 0 or name not in HOOK_BEATS):
             caps.card(shift_base + 0.1, shift_base + 2.8, "Name", "AI RACE ENGINEER\\N{\\c" + ORANGE + "}FOR LE MANS ULTIMATE")
         shift_base += b - a
 
@@ -336,12 +477,7 @@ def make(video, moments_path, out=None, max_s=30.0, ending="launch"):
     ass = os.path.join(work, "captions.ass")
     caps.write(ass)
     ass_arg = ass.replace("\\", "/").replace(":", "\\:")
-    if caps.bleeps:
-        on = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in caps.bleeps)
-        afilter = (f"[0:a]volume=0:enable='{on}'[g];sine=f=1000:r=48000:d={total:.2f},volume=0.18,"
-                   f"volume=0:enable='not({on})',aformat=channel_layouts=stereo[s];[g][s]amix=inputs=2:normalize=0[a]")
-    else:
-        afilter = "[0:a]anull[a]"
+    afilter = sound_design(caps, total)
     out = out or os.path.splitext(video)[0] + ".short.mp4"
     run(["-i", joined, "-filter_complex", f"[0:v]subtitles='{ass_arg}'[v];{afilter}", "-map", "[v]", "-map", "[a]",
          *video_encoder(), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
@@ -357,9 +493,10 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--max", type=float, default=30.0)
     ap.add_argument("--ending", choices=["launch", "driver"], default="launch")
+    ap.add_argument("--race-data", help="clips/race_data.py output: the measured hook and overlays")
     args = ap.parse_args()
     moments = args.moments or os.path.splitext(os.path.abspath(args.video))[0] + ".moments.json"
-    make(args.video, moments, args.out, args.max, args.ending)
+    make(args.video, moments, args.out, args.max, args.ending, args.race_data)
 
 
 if __name__ == "__main__":
