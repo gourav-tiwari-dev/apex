@@ -64,6 +64,10 @@ def race_sessions(conn, clean, launch_id, voice, said, clips=None):
             clips.session_over(session_id, finished_race)
         if finished_race:
             run_debrief()
+            # open beta (1 Oct): a beta install asks how the radio was; elsewhere it does nothing
+            from beta import ask_after_race
+
+            ask_after_race(conn, session_id)
         if end_reason == "stopped_by_driver":
             break
         print("[waiting for the next session - Ctrl+C when you are done]")

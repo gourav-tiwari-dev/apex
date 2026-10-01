@@ -14,6 +14,7 @@
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -24,7 +25,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # and the LGPL libraries stay separate files a user could replace
 LGPL_FFMPEG = r"C:\Users\gourav\Downloads\apex-launch\vendor\ffmpeg-n8.1-latest-win64-lgpl-shared-8.1"
 DEFAULT_OUT = r"C:\Users\gourav\Downloads\apex-launch\build"
-NEVER_SHIP = ["clone", ".env", "apex.db", "profile.json", "ptt_button.json", "server.json", "testers.json"]
+NEVER_SHIP = ["clone", ".env", "apex.db", "profile.json", "ptt_button.json", "testers.json"]
 # installed in his Python for other projects; Apex imports none of them
 EXCLUDE = ["torch", "torchvision", "torchaudio", "tensorflow", "pandas", "matplotlib", "scipy",
            "sympy", "networkx", "IPython", "notebook", "jupyter", "cv2", "sklearn", "PIL",
@@ -82,6 +83,11 @@ def nothing_personal(app):
         for name in dirs + files:
             if name in NEVER_SHIP:
                 leaks.append(os.path.join(folder, name))
+            # a beta build carries the door's address, never a token: each install registers its own
+            if name == "server.json":
+                with open(os.path.join(folder, name), encoding="utf-8") as f:
+                    if folder != app or "token" in json.load(f):
+                        leaks.append(os.path.join(folder, name))
     if leaks:
         raise SystemExit("REFUSING TO SHIP: " + ", ".join(leaks))
 
@@ -97,10 +103,14 @@ def size_mb(folder):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--door", help="the Apex door's address: makes this an open-beta build")
     args = ap.parse_args()
     app = pyinstaller(args.out)
     copy_voices(app)
     copy_rest(app)
+    if args.door:
+        with open(os.path.join(app, "server.json"), "w", encoding="utf-8") as f:
+            json.dump({"url": args.door}, f)
     nothing_personal(app)
     print(f"built {app}: {size_mb(app):.0f} MB")
 
