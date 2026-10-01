@@ -9,13 +9,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from queue import Empty, Full, Queue
 
-from radio.persona import gate
 from radio.lines import MaxLines
 from radio.voice import SPOTTER_VOICE, mood_of
 
 
 class RadioDesk:
-    """Phrases, checks, renders and speaks the non-urgent calls.
+    """Words, renders and speaks the non-urgent calls.
 
     Cooking starts the moment a seat raises a call (prepare), while the call is still waiting
     for a straight. When the governor puts it on air (submit), the audio is usually ready, so it
@@ -25,11 +24,8 @@ class RadioDesk:
     It never touches the database (the main thread owns it): everything is reported through
     `results`, and the main loop writes the log."""
 
-    def __init__(self, voice, persona, budget, clean=False, synchronous=False):
+    def __init__(self, voice, clean=False, synchronous=False):
         self.voice = voice
-        self.persona = persona
-        self.budget = budget
-        self.clean = clean
         self.max_lines = MaxLines(clean)
         self.kitchen = ThreadPoolExecutor(max_workers=2)
         self.orders = {}  # id(call) -> future of the cooked line
@@ -54,9 +50,9 @@ class RadioDesk:
     def cook(self, call):
         """A call's line and its audio: the words (words_of), then the voice bank or a live
         render. A render that fails leaves the line without audio."""
-        line, reason = self.words_of(call)
+        line = self.words_of(call)
         if line is None:
-            return {"line": line, "audio": None, "reason": reason}
+            return {"line": None, "audio": None, "reason": None}
         if hasattr(self.voice, "from_bank"):
             banked, engine = self.voice.from_bank(line, spotter=call.voice == "spotter")
             if banked is not None:
@@ -64,7 +60,7 @@ class RadioDesk:
                 call.facts["banked"] = (
                     True  # measured in the radio log: how often it hits
                 )
-                return {"line": line, "audio": banked, "reason": reason}
+                return {"line": line, "audio": banked, "reason": None}
         try:
             audio, engine = self.render(line, call)
         except Exception as error:
@@ -75,52 +71,15 @@ class RadioDesk:
             }
         if engine:
             call.facts["voice"] = engine
-        return {"line": line, "audio": audio, "reason": reason}
+        return {"line": line, "audio": audio, "reason": None}
 
     def words_of(self, call):
-        """(line, reason): his answers and the spotter's lines as they are, code's own words with
-        a Max closer, or the model's wording when the call asks for it; code's own words
-        whenever the model gives none."""
-        reason = None
+        """A call's words: his answers and the spotter's lines as they are, everything else
+        in code's own words with a Max closer (lines.py)."""
         if call.asked or call.voice == "spotter":
             # his answers are already in Max's voice; spotter lines get no Max closer
-            line = call.template
-        elif not call.phrase:
-            # code's own words plus a Max closer: no model, so no 1.8 s wait and no cost
-            line = self.max_lines.line(call)
-        elif self.budget.allows_llm():
-            line, reason = self.model_line(call)
-        else:
-            line, reason = None, "over budget"
-        # the gate failed or the model is away: fall back to code's own words
-        if line is None and call.template:
-            line = call.template
-        return line, reason
-
-    def model_line(self, call):
-        """The model's wording of a call, if the gate passes it: (line or None, reason). Its cost
-        is charged, and logged even if the line never goes on air."""
-        text, tokens_in, tokens_out, seconds = self.persona.phrase(call)
-        if tokens_in or tokens_out:
-            cost = self.budget.charge(tokens_in, tokens_out)
-            self.results.put(
-                {
-                    "llm_only": True,
-                    "call": call,
-                    "llm": {
-                        "tokens_in": tokens_in,
-                        "tokens_out": tokens_out,
-                        "seconds": round(seconds, 3),
-                        "cost_rs": round(cost, 5),
-                    },
-                }
-            )
-        if text is None:
-            return None, None
-        ok, reason = gate(text, call, self.clean)
-        if ok:
-            return text, reason
-        return None, reason
+            return call.template
+        return self.max_lines.line(call)
 
     def render(self, line, call):
         """(audio, engine) of a live render. The spotter keeps its own voice (his call, 24 Sep):

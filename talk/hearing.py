@@ -11,7 +11,7 @@ phrase wins, so "where am I losing time" is about lap time, not position ("where
 
 import re
 
-from radio.persona import words_to_digits
+from radio.words import words_to_digits
 
 
 DEFAULT_QUIET_LAPS = 2

@@ -2,7 +2,7 @@
 where you are in the race every few laps.
 
 Everything comes from the race snapshots. Urgent things (lights out, safety car, blue flag,
-yellow) come from the voice bank; the rest is phrased by the persona on the next straight.
+yellow) come from the voice bank; the rest is said, with a Max closer, on the next straight.
 """
 
 import math

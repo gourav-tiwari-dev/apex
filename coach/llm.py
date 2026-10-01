@@ -14,9 +14,7 @@ import os
 import sys
 
 PROVIDER_URL = "https://aicredits.in/v1"
-LIVE_MODEL = (
-    "deepseek-v4-flash"  # during a session: the push-to-talk coach, line phrasing
-)
+LIVE_MODEL = "deepseek-v4-flash"  # during a session: the push-to-talk coach
 DEBRIEF_MODEL = "deepseek-v4.1-flash"  # after the race: the debrief
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if getattr(sys, "frozen", False):
@@ -59,15 +57,15 @@ def open_client(timeout):
 
 
 class Budget:
-    """What the LLM has cost this session. Past the cap, Apex speaks template lines only."""
+    """What the model has cost this session. There is no cap: push-to-talk never stops for money
+    (his call, 25 Sep), and since 1 Oct nothing else on the radio uses the model."""
 
     # GUESSED prices: derived from the 23 Sep balance drop (Rs 0.62 for 3884 tokens in and
     # 3496 out), assuming output costs 4x input as on aicredits' V3 price list.
     RS_PER_MILLION_IN = 35.0
     RS_PER_MILLION_OUT = 139.0
 
-    def __init__(self, cap_rs=5.0):
-        self.cap_rs = cap_rs
+    def __init__(self):
         self.spent_rs = 0.0
 
     def cost_of(self, tokens_in, tokens_out):
@@ -79,6 +77,3 @@ class Budget:
         cost = self.cost_of(tokens_in, tokens_out)
         self.spent_rs += cost
         return cost
-
-    def allows_llm(self):
-        return self.spent_rs < self.cap_rs

@@ -2,11 +2,9 @@
 
 from dataclasses import replace
 
-from radio.persona import gate
 import memory
 from game.race_snapshot import identity
 from race.facts import laps_to_go
-from radio.calls import Call, PERFORMANCE
 from seats.performance import PerformanceEngineer, SPOKEN_KINDS
 from seats.race_engineer import RaceEngineer
 from seats.spotter import Spotter
@@ -15,22 +13,10 @@ from test_seats import moment, race, near, kinds, behind_car, frame
 from test_team_memory import add_session
 
 
-def call(kind="OFF_TRACK", facts=None):
-    return Call("performance", kind, 0.0, PERFORMANCE, 6.0, "x", facts=facts or {})
-
-
-def test_A_coasting_is_never_spoken_and_no_line_may_say_do_not_brake():
+def test_A_coasting_is_never_spoken():
+    # the "No fucking braking at Arnage" line was the model rewording this call; code never
+    # writes it, and since 1 Oct no model rewords a seat's line
     assert "THROTTLE_LIFT" not in SPOKEN_KINDS
-    for line in (
-        "No fucking braking at Arnage.",
-        "Don't brake into Parabolica.",
-        "No braking, mate.",
-    ):
-        assert gate(line, call())[0] is False, line
-    assert (
-        gate("Brake later into Arnage, mate.", call(facts={"corner": "Arnage"}))[0]
-        is True
-    )
 
 
 def test_B_eleven_is_no_yellow_and_only_my_sector_or_the_next_one_counts():
@@ -294,18 +280,6 @@ def test_laps_to_go_does_not_count_the_last_lap_twice():
     )
     assert laps_to_go(at_lap_2, 240.28) == 3
     assert laps_to_go(race(0.0, {"max_laps": 20}, {"laps": 3}), None) == 17
-
-
-def test_no_speed_is_ever_said_on_the_radio():
-    for line in (
-        "12 km/h down at Arnage.",
-        "Carry 5 kph more.",
-        "Twelve kilometres an hour down, mate.",
-    ):
-        assert (
-            gate(line, call(facts={"corner": "Arnage", "gap_kmh": 12, "x": 5}))[0]
-            is False
-        ), line
 
 
 def picture(engineer, t, lap, me_changes, opponents, time_remaining=900.0):

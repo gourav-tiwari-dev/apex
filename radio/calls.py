@@ -24,20 +24,17 @@ class Call:
     sim_time: float  # when the seat raised it
     priority: int  # see the ladder above
     ttl: float  # seconds of sim time it stays worth saying
-    conclusion: str  # the plain-English sentence code wrote; the LLM only rephrases it
+    # the plain-English sentence code wrote (said when there is no template)
+    conclusion: str
     facts: dict = field(
         default_factory=dict
-    )  # the only numbers the spoken line may use
+    )  # the numbers behind the line, logged with it
     urgent: bool = (
         False  # time-critical: goes out at once, from the pre-rendered voice bank
     )
     template: str | None = None  # exact words; urgent calls always have one
     evidence: dict = field(default_factory=dict)  # database ids this call rests on
     asked: bool = False  # an answer to his push-to-talk question
-    # v3 (24 Sep): False by default. Code's own words are said as they are, with a Max closer
-    # from lines.py; the model rewording them added ~1.8 s a line and nothing else. True only
-    # for a line that genuinely needs the model's judgment.
-    phrase: bool = False
     # v3: goes out the moment the radio is free, even mid-corner, and is never counted in the
     # talk budget (closing alarms, "stick it", praise at the moment it is earned)
     immediate: bool = False

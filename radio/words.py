@@ -1,5 +1,6 @@
 """How the radio words things: lap times ("3:59.4"), gaps ("6 tenths"), Max's lines in turn,
-and racing shorthand a voice can say ("P4" -> "P four", speakable).
+racing shorthand a voice can say ("P4" -> "P four", speakable), and numbers said in words
+read back as digits ("sixty-one" -> "61": his questions, the coach's answers).
 
 One place, so the seats, the answers, the coach's tools and the phrase bank can never write the
 same number two ways. Until 27 Sep 2026 the lap time was typed out in five files, the gap in two,
@@ -94,6 +95,42 @@ def number_words(n):
     if n < 100:
         return TENS_WORDS[n // 10] + ("" if n % 10 == 0 else "-" + NUMBER_WORDS[n % 10])
     return str(n)
+
+
+def word_values():
+    """The same words read the other way, "sixty" -> 60, for numbers said in words."""
+    values = {"hundred": 100}
+    for value, word in enumerate(NUMBER_WORDS):
+        values[word] = value
+    for tens, word in enumerate(TENS_WORDS):
+        if word:
+            values[word] = tens * 10
+    return values
+
+
+WORD_VALUES = word_values()
+
+
+def words_to_digits(text):
+    """'sixty-one' -> '61', 'two tenths' -> '2 tenths', so spelled-out numbers get checked too."""
+    words = re.split(r"(\W+)", text)
+    out = []
+    i = 0
+    while i < len(words):
+        word = words[i].lower()
+        if word in WORD_VALUES:
+            value = WORD_VALUES[word]
+            # "sixty-one" / "sixty one": a tens word followed by a units word
+            if value >= 20 and i + 2 < len(words) and words[i + 1] in ("-", " "):
+                unit = WORD_VALUES.get(words[i + 2].lower())
+                if unit is not None and unit < 10:
+                    value += unit
+                    i += 2
+            out.append(str(value))
+        else:
+            out.append(words[i])
+        i += 1
+    return "".join(out)
 
 
 def lap_time_words(match):

@@ -53,10 +53,10 @@ One word per idea. When code or a comment names one of these, it means exactly t
 | desk | cooks a line (its words, then its sound) while its Call waits | radio/desk.py |
 | voice | turns a line into sound and plays it; the only owner of the speaker in a session | radio/voice.py |
 | bank | the urgent lines, recorded once; the **phrase bank** is the sentences of the instant lines | radio/voice.py, radio/phrasebook.py |
-| Max | the engineer's persona: Max Verstappen's radio style | radio/persona.py |
+| Max | the engineer's persona: Max Verstappen's radio style | radio/lines.py, coach/prompt.py |
 | closer | Max's short tag after a line ("Keep pushing."), taking turns | radio/lines.py |
 | clean | no swearing (clean mode, the clean line of a pair); nothing else | |
-| gate | the check a line must pass before it goes on air | radio/persona.py, coach/answer_checks.py |
+| gate | the check a coach answer must pass before it goes on air | coach/answer_checks.py |
 | push-to-talk | he holds the button and speaks; Whisper writes it down | talk/ptt.py |
 | intent | which of the code's known questions he asked | talk/hearing.py |
 | garbled | too unsure to answer: "say again" | talk/hearing.py |

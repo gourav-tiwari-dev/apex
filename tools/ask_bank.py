@@ -88,14 +88,14 @@ def main():
         )
     print(f"fixed lane: {len(fixed)} answered by code")
 
-    budget = Budget(cap_rs=args.cap)
+    budget = Budget()
     agent = RaceAgent(budget, client=None)
     chosen = spread([q for q in QUESTIONS if q[1] == "agent"], args.agent)
     if args.only:
         wanted = args.only.split("|")
         chosen = [q for q in QUESTIONS if q[2] in wanted]
     for n, (category, route, question, expected_tools) in enumerate(chosen, 1):
-        if not budget.allows_llm():
+        if budget.spent_rs >= args.cap:
             print(f"budget cap Rs {args.cap} reached after {n - 1} questions")
             break
         snapshot.actions = []

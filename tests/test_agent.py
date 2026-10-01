@@ -183,7 +183,7 @@ def test_the_agent_uses_tools_then_answers_and_the_cost_is_counted():
         == "Defend, mate. Last lap, 1.1 a lap quicker, not 2. One line into Tertre Rouge."
     )
     assert call.facts["call"] == "DEFEND" and call.facts["override"] is None
-    assert call.asked and not call.phrase and call.kind == "ANSWER_AGENT"
+    assert call.asked and call.kind == "ANSWER_AGENT"
     assert call.facts["tools"] == ["race_picture", "driver"]
     assert len(result["costs"]) == 2
     # the race picture went with the question, so the first round could skip it
@@ -243,10 +243,32 @@ def test_the_answer_gate():
     assert not check_answer("Maybe let Chabbi Zino go.", known)[0]  # hedging
 
 
+def test_spelled_out_numbers_are_checked_too():
+    # from the deleted line gate (1 Oct): the coach's answers go through the same number check
+    assert check_answer("Sixty-one at Rettifilo, mate.", [61, 0.2])[0]
+    assert not check_answer("Sixty-five at Rettifilo, mate.", [61, 0.2])[0]
+    assert check_answer("Two tenths. Bank it.", [61, 0.2])[0]
+
+
+def test_a_fact_of_5_7_does_not_let_the_coach_say_57():
+    assert not check_answer("57 down. Push.", [5.7])[0]
+    assert check_answer("3 tenths back. Hold it.", [0.3])[0]
+
+
+def test_no_speed_is_said_unless_he_asks_for_one():
+    for line in (
+        "12 km/h down at Arnage.",
+        "Carry 5 kph more.",
+        "Twelve kilometres an hour down, mate.",
+    ):
+        assert not check_answer(line, [12, 5])[0], line
+
+
 def test_push_to_talk_never_stops_for_the_budget():
-    # his call, 25 Sep: "I don't want it to stop" (the Rs 5 cap silenced it after 7 answers)
+    # his call, 25 Sep: "I don't want it to stop" (the Rs 5 cap silenced it after 7 answers);
+    # since 1 Oct there is no cap at all, and every answer is still charged
     model = ScriptedModel(Message(content="CALL: DEFEND\nDefend it, mate. One line."))
-    budget = Budget(cap_rs=0.0)
+    budget = Budget()
     result = ask(
         RaceAgent(budget, client=model), "should I defend?", snapshot_at_lap_4()
     )

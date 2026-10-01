@@ -38,7 +38,6 @@ def test_lights_out_starts_the_chaos_and_calm_settles_it():
         said += run(settle, t, chaos_race(t))
     assert settle.settled and [c.kind for c in said] == ["SETTLED"]
     assert said[0].template.startswith("Settled. P6, held position.")
-    assert not said[0].phrase  # code's words: no model
 
 
 def test_a_car_alongside_keeps_the_start_unsettled():
@@ -152,7 +151,6 @@ def test_a_seat_line_is_said_in_code_words_with_a_max_closer_and_never_asks_the_
     the_call = spoken(
         "CATCHING", "x", 10.0, {}, template="Car ahead, 1.6. On it by lap 5."
     )
-    assert not the_call.phrase
     lines = MaxLines()
     assert (
         lines.line(the_call) == "Car ahead, 1.6. On it by lap 5. Keep fucking pushing."

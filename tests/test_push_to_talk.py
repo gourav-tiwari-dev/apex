@@ -8,7 +8,6 @@ from talk.answers import Answers
 from talk.hearing import intent_of, laps_asked
 from radio.governor import Governor
 from radio.calls import Call, SPOTTER, PERFORMANCE
-from coach.llm import Budget
 from seats.performance import PerformanceEngineer
 from seats.race_engineer import RaceEngineer
 from seats.strategist import Strategist
@@ -66,7 +65,7 @@ def test_answers_come_from_the_live_race_in_code_words():
     ahead = answers.answer("what's the gap to the car ahead", now, 3, 100.0)
     # the number first, then Max
     assert ahead.template == "Car ahead, 1.2. Lapping 4:00.5. Go fucking get them."
-    assert ahead.asked and not ahead.phrase and ahead.kind == "ANSWER_GAP_AHEAD"
+    assert ahead.asked and ahead.kind == "ANSWER_GAP_AHEAD"
     assert (
         answers.answer("who's behind", now, 3, 100.0).template
         == "Car behind, 1.0. Lapping 1:51.0. Keep them in the fucking mirrors."
@@ -143,13 +142,9 @@ def test_an_answer_goes_out_mid_corner_but_never_over_another_line():
     )  # he asked: corner or not
 
 
-def test_an_answer_never_waits_for_the_model():
-    class NoModel:
-        def phrase(self, call):
-            raise AssertionError("an answer must not ask the model")
-
+def test_an_answer_is_said_as_the_code_wrote_it():
     voice = FakeVoice()
-    desk = RadioDesk(voice, NoModel(), Budget(), clean=False)
+    desk = RadioDesk(voice, clean=False)
     _, answers = team()
     answer = answers.answer("what position", race(10.0), 3, 10.0)
     desk.latest_sim_time = 10.0

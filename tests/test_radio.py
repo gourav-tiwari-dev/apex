@@ -1,6 +1,5 @@
 from radio.governor import Governor
 from radio.calls import Call, SPOTTER, RACECRAFT, PERFORMANCE
-from coach.llm import Budget
 from radio.desk import RadioDesk
 
 
@@ -13,9 +12,7 @@ def call(
     urgent=False,
     template=None,
     facts=None,
-    phrase=True,
 ):
-    # phrase=True: the model path, still there for a line that needs judgment. v3 default is False
     return Call(
         seat=seat,
         kind=kind,
@@ -26,7 +23,6 @@ def call(
         facts=facts or {},
         urgent=urgent,
         template=template,
-        phrase=phrase,
     )
 
 
@@ -119,13 +115,6 @@ def test_same_decisions_give_the_same_hash():
     assert hashes[0] == hashes[1]
 
 
-def test_budget_stops_llm_calls_at_the_cap():
-    budget = Budget(cap_rs=0.001)
-    assert budget.allows_llm()
-    budget.charge(10_000, 0)  # Rs 0.35 at the derived price
-    assert not budget.allows_llm()
-
-
 class FakeVoice:
     def __init__(self):
         self.said = []
@@ -141,25 +130,13 @@ class FakeVoice:
         return time.perf_counter()
 
 
-class FakePersona:
-    def __init__(self, line, tokens=(100, 10)):
-        self.line = line
-        self.tokens = tokens
-
-    def phrase(self, call):
-        return self.line, self.tokens[0], self.tokens[1], 0.5
-
-
-def run_desk(line, the_call, budget=None):
+def run_desk(the_call):
     voice = FakeVoice()
-    desk = RadioDesk(voice, FakePersona(line), budget or Budget(), clean=False)
+    desk = RadioDesk(voice, clean=False)
     desk.latest_sim_time = the_call.sim_time
     desk.submit(the_call)
     desk.stop()
-    results = desk.drain()
-    spoken = [r for r in results if not r.get("llm_only")]
-    costs = [r for r in results if r.get("llm_only")]
-    return voice, spoken, costs
+    return voice, desk.drain()
 
 
 def test_a_fast_replay_desk_says_the_line_on_the_spot_on_sim_time():
@@ -167,7 +144,7 @@ def test_a_fast_replay_desk_says_the_line_on_the_spot_on_sim_time():
     # in one, not in the other): the desk cooked on a thread in wall time while the replay raced
     # through sim time, so a line could go "stale" or find the desk "full" by chance
     voice = FakeVoice()
-    desk = RadioDesk(voice, FakePersona(None), Budget(), clean=False, synchronous=True)
+    desk = RadioDesk(voice, clean=False, synchronous=True)
     first = call(facts={"corner": "Arnage"}, template="Wide at Arnage.")
     second = call(facts={"corner": "Indianapolis"}, template="Wide at Indianapolis.")
     desk.latest_sim_time = (
@@ -175,71 +152,42 @@ def test_a_fast_replay_desk_says_the_line_on_the_spot_on_sim_time():
     )  # sim time long gone by the time a thread looks
     assert desk.submit(first) is True
     assert desk.submit(second) is True  # never "queue full": nothing is playing
-    statuses = [r["status"] for r in desk.drain() if not r.get("llm_only")]
+    statuses = [r["status"] for r in desk.drain()]
     assert statuses == ["spoken", "spoken"]
     desk.stop()
 
 
-def test_a_good_line_is_spoken_and_its_cost_logged():
-    the_call = call(facts={"corner": "T11 Parabolica", "speed_kmh": 170})
-    voice, spoken, costs = run_desk("Wide at Parabolica. 170. Tidy it.", the_call)
-    assert voice.said == ["Wide at Parabolica. 170. Tidy it."]
-    assert spoken[0]["status"] == "spoken"
-    assert costs[0]["llm"]["tokens_out"] == 10
+def test_a_seats_call_is_said_in_the_codes_own_words():
+    # since 24 Sep no model rewords a line; since 1 Oct the path that could is gone
+    voice, results = run_desk(call(template="Ran wide at T11 Parabolica."))
+    assert voice.said[0].startswith("Ran wide at T11 Parabolica.")
+    assert results[0]["status"] == "spoken"
 
 
-def test_an_invented_number_is_refused_and_code_words_used_instead():
-    the_call = call(template="Ran wide at T11 Parabolica.", facts={"speed_kmh": 170})
-    voice, spoken, costs = run_desk("Wide at 185. Idiot.", the_call)
-    assert voice.said == ["Ran wide at T11 Parabolica."]
-    assert "invented number" in spoken[0]["reason"]
-
-
-def test_no_template_and_a_refused_line_means_silence():
-    voice, spoken, costs = run_desk("You should maybe try braking later.", call())
-    assert voice.said == []
-    assert spoken[0]["status"] == "no_line"
-
-
-def test_over_budget_uses_template_without_asking_the_model():
-    budget = Budget(cap_rs=0.0)
-    voice, spoken, costs = run_desk("never asked", call(template="Ran wide."), budget)
-    assert voice.said == ["Ran wide."]
-    assert spoken[0]["reason"] == "over budget"
-    assert costs == []
+def test_a_call_with_no_template_says_its_conclusion():
+    voice, results = run_desk(call())
+    assert voice.said[0].startswith("ran wide at T11 Parabolica")
 
 
 def test_cooking_starts_when_the_call_is_raised_not_when_it_goes_on_air():
     import time
 
-    class SlowPersona(FakePersona):
-        def phrase(self, call):
-            time.sleep(0.3)
-            return "Wide at Parabolica. Tidy it.", 100, 10, 0.3
+    class SlowVoice(FakeVoice):
+        def render(self, text, voice=None, mood="dry"):
+            time.sleep(0.3)  # a live render
+            return super().render(text, voice, mood)
 
-    voice = FakeVoice()
-    desk = RadioDesk(voice, SlowPersona(""), Budget(), clean=False)
+    voice = SlowVoice()
+    desk = RadioDesk(voice, clean=False)
     the_call = call(facts={"corner": "T11 Parabolica"})
     desk.prepare(the_call)
     time.sleep(0.5)  # waiting for a straight while the line cooks
     desk.latest_sim_time = the_call.sim_time
     desk.submit(the_call)
     desk.stop()
-    spoken = [r for r in desk.drain() if not r.get("llm_only")]
+    spoken = desk.drain()
     assert spoken[0]["status"] == "spoken"
     assert spoken[0]["latency_ms"] < 100  # ready the moment it went on air
-
-
-def test_the_llm_cost_is_logged_even_when_the_call_never_goes_on_air():
-    import time
-
-    voice = FakeVoice()
-    desk = RadioDesk(voice, FakePersona("Tidy it."), Budget(), clean=False)
-    desk.prepare(call())
-    time.sleep(0.2)
-    desk.stop()
-    costs = [r for r in desk.drain() if r.get("llm_only")]
-    assert len(costs) == 1
 
 
 def test_no_coaching_after_the_chequered_flag():

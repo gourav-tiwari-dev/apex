@@ -195,7 +195,6 @@ class RaceSettle:
             ttl=SUMMARY_TTL_S,
             conclusion=text,
             template=text,
-            phrase=False,
             facts={
                 "place": me.place,
                 "start_place": self.place_at_start,

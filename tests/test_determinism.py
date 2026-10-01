@@ -16,17 +16,10 @@ V1_CORNER_STATS = (
 )
 
 
-class FakePersona:
-    """Stands in for the LLM: every line is the call's own conclusion, costing nothing."""
-
-    def phrase(self, call):
-        return None, 0, 0, 0.0
-
-
 def run(tmp_path, monkeypatch, name, speed):
     db_path = str(tmp_path / f"{name}.db")
     monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db_path))
-    session_id = session.run_session(True, speed, out_loud=False, persona=FakePersona())
+    session_id = session.run_session(True, speed, out_loud=False)
     conn = memory.connect_db(db_path)
     return conn, session_id
 

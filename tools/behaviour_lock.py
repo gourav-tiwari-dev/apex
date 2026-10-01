@@ -20,6 +20,7 @@ A structure-only commit must print IDENTICAL for every tape. A labelled behaviou
 show differences: they are listed, then recorded again as the new baseline."""
 
 import contextlib
+import inspect
 import io
 import json
 import os
@@ -78,7 +79,8 @@ SHOWN_DIFFERENCES = 5
 
 
 class NoModel:
-    """No language model in a replay: every line comes from code."""
+    """For code from before 1 Oct 2026, which could ask a model to word a line: one that never
+    answers, so every line comes from code."""
 
     clean = False
 
@@ -135,14 +137,12 @@ def replay_one(tape, script=None):
     )
     shutil.copy(GOLDEN_DB, database)
     session.connect_db = lambda db_path=None: memory.connect_db(database)
+    options = {"out_loud": False, "script": script}
+    if "persona" in inspect.signature(session.run_session).parameters:
+        options["persona"] = NoModel()
     with contextlib.redirect_stdout(io.StringIO()):
         session_id = session.run_session(
-            True,
-            None,
-            os.path.join(TAPES_FOLDER, tape),
-            out_loud=False,
-            persona=NoModel(),
-            script=script,
+            True, None, os.path.join(TAPES_FOLDER, tape), **options
         )
     connection = sqlite3.connect(database)
     rows = connection.execute(

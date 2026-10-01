@@ -5,8 +5,9 @@ Two paths, because they have different jobs:
              held in memory. Playing one takes 0.01 ms (measured 23 Sep 2026); rendering it
              live through edge-tts took 1381 ms, which is 75 m of track at 200 km/h.
              An urgent line cuts off whatever the engineer is saying, like a real spotter.
-  REFLECTIVE everything else: the persona phrases the call, the gate checks it, then it is
-             rendered and played. This runs on a worker thread so the 60 Hz loop never waits.
+  REFLECTIVE everything else: the desk words the call (code's words with a Max closer),
+             then it is rendered and played. This runs on a worker thread so the 60 Hz loop
+             never waits.
 
 The voices (25 Sep 2026): Azure's voices with emotion when .env has a key, edge-tts otherwise
 (the mood carried in speed, loudness and pitch), and Windows' own offline voice when the

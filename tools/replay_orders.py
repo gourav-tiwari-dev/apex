@@ -91,16 +91,6 @@ SAVE = (
 )
 
 
-class NoModel:
-    clean = False
-
-    def online(self):
-        return False
-
-    def phrase(self, call):
-        return None, 0, 0, 0.0
-
-
 def replay(tape, script, name):
     out_db = os.path.join(tempfile.gettempdir(), f"apex_orders_{name}.db")
     shutil.copy(os.path.join(HERE, "apex.db"), out_db)
@@ -111,9 +101,7 @@ def replay(tape, script, name):
     conn.close()
     session.connect_db = lambda db_path=None: memory.connect_db(out_db)
     with contextlib.redirect_stdout(io.StringIO()):
-        sid = session.run_session(
-            True, None, tape, out_loud=False, persona=NoModel(), script=script
-        )
+        sid = session.run_session(True, None, tape, out_loud=False, script=script)
     conn = sqlite3.connect(out_db)
     rows = conn.execute(
         "select sim_time, kind, status, reason, coalesce(line, ''), facts from radio_log "

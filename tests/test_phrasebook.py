@@ -15,8 +15,7 @@ from radio.phrasebook import (
 from radio.voice import Voice
 from radio.desk import RadioDesk
 from radio.calls import Call, SPOTTER
-from coach.llm import Budget
-from test_radio import FakeVoice, FakePersona
+from test_radio import FakeVoice
 
 RATE = 24000
 
@@ -153,7 +152,7 @@ class BankedVoice(FakeVoice):
 
 def cooked(has):
     v = BankedVoice(has)
-    desk = RadioDesk(v, FakePersona("unused"), Budget(), clean=False)
+    desk = RadioDesk(v, clean=False)
     call = Call(
         "spotter",
         "SLOW_CAR_AHEAD",

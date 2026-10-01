@@ -114,7 +114,6 @@ class Answers:
             template=words,
             facts={"heard": text},
             asked=True,
-            phrase=False,
         )
 
     def words_for(self, intent, text, race, lap):

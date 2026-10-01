@@ -39,7 +39,6 @@ from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer
 from talk.orders import StandingOrders
-from radio.persona import Persona
 from radio.voice import Voice
 from radio.desk import RadioDesk
 from seats.performance import PerformanceEngineer
@@ -82,11 +81,6 @@ from game.live_source import LiveSource
 from game.tape import Recorder, ReplaySource, TAPE_PATH
 from talk.scripted_talk import ScriptedTalk
 
-
-# Gourav's cap: Rs 5 (23 Sep 2026), raised to Rs 10 (25 Sep, "increase the budget a bit").
-# Past it, template lines only. Push-to-talk is NOT capped (his call, 25 Sep: "I don't want it
-# to stop"): its spend is still charged here and logged, it just never refuses a question.
-BUDGET_PER_SESSION_RS = 10.0
 
 # SESSION_OVER (phase 8) comes when the LEADER takes the flag. On 23 Sep Apex stopped right
 # there, with Gourav still 400 m from his own finish line: every non-leader lost the end of the
@@ -143,7 +137,6 @@ def run_session(
     tape_path=TAPE_PATH,
     out_loud=None,
     clean=False,
-    persona=None,
     launch_id=None,
     voice=None,
     script=None,
@@ -152,15 +145,13 @@ def run_session(
 
     script:   replays only: what he says and when (see ScriptedTalk), no microphone, no coach.
     out_loud: speak through the speakers (default) or print lines (fast replays, tests).
-    clean:    no swearing, for recordings other people will hear.
-    persona:  who phrases the lines; tests pass a fake so no LLM call is ever made."""
+    clean:    no swearing, for recordings other people will hear."""
     session = Session(
         replay,
         replay_speed,
         tape_path,
         out_loud,
         clean,
-        persona,
         launch_id,
         voice,
         script,
@@ -250,7 +241,6 @@ class Session:
         tape_path,
         out_loud,
         clean,
-        persona,
         launch_id,
         voice,
         script,
@@ -264,7 +254,7 @@ class Session:
         self.open_source(tape_path)
         self.build_driving()
         self.build_team(clean)
-        self.build_radio(clean, out_loud, voice, persona, script)
+        self.build_radio(clean, out_loud, voice, script)
         self.conn = None
         self.session_id = None
         self.result = SessionResult()
@@ -354,7 +344,7 @@ class Session:
         self.reminders = []  # {"remind_lap", "what"}: set by the agent, said at the line
         self.heard_confidence = {}  # question -> Whisper's confidence, until the coach answers
 
-    def build_radio(self, clean, out_loud, voice, persona, script):
+    def build_radio(self, clean, out_loud, voice, script):
         """His push-to-talk (or a script), the coach, the voice and the desk that cooks lines."""
         self.talk = None
         self.agent = None
@@ -362,7 +352,7 @@ class Session:
             self.talk = push_to_talk.start_if_set_up()
         elif script:
             self.talk = ScriptedTalk(self.source, script)
-        self.budget = Budget(cap_rs=BUDGET_PER_SESSION_RS)
+        self.budget = Budget()
         if self.talk is not None and not self.replay:
             # after the budget: it spends from it (24 Sep crash)
             self.agent = RaceAgent(self.budget, clean)
@@ -371,12 +361,8 @@ class Session:
         if voice is None:
             voice = Voice(out_loud)
         self.voice = voice
-        if persona is None:
-            persona = Persona(clean=clean)
         self.desk = RadioDesk(
             voice,
-            persona,
-            self.budget,
             clean,
             synchronous=self.replay and not self.replay_speed,
         )
@@ -760,9 +746,6 @@ class Session:
     def log_finished_lines(self):
         for result in self.desk.drain():
             call = result["call"]
-            if result.get("llm_only"):
-                save_llm_call(self.conn, self.session_id, call.seat, result["llm"])
-                continue
             save_radio(
                 self.conn,
                 self.session_id,

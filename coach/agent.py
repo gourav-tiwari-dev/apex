@@ -209,7 +209,6 @@ class RaceAgent:
                     "override": info.get("override"),
                 },
                 asked=True,
-                phrase=False,
             )
             self.results.put(
                 {

@@ -86,9 +86,8 @@ Every file, by its job:
 | radio/desk.py | `RadioDesk`: cooks a line while its call waits |
 | radio/voice.py | `Voice`: the only owner of the speaker |
 | radio/phrasebook.py | the sentences rendered ahead of time, joined in under a millisecond |
-| radio/words.py | lap times, gaps in tenths, Max's lines in turn, speakable shorthand |
+| radio/words.py | lap times, gaps in tenths, Max's lines in turn, speakable shorthand, numbers said in words |
 | radio/lines.py | Max's closers for the seats' own lines |
-| radio/persona.py | the persona and the gate every line passes; the shared word lists |
 | radio/azure_voice.py, offline_voice.py, tts.py | the voices: Azure with emotion, Windows offline, the brief's speaker |
 | talk/ptt.py | the button, the microphone, Whisper |
 | talk/hearing.py | which question it was, or an order, a mark, a "copy" |
@@ -99,7 +98,7 @@ Every file, by its job:
 | coach/prompt.py | what the coach is told, and its tool list |
 | coach/snapshot.py | the race held still when he asks, and the tools |
 | coach/fight_maths.py | the team call: DEFEND, LET BY, ATTACK, FOLLOW |
-| coach/answer_checks.py | the gate every coach answer passes |
+| coach/answer_checks.py | the gate every coach answer passes, and the words it never says |
 | coach/race_tools.py | what the wider tools return (standings, laps, the database...) |
 | coach/llm.py | the model's provider, names, client and cost |
 | memory/db.py | the tables and every writer a session uses |
@@ -126,7 +125,6 @@ Every file, by its job:
   above everything, apex.py on top. `radio/calls.py` and `radio/words.py` are shared
   vocabulary: everyone uses them. The imports that go the other way, on purpose:
   - radio/phrasebook.py reads the seats' sentences (to render every one ahead of time)
-  - radio/persona.py opens the model (its model-phrasing part; see "Still open")
   - coach/race_tools.py asks the setup engineer (the coach's setup tool)
   - between_sessions/debrief.py opens the model
 
@@ -158,9 +156,6 @@ Every file, by its job:
 
 ## Still open
 
-- radio/persona.py still has the model-phrasing path (lines reworded by the model). Since
-  24 Sep every line is the code's own words plus a Max closer; only the tests reach it.
-  Delete or keep: his call.
 - Some ideas are still written twice where the copies behave differently (laps to go and
   its fallbacks, the fuel words, "same lap", lap length): changing them changes what Apex
   says, so they wait for their own fix with tape results. RESUME_V3.md lists them.

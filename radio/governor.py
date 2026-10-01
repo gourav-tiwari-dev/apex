@@ -25,7 +25,8 @@ import json
 
 SECONDS_PER_WORD = 0.4  # measured edge-tts pace is about 2.5 words a second
 LINE_OVERHEAD_S = 0.8  # a radio click and a breath around every line
-UNKNOWN_LINE_WORDS = 10  # an LLM line's length is unknown when it is admitted
+# a call with no template: its words (conclusion + Max closer) are not counted, 10 assumed
+UNKNOWN_LINE_WORDS = 10
 
 DEFAULT_COOLDOWN_S = 8.0
 # GUESSED from his words ("less noise"): 2 engineer lines a minute. Tune on the next race.
@@ -103,7 +104,7 @@ class Governor:
 
     def offer(self, call):
         """False when the call is dropped on arrival (quiet, or the start is still chaos), so the
-        caller does not spend a model call or a voice render on a line nobody will hear."""
+        caller does not spend a voice render on a line nobody will hear."""
         if call.kind == "FINISH":
             self.chequered = True
         if self.orders is not None:

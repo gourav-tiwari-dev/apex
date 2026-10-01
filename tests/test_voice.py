@@ -26,11 +26,10 @@ def test_each_kind_of_call_gets_its_mood():
 
 def test_the_radio_desk_asks_for_the_mood_of_the_call():
     from radio.calls import Call, PERFORMANCE
-    from coach.llm import Budget
-    from test_radio import FakeVoice, FakePersona
+    from test_radio import FakeVoice
 
     desk_voice = FakeVoice()
-    desk = RadioDesk(desk_voice, FakePersona("Brilliant, mate."), Budget(), clean=False)
+    desk = RadioDesk(desk_voice, clean=False)
     call = Call(
         "racecraft",
         "PASSED",

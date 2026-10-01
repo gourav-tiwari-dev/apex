@@ -54,7 +54,7 @@ class MaxLines:
         self.closers = Rotation(clean)
 
     def line(self, call):
-        """The words to say for a call that is not phrased by the model."""
+        """The words to say for a seat's call: its own words, then a Max closer in turn."""
         words = call.template or call.conclusion
         pool = CLOSERS.get(call.kind)
         if not pool:

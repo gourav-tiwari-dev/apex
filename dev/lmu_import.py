@@ -344,13 +344,6 @@ def wear_done(tread_left):
     return [round((100.0 - w) / 100.0, 4) for w in tread_left]
 
 
-class NoVoice:
-    """Imports replay silently and never call the LLM: the lines are not being heard."""
-
-    def phrase(self, call):
-        return None, 0, 0, 0.0
-
-
 def load_into_apex(tape_paths):
     """Replay converted tapes into apex.db, once each, then rebuild the team memory."""
     import contextlib
@@ -366,7 +359,7 @@ def load_into_apex(tape_paths):
         if tape in already:
             continue
         with contextlib.redirect_stdout(io.StringIO()):
-            run_session(True, None, tape, out_loud=False, persona=NoVoice())
+            run_session(True, None, tape, out_loud=False)
         print(f"  loaded {tape}")
     conn = connect_db("apex.db")
     found = build_profile(conn)

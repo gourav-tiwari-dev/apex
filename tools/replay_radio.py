@@ -1,7 +1,7 @@
 """Replays a tape through Apex (code in the folder given) into a COPY of apex.db, with no model and
 no speaker, and prints what went on air. Usage: replay_radio.py CODE_DIR TAPE OUT_DB"""
 
-import os, shutil, sqlite3, sys, collections
+import os, shutil, sqlite3, sys, collections, inspect
 
 code, tape, out_db = (
     sys.argv[1],
@@ -17,6 +17,8 @@ session.connect_db = lambda db_path=None: memory.connect_db(out_db)
 
 
 class NoModel:
+    """Code from before 1 Oct 2026 could ask a model to word a line: this one never answers."""
+
     clean = False
 
     def online(self):
@@ -28,8 +30,11 @@ class NoModel:
 
 import io, contextlib
 
+options = {"out_loud": False}
+if "persona" in inspect.signature(session.run_session).parameters:
+    options["persona"] = NoModel()
 with contextlib.redirect_stdout(io.StringIO()):
-    sid = session.run_session(True, None, tape, out_loud=False, persona=NoModel())
+    sid = session.run_session(True, None, tape, **options)
 conn = sqlite3.connect(out_db)
 rows = conn.execute(
     "select seat, kind, status, reason from radio_log where session_id=?", (sid,)

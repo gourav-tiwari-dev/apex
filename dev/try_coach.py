@@ -52,7 +52,6 @@ from coach.agent import RaceAgent
 from coach.snapshot import Snapshot
 from talk.answers import Answers
 from talk.hearing import needs_agent
-from dev.lmu_import import NoVoice
 from coach.llm import Budget
 from memory.team_memory import facts as memory_facts
 from radio.voice import Voice
@@ -245,7 +244,7 @@ def frozen_race(tape, lap):
     throwaway = os.path.join(tempfile.mkdtemp(), "try_coach.db")
     session.connect_db = lambda: memory.connect_db(throwaway)
     with contextlib.redirect_stdout(io.StringIO()):
-        session.run_session(True, None, tape, out_loud=False, persona=NoVoice())
+        session.run_session(True, None, tape, out_loud=False)
     if "snapshot" not in frozen:
         raise SystemExit(f"that tape never reached lap {lap}")
     return frozen, made
@@ -338,7 +337,7 @@ class CoachRadio:
         self.queue = queue
         self.index = 0
         self.voice = Voice(out_loud=True)
-        self.budget = Budget(cap_rs=5.0)
+        self.budget = Budget()
         self.agent = RaceAgent(self.budget, clean)
         self.answers = Answers(
             seats["Governor"],

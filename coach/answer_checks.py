@@ -7,16 +7,90 @@ catch the mistakes his races showed. fallback is the line when the model is down
 
 import re
 
-from radio.persona import (
-    BANNED,
-    GENDERED,
-    PROFANITY,
-    SLURS,
-    has_phrase,
-    number_is_backed,
-    numbers_in,
-    words_to_digits,
-)
+from radio.words import words_to_digits
+
+BANNED = [
+    "think",
+    "maybe",
+    "try",
+    "consider",
+    "perhaps",
+    "you should",
+    "i think",
+    "good luck",
+    "stay safe",
+    "manage",
+    "back off",
+]
+PROFANITY = [
+    "fuck",
+    "fucking",
+    "fucked",
+    "fucker",
+    "fuckin",
+    "shit",
+    "shite",
+    "shitty",
+    "damn",
+    "hell",
+    "bastard",
+    "bloody",
+    "crap",
+    "ass",
+    "arse",
+    "bollocks",
+    "dickhead",
+    "prick",
+]
+# Apex is a product now (30 Sep): swearing at the situation is a choice (Spicy), but a slur or an
+# insult aimed at who someone is never goes on air, in any mode. The model said "the cunt's
+# defending aggressive" about a rival on 27 Sep; nothing in the code wrote it.
+SLURS = [
+    "cunt",
+    "cunts",
+    "twat",
+    "wanker",
+    "retard",
+    "retarded",
+    "spastic",
+    "fag",
+    "faggot",
+    "dyke",
+    "tranny",
+    "nigger",
+    "nigga",
+    "paki",
+    "chink",
+    "kike",
+    "spic",
+]
+# other drivers are real people: the radio never guesses their gender (23 Sep 2026, the model
+# called a rival "her" from the name alone, even when told not to)
+GENDERED = ["he", "she", "him", "her", "his", "hers"]
+
+
+def has_phrase(line, phrase):
+    """The phrase as whole words: "he" is in "he brakes late", not in "the"."""
+    return re.search(r"\b" + re.escape(phrase) + r"\b", line) is not None
+
+
+def numbers_in(text):
+    """Every number in a line, spelled-out ones too ("sixty-one" counts as 61)."""
+    return [float(n) for n in re.findall(r"\d+(?:\.\d+)?", words_to_digits(text))]
+
+
+def number_is_backed(number, facts):
+    """A spoken number must match a fact, allowing for rounding (57.2 said as 57)."""
+    for value in facts.values():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if abs(number - value) <= 0.5 or abs(number - abs(value)) <= 0.5:
+            return True
+        # tenths said as a whole number: 0.3 s -> "3 tenths". Only for values under 1,
+        # or a fact of 5.7 would let the model say "57".
+        if abs(value) < 1 and abs(number - abs(value) * 10) <= 0.5:
+            return True
+    return False
 
 
 # asked for 35, refused only past 55: on 24 Sep every answer ran 41-50 words, got refused at 40
