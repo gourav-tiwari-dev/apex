@@ -167,6 +167,8 @@ def test_no_seat_line_names_a_driver():
     for path in (
         "seats/race_engineer.py",
         "seats/racecraft.py",
+        "seats/passes.py",
+        "seats/closing_alarm.py",
         "seats/performance.py",
     ):
         source = open(path, encoding="utf8").read()

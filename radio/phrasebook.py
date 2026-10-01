@@ -95,7 +95,7 @@ def units(kinds=None):
 def spotter_sentences(corners):
     """Every spotter sentence: the hazards ahead, a car closing fast behind, the faster
     classes arriving."""
-    from seats.racecraft import ALARM_MAX_GAP_S
+    from seats.closing_alarm import ALARM_MAX_GAP_S
     from seats.track_awareness import FASTER_CLASS_ARRIVES_S
 
     places = corners + [f"before {name}" for name in corners]
@@ -128,13 +128,9 @@ def max_sentences(corners):
     """Max's sentences, by the kind of call that says them: each is rendered in THAT call's
     mood (voice.mood_of), the mood a live render of the whole line would get, so a joined
     praise line does not switch from fired to dry halfway through."""
-    from seats.racecraft import (
-        BRILLIANT,
-        SOLID,
-        MOVE_WORDS,
-        ALARM_MAX_GAP_S,
-        FIGHT_COST_S,
-    )
+    from seats.racecraft import FIGHT_COST_S
+    from seats.closing_alarm import ALARM_MAX_GAP_S
+    from seats.praise import BRILLIANT, SOLID, MOVE_WORDS
 
     return {
         "PASS_PRAISE": {f"Next one, {gap}." for gap in gap_words(0.1, 9.9)}
