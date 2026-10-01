@@ -53,15 +53,22 @@ def gap_words(low_s, high_s):
 
 
 def corner_names():
+    """Every corner name Apex knows: Monza's, and every learned track map's."""
     from driving.track_map import MAPS_FOLDER, MONZA_CORNERS
 
     names = {corner["name"] for corner in MONZA_CORNERS}
     if os.path.isdir(MAPS_FOLDER):
         for file in sorted(os.listdir(MAPS_FOLDER)):
             if file.endswith(".json"):
-                with open(os.path.join(MAPS_FOLDER, file)) as f:
-                    names |= {corner["name"] for corner in json.load(f)["corners"]}
+                names |= names_in_map(os.path.join(MAPS_FOLDER, file))
     return sorted(names)
+
+
+def names_in_map(path):
+    """The corner names in one track map file."""
+    with open(path) as f:
+        track = json.load(f)
+    return {corner["name"] for corner in track["corners"]}
 
 
 def reputation_sentences():

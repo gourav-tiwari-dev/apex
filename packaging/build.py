@@ -147,13 +147,17 @@ def nothing_personal(app):
         for name in dirs + files:
             if name in NEVER_SHIP:
                 leaks.append(os.path.join(folder, name))
-            # a beta build carries the door's address, never a token: each install registers its own
-            if name == "server.json":
-                with open(os.path.join(folder, name), encoding="utf-8") as f:
-                    if folder != app or "token" in json.load(f):
-                        leaks.append(os.path.join(folder, name))
+            if name == "server.json" and door_file_leaks(app, folder, name):
+                leaks.append(os.path.join(folder, name))
     if leaks:
         raise SystemExit("REFUSING TO SHIP: " + ", ".join(leaks))
+
+
+def door_file_leaks(app, folder, name):
+    """A beta build carries the door's address, never a token: each install registers its
+    own. A server.json anywhere but the app's own folder leaks too."""
+    with open(os.path.join(folder, name), encoding="utf-8") as f:
+        return folder != app or "token" in json.load(f)
 
 
 def size_mb(folder):

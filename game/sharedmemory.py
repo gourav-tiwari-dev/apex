@@ -146,22 +146,22 @@ def test_api():
     logger.addHandler(test_handler)
 
     # Test run
-    SEPARATOR = "=" * 50
+    separator = "=" * 50
     print("Test API - Direct Access")
     info = MMapControl(LMUConstants.LMU_SHARED_MEMORY_FILE, lmu_data.LMUObjectOut)
     info.create(1)
     info.update()
 
-    print(SEPARATOR)
+    print(separator)
     print("Test API - Close")
     info.close()
 
-    print(SEPARATOR)
+    print(separator)
     print("Test API - Copy Access")
     info.create(0)
     info.update()
 
-    print(SEPARATOR)
+    print(separator)
     print("Test API - Read")
     version = info.data.generic.gameVersion
     track = info.data.scoring.scoringInfo.mTrackName.decode()
@@ -174,7 +174,7 @@ def test_api():
     print(f"vehicle name: {vehicle if version else 'not running'}")
     print(f"total cars: {total if version else 'not running'}")
 
-    print(SEPARATOR)
+    print(separator)
     info.close()
 
 

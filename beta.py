@@ -76,17 +76,27 @@ def anonymised_tape(path):
         gzip.open(out, "wt", encoding="utf-8") as target,
     ):
         for line in source:
-            frame = json.loads(line)
-            if isinstance(frame.get("me"), dict) and "driver" in frame["me"]:
-                frame["me"]["driver"] = "Me"
-            for car in frame.get("opponents") or []:
-                if isinstance(car, dict) and "driver" in car:
-                    name = car["driver"]
-                    if name not in codes:
-                        codes[name] = f"Driver {len(codes) + 1}"
-                    car["driver"] = codes[name]
+            frame = anonymised(json.loads(line), codes)
             target.write(json.dumps(frame) + "\n")
     return out.getvalue()
+
+
+def anonymised(frame, codes):
+    """One tape line with the tester called 'Me' and every other driver 'Driver N'. codes
+    keeps each driver's N for the whole race."""
+    if isinstance(frame.get("me"), dict) and "driver" in frame["me"]:
+        frame["me"]["driver"] = "Me"
+    for car in frame.get("opponents") or []:
+        if isinstance(car, dict) and "driver" in car:
+            car["driver"] = driver_code(car["driver"], codes)
+    return frame
+
+
+def driver_code(name, codes):
+    """The same 'Driver N' for the same driver all race."""
+    if name not in codes:
+        codes[name] = f"Driver {len(codes) + 1}"
+    return codes[name]
 
 
 def race_summary(conn, session_id):

@@ -1,4 +1,7 @@
-import json, os, time, sys
+import json
+import os
+import sys
+import time
 from memory.db import connect_db
 from memory.contracts import build_evidence_pack, make_contract, save_contract
 from memory.db import latest_session_id, track_of

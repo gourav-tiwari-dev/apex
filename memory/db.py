@@ -56,13 +56,13 @@ SCHEMA = """
 
   CREATE TABLE IF NOT EXISTS focus_contracts (
     id            INTEGER PRIMARY KEY,
-    session_id    INTEGER NOT NULL,          
+    session_id    INTEGER NOT NULL,
     corner        TEXT    NOT NULL,
-    focus         TEXT    NOT NULL,          
-    metric        TEXT    NOT NULL,          
-    baseline      REAL    NOT NULL,          
-    target        REAL    NOT NULL,         
-    min_laps      INTEGER NOT NULL,          
+    focus         TEXT    NOT NULL,
+    metric        TEXT    NOT NULL,
+    baseline      REAL    NOT NULL,
+    target        REAL    NOT NULL,
+    min_laps      INTEGER NOT NULL,
     UNIQUE (session_id),
     FOREIGN KEY (session_id) REFERENCES sessions (id)
   );

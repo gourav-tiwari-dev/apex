@@ -108,14 +108,14 @@ class RaceModel:
         d = self.distance(back)
         if d is None or not self.lap_length:
             return None
-        L = self.lap_length
+        lap_length = self.lap_length
         for laps in (SURE_LAPS, 1):
             changes = []
             for i in range(STRETCHES * laps):
-                end = d - i * L / STRETCHES
+                end = d - i * lap_length / STRETCHES
                 a, b = (
                     self.gap_at(front, back, end),
-                    self.gap_at(front, back, end - L / STRETCHES),
+                    self.gap_at(front, back, end - lap_length / STRETCHES),
                 )
                 if a is None or b is None:
                     break
@@ -185,14 +185,15 @@ class RaceModel:
         trail = self.trail(key)
         if trail is None or not trail.distance or not self.lap_length:
             return None
-        L = self.lap_length
+        lap_length = self.lap_length
         start, end = corner["start"], corner["end"]
         if end < start:
-            end += L
-        lap = int((trail.distance[-1] - end) // L)
+            end += lap_length
+        lap = int((trail.distance[-1] - end) // lap_length)
         times = []
         for n in range(lap, lap - passes, -1):
-            a, b = trail.time_at(n * L + start), trail.time_at(n * L + end)
+            a = trail.time_at(n * lap_length + start)
+            b = trail.time_at(n * lap_length + end)
             if a is not None and b is not None and b > a:
                 times.append(b - a)
         return statistics.median(times) if times else None

@@ -160,12 +160,17 @@ def fallback(snapshot, question=""):
     for side in ("behind", "ahead"):
         call = snapshot.team_calls.get(side)
         if call:
-            words = f"Radio's lagging, mate. Team says {call}"
-            for reason, warning in FALLBACK_WARNINGS.items():
-                if reason in snapshot.override_evidence():
-                    words += " " + warning
-            return words
+            return f"Radio's lagging, mate. Team says {call}" + call_warnings(snapshot)
     return "Radio's lagging, mate. Ask me again."
+
+
+def call_warnings(snapshot):
+    """The facts that could change the team call, each said as a warning."""
+    words = ""
+    for reason, warning in FALLBACK_WARNINGS.items():
+        if reason in snapshot.override_evidence():
+            words += " " + warning
+    return words
 
 
 def split_orders(raw):
@@ -177,13 +182,20 @@ def split_orders(raw):
     for line in (raw or "").splitlines():
         head = line.strip()
         if head.upper().startswith("ORDER:"):
-            for part in head[6:].split(","):
-                if "=" in part:
-                    topic, stance = part.split("=", 1)
-                    orders.append((topic.strip().lower(), stance.strip().lower()))
+            orders.extend(orders_in(head[6:]))
             continue
         kept.append(line)
     return orders, "\n".join(kept)
+
+
+def orders_in(text):
+    """[(topic, stance)] from "pace=push, fight=everyone"."""
+    found = []
+    for part in text.split(","):
+        if "=" in part:
+            topic, stance = part.split("=", 1)
+            found.append((topic.strip().lower(), stance.strip().lower()))
+    return found
 
 
 def split_call(raw):

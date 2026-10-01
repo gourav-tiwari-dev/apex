@@ -74,7 +74,7 @@ class LiveSource:
 
     def __iter__(self):
         last_time = None
-        last_scoring_time = None
+        self.last_scoring_time = None
         try:
             while True:
                 self.info.update()
@@ -84,13 +84,7 @@ class LiveSource:
                     continue
                 if state.elapsed_time != last_time:
                     last_time = state.elapsed_time
-                    # scoring updates about 5 times a second; only take a snapshot when it did
-                    scoring_time = self.info.data.scoring.scoringInfo.mCurrentET
-                    self.new_race = scoring_time != last_scoring_time
-                    if self.new_race:
-                        last_scoring_time = scoring_time
-                        self.race = read_race_snapshot(self.info.data)
-                    self.near = read_near_cars(self.info.data, state.pos)
+                    self.see_race(state)
                     yield state
                 time.sleep(0.002)
 
@@ -98,3 +92,13 @@ class LiveSource:
             print("\nStopping...")
             self.info.close()
             print("Closed connection.")
+
+    def see_race(self, state):
+        """Scoring updates about 5 times a second: a new race snapshot only when it did. The
+        cars near him come with every frame."""
+        scoring_time = self.info.data.scoring.scoringInfo.mCurrentET
+        self.new_race = scoring_time != self.last_scoring_time
+        if self.new_race:
+            self.last_scoring_time = scoring_time
+            self.race = read_race_snapshot(self.info.data)
+        self.near = read_near_cars(self.info.data, state.pos)

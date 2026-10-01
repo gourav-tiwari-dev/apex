@@ -200,9 +200,9 @@ def frozen_race(tape, lap):
 
     frozen = {}
     lap_started = {}
-    Engineer = session.RaceEngineer
+    engineer_class = session.RaceEngineer
 
-    class FreezingEngineer(Engineer):
+    class FreezingEngineer(engineer_class):
         def __init__(self):
             super().__init__()
             made["RaceEngineer"] = self

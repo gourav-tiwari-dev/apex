@@ -31,43 +31,55 @@ class ReplaySource:
 
     def __iter__(self):
         try:
-            with gzip.open(self.tape_path, "rt") as f:
-                start_wall = time.perf_counter()
-                start_sim = None
-                for line in f:
-                    as_dict = json.loads(line)
-                    # v2 tapes interleave race lines with the car frames; each one belongs
-                    # to the car frame written right after it. Old tapes have only car frames.
-                    kind = as_dict.get("t")
-                    if kind == "race":
-                        self.race = race_snapshot_from_dict(as_dict)
-                        self.new_race = True
-                        continue
-                    if kind == "near":
-                        self.near = near_cars_from_dict(as_dict)
-                        continue
-                    as_data = CarState(**as_dict)
-                    if start_sim is None:
-                        start_sim = as_data.elapsed_time
-                    if self.speed:
-                        target = (
-                            start_wall + (as_data.elapsed_time - start_sim) / self.speed
-                        )
-                        delay = target - time.perf_counter()
-                        # running late: never skip the frame, just don't wait for it
-                        if delay > 0:
-                            time.sleep(delay)
-                    yield as_data
-                    # a snapshot is "new" for one frame only, and near cars belong to one frame
-                    self.new_race = False
-                    self.near = None
-
+            for frame in self.frames():
+                yield frame
         except (EOFError, zlib.error):
             # a tape cut off when Apex was killed (24 Sep): everything up to the cut is real
             print("[the tape ends early - it was cut off; replayed up to the cut]")
         except KeyboardInterrupt:
             print("\nStopping...")
             print("Closed connection.")
+
+    def frames(self):
+        """Every car frame on the tape, in order, at the replay speed."""
+        with gzip.open(self.tape_path, "rt") as f:
+            start_wall = time.perf_counter()
+            start_sim = None
+            for line in f:
+                frame = self.read_line(json.loads(line))
+                if frame is None:
+                    continue
+                if start_sim is None:
+                    start_sim = frame.elapsed_time
+                self.wait_for(frame, start_wall, start_sim)
+                yield frame
+                # a snapshot is "new" for one frame only, and near cars belong to one frame
+                self.new_race = False
+                self.near = None
+
+    def read_line(self, as_dict):
+        """A car frame, or None for a race or near-cars line. v2 tapes interleave those with
+        the car frames; each one belongs to the car frame written right after it. Old tapes
+        have only car frames."""
+        kind = as_dict.get("t")
+        if kind == "race":
+            self.race = race_snapshot_from_dict(as_dict)
+            self.new_race = True
+            return None
+        if kind == "near":
+            self.near = near_cars_from_dict(as_dict)
+            return None
+        return CarState(**as_dict)
+
+    def wait_for(self, frame, start_wall, start_sim):
+        """At a replay speed, waits until this frame's moment. Running late, it never skips
+        the frame, it just doesn't wait for it."""
+        if not self.speed:
+            return
+        target = start_wall + (frame.elapsed_time - start_sim) / self.speed
+        delay = target - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
 
 
 class Recorder:

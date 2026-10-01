@@ -118,19 +118,30 @@ def words_to_digits(text):
     i = 0
     while i < len(words):
         word = words[i].lower()
-        if word in WORD_VALUES:
-            value = WORD_VALUES[word]
-            # "sixty-one" / "sixty one": a tens word followed by a units word
-            if value >= 20 and i + 2 < len(words) and words[i + 1] in ("-", " "):
-                unit = WORD_VALUES.get(words[i + 2].lower())
-                if unit is not None and unit < 10:
-                    value += unit
-                    i += 2
-            out.append(str(value))
-        else:
+        if word not in WORD_VALUES:
             out.append(words[i])
+            i += 1
+            continue
+        value = WORD_VALUES[word]
+        unit = None
+        if value >= 20:
+            unit = unit_after(words, i)
+        if unit is not None:
+            value += unit
+            i += 2
+        out.append(str(value))
         i += 1
     return "".join(out)
+
+
+def unit_after(words, i):
+    """The units word after a tens word ("sixty-one", "sixty one"): its value, or None."""
+    if i + 2 >= len(words) or words[i + 1] not in ("-", " "):
+        return None
+    unit = WORD_VALUES.get(words[i + 2].lower())
+    if unit is not None and unit < 10:
+        return unit
+    return None
 
 
 def lap_time_words(match):
