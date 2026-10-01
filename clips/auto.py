@@ -23,6 +23,24 @@ class AutoClips:
         self.out_dir = out_dir
         self.recorder = None
 
+    def measure(self, session_id, folder):
+        """The race's numbers (gap, place, speed) for the overlays, from its tape; None without one."""
+        import sqlite3
+
+        from clips.race_data import write
+
+        conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
+        row = conn.execute("SELECT tape_path FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        conn.close()
+        tape = row[0] if row else None
+        if not tape or not os.path.exists(tape):
+            return None
+        try:
+            return write(tape, os.path.join(folder, "race_data.json"))
+        except Exception as error:
+            print(f"[clips] no overlays this time ({error.__class__.__name__})")
+            return None
+
     def session_starting(self):
         self.recorder = RaceRecorder(self.out_dir)
         if not self.recorder.start():
@@ -42,7 +60,8 @@ class AutoClips:
             return None
         print("[clips] finding the radio in the recording...")
         moments = find(race, self.db_path, session=session_id)
-        short = make(race, moments, os.path.join(folder, "short.mp4"), ending="driver")
+        race_data = self.measure(session_id, folder)
+        short = make(race, moments, os.path.join(folder, "short.mp4"), ending="driver", race_data=race_data)
         if short:
             print(f"[clips] your short is ready: {short}")
         return short
