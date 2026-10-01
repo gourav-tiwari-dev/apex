@@ -4,3 +4,6 @@
 
 # Refactor step 0b: formatting only (ruff format), 27 Sep 2026
 083eb37a1caf882d1fae01b5ffcd6a3b4f30fa8f
+
+# Refactor phase 2: ruff format on the product code (formatting only), 1 Oct 2026
+9e76ff88755b99bf5eb00afc8e6c93926ae8c479
