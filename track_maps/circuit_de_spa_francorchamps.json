@@ -1,0 +1,96 @@
+{
+ "track": "Circuit de Spa-Francorchamps",
+ "learned_from_laps": 8,
+ "corners": [
+  {
+   "name": "Turn 1",
+   "start": 110,
+   "end": 325
+  },
+  {
+   "name": "Turn 2",
+   "start": 535,
+   "end": 645
+  },
+  {
+   "name": "Turn 3",
+   "start": 830,
+   "end": 895
+  },
+  {
+   "name": "Turn 4",
+   "start": 895,
+   "end": 1290
+  },
+  {
+   "name": "Turn 5",
+   "start": 1425,
+   "end": 1590
+  },
+  {
+   "name": "Turn 6",
+   "start": 2095,
+   "end": 2645
+  },
+  {
+   "name": "Turn 7",
+   "start": 2755,
+   "end": 3065
+  },
+  {
+   "name": "Turn 8",
+   "start": 3065,
+   "end": 3270
+  },
+  {
+   "name": "Turn 9",
+   "start": 3550,
+   "end": 4105
+  },
+  {
+   "name": "Turn 10",
+   "start": 4210,
+   "end": 4655
+  },
+  {
+   "name": "Turn 11",
+   "start": 4695,
+   "end": 4920
+  },
+  {
+   "name": "Turn 12",
+   "start": 4930,
+   "end": 5215
+  },
+  {
+   "name": "Turn 13",
+   "start": 5410,
+   "end": 5555
+  },
+  {
+   "name": "Turn 14",
+   "start": 5585,
+   "end": 5930
+  },
+  {
+   "name": "Turn 15",
+   "start": 5930,
+   "end": 6005
+  },
+  {
+   "name": "Turn 16",
+   "start": 6005,
+   "end": 6215
+  },
+  {
+   "name": "Turn 17",
+   "start": 6335,
+   "end": 6430
+  },
+  {
+   "name": "Turn 18",
+   "start": 6430,
+   "end": 6740
+  }
+ ]
+}

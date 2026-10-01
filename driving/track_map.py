@@ -42,6 +42,7 @@ MERGE_GAP_M = 40  # busy stretches closer than this are one corner
 MIN_CORNER_M = 40  # anything shorter is a wobble, not a corner
 PAD_M = 25
 MIN_LAPS = 3  # never learn a track from fewer laps than this
+BRAKE_HELD_M = 15  # a braking zone: the brake held at least this far (shorter is a dab)
 
 
 def corner_at(corners, distance):
@@ -76,6 +77,7 @@ class TrackMapLearner:
 
     def __init__(self):
         self.busy_by_lap = {}  # lap -> set of busy slice numbers
+        self.braking_by_lap = {}  # lap -> set of slice numbers with the brake on
         self.track_length = 0.0
 
     def add(self, lap_count, distance, brake, accel_lat):
@@ -86,8 +88,11 @@ class TrackMapLearner:
             self.track_length = distance
         if lap_count not in self.busy_by_lap:
             self.busy_by_lap[lap_count] = set()
+            self.braking_by_lap[lap_count] = set()
         if is_busy(brake, accel_lat):
             self.busy_by_lap[lap_count].add(int(distance // SLICE_M))
+        if brake > BRAKING:
+            self.braking_by_lap[lap_count].add(int(distance // SLICE_M))
 
     def complete_laps(self, current_lap):
         # the lap being driven right now is not complete yet
@@ -100,6 +105,7 @@ class TrackMapLearner:
             return None
         share = self.busy_share(laps)
         windows = corner_windows(busy_cores(share), share)
+        windows = split_at_braking(windows, self.share_of(self.braking_by_lap, laps))
         corners = []
         for number, (start, end) in enumerate(windows, start=1):
             corners.append({"name": f"Turn {number}", "start": start, "end": end})
@@ -107,14 +113,18 @@ class TrackMapLearner:
 
     def busy_share(self, laps):
         """For every 5 m slice of the track, the share of these laps it was busy on."""
+        return self.share_of(self.busy_by_lap, laps)
+
+    def share_of(self, slices_by_lap, laps):
+        """For every 5 m slice of the track, the share of these laps it was marked on."""
         slices = int(self.track_length // SLICE_M) + 1
         share = []
         for s in range(slices):
-            busy_laps = 0
+            marked_laps = 0
             for lap in laps:
-                if s in self.busy_by_lap[lap]:
-                    busy_laps += 1
-            share.append(busy_laps / len(laps))
+                if s in slices_by_lap.get(lap, ()):
+                    marked_laps += 1
+            share.append(marked_laps / len(laps))
         return share
 
 
@@ -157,6 +167,36 @@ def corner_windows(cores, share):
         else:
             windows.append([start, end])
     return windows
+
+
+def braking_starts(brake_share):
+    """Slices where a real braking zone begins: the brake on for at least half the laps, held
+    for BRAKE_HELD_M or more (a dab of the brake is not a corner)."""
+    starts = []
+    held = int(BRAKE_HELD_M // SLICE_M)
+    for s in range(1, len(brake_share) - held):
+        if brake_share[s - 1] >= CORE_SHARE or brake_share[s] < CORE_SHARE:
+            continue
+        if all(brake_share[s + k] >= CORE_SHARE for k in range(held)):
+            starts.append(s)
+    return starts
+
+
+def split_at_braking(windows, brake_share):
+    """Every braking zone starts a new corner, as a driver counts them (1 Oct 2026). On a twisty
+    track (Portimao) he is over 0.6 g nearly all the way round, so 'busy' never stops and
+    corners ran together: one learned 'corner' was 1.3 km long. A window is cut PAD_M before
+    each braking zone that is not its first, if both pieces are still MIN_CORNER_M long."""
+    cuts = [s * SLICE_M - PAD_M for s in braking_starts(brake_share)]
+    split = []
+    for start, end in windows:
+        piece_start = start
+        for cut in cuts:
+            if piece_start + MIN_CORNER_M <= cut <= end - MIN_CORNER_M:
+                split.append([piece_start, cut])
+                piece_start = cut
+        split.append([piece_start, end])
+    return split
 
 
 def overlap(a, b):

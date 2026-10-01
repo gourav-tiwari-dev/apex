@@ -1,0 +1,61 @@
+{
+ "track": "Algarve International Circuit",
+ "learned_from_laps": 9,
+ "corners": [
+  {
+   "name": "Turn 1",
+   "start": 235,
+   "end": 610
+  },
+  {
+   "name": "Turn 2",
+   "start": 610,
+   "end": 1000
+  },
+  {
+   "name": "Turn 3",
+   "start": 1290,
+   "end": 1550
+  },
+  {
+   "name": "Turn 4",
+   "start": 1620,
+   "end": 1810
+  },
+  {
+   "name": "Turn 5",
+   "start": 1810,
+   "end": 1965
+  },
+  {
+   "name": "Turn 6",
+   "start": 1965,
+   "end": 2185
+  },
+  {
+   "name": "Turn 7",
+   "start": 2300,
+   "end": 2565
+  },
+  {
+   "name": "Turn 8",
+   "start": 2565,
+   "end": 3055
+  },
+  {
+   "name": "Turn 9",
+   "start": 3055,
+   "end": 3305
+  },
+  {
+   "name": "Turn 10",
+   "start": 3305,
+   "end": 3625
+  },
+  {
+   "name": "Turn 11",
+   "start": 3650,
+   "end": 4165
+  }
+ ]
+}
