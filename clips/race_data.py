@@ -26,7 +26,16 @@ def sample(tape_path):
     """[(sim_time, gap_ahead, gap_behind, place)] for the whole tape. Call from a scratch folder."""
     from session import Session
 
-    session = Session(True, None, tape_path, False, True, None, None, None, None)
+    session = Session(
+        True,
+        None,
+        tape_path,
+        out_loud=False,
+        clean=True,
+        launch_id=None,
+        voice=None,
+        script=None,
+    )
     samples = []
     one_frame = session.one_frame
     last = [-1.0]

@@ -204,3 +204,28 @@ def test_the_gap_is_shown_in_metres_and_never_as_minus_zero():
     caps.gap_ticker(race, 10.2, lambda sim: sim, 0.0, 0.0, 20.0)
     texts = [e[3] for e in caps.events]
     assert texts[0].endswith("GAP 7.8 m") and texts[1].endswith("GAP 0.0 m")
+
+
+def test_the_race_data_samples_a_tape_through_apex_itself(tmp_path, monkeypatch):
+    """1 Oct: race_data built its Session with every option by position, so removing one
+    option broke the overlays with a TypeError, and no test ran it."""
+    import gzip
+    import json
+    from dataclasses import asdict
+
+    import memory
+    import session
+    from clips.race_data import sample
+    from game.race_snapshot import read_race_snapshot
+    from test_race_state import fake_game, first_frames
+
+    tape = str(tmp_path / "race.jsonl.gz")
+    with gzip.open(tape, "wt") as out:
+        out.write(json.dumps(asdict(read_race_snapshot(fake_game()))) + "\n")
+        for frame in first_frames(50):
+            out.write(json.dumps(asdict(frame)) + "\n")
+    db = str(tmp_path / "t.db")
+    monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db))
+    rows = sample(tape)
+    assert rows  # a row every 0.1 s of sim time
+    assert len(rows[0]) == 5  # sim time, gap ahead, gap behind, place, speed
