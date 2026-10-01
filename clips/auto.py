@@ -30,7 +30,9 @@ class AutoClips:
         from clips.race_data import write
 
         conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
-        row = conn.execute("SELECT tape_path FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute(
+            "SELECT tape_path FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
         conn.close()
         tape = row[0] if row else None
         if not tape or not os.path.exists(tape):
@@ -61,7 +63,13 @@ class AutoClips:
         print("[clips] finding the radio in the recording...")
         moments = find(race, self.db_path, session=session_id)
         race_data = self.measure(session_id, folder)
-        short = make(race, moments, os.path.join(folder, "short.mp4"), ending="driver", race_data=race_data)
+        short = make(
+            race,
+            moments,
+            os.path.join(folder, "short.mp4"),
+            ending="driver",
+            race_data=race_data,
+        )
         if short:
             print(f"[clips] your short is ready: {short}")
         return short

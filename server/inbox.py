@@ -6,6 +6,7 @@
 
 Uses wrangler (logged in once on this laptop). Everything lands in server/inbox/ (not committed).
 """
+
 import argparse
 import json
 import os
@@ -17,8 +18,12 @@ INBOX = os.path.join(HERE, "inbox")
 
 
 def wrangler(*args, binary=False):
-    out = subprocess.run(["npx", "wrangler", "kv", *args, "--binding", "FEEDBACK", "--remote"],
-                         cwd=HERE, capture_output=True, shell=True)
+    out = subprocess.run(
+        ["npx", "wrangler", "kv", *args, "--binding", "FEEDBACK", "--remote"],
+        cwd=HERE,
+        capture_output=True,
+        shell=True,
+    )
     if out.returncode != 0:
         raise SystemExit(out.stderr.decode("utf-8", "ignore"))
     return out.stdout if binary else out.stdout.decode("utf-8")
@@ -34,9 +39,13 @@ def main():
     for key in feedback:
         item = json.loads(wrangler("key", "get", key))
         race = item.get("race", {})
-        print(f"{key[9:]}  {item.get('rating')}/5  {race.get('track')}  {race.get('car_class')}  "
-              f"P{race.get('grid')}->P{race.get('final_place')}  {item.get('comment', '')[:80]!r}")
-        with open(os.path.join(INBOX, key.replace(":", "_") + ".json"), "w", encoding="utf-8") as f:
+        print(
+            f"{key[9:]}  {item.get('rating')}/5  {race.get('track')}  {race.get('car_class')}  "
+            f"P{race.get('grid')}->P{race.get('final_place')}  {item.get('comment', '')[:80]!r}"
+        )
+        with open(
+            os.path.join(INBOX, key.replace(":", "_") + ".json"), "w", encoding="utf-8"
+        ) as f:
             json.dump(item, f, indent=1)
         tape_key = "tape:" + key[9:]
         tape_file = os.path.join(INBOX, tape_key.replace(":", "_") + ".jsonl.gz")
@@ -47,6 +56,7 @@ def main():
             if args.replay:
                 sys.path.insert(0, os.path.dirname(HERE))
                 from session import run_session
+
                 run_session(True, None, tape_file, clean=True, out_loud=False)
 
 

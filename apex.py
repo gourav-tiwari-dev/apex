@@ -103,7 +103,9 @@ def main(argv=None):
     # Apex is a product now (30 Sep): clean is the default a new driver gets, swearing is opt-in
     parser.add_argument("--spicy", action="store_true", help="the engineer swears")
     parser.add_argument(
-        "--clean", action="store_true", help="no swearing (the default; kept for old commands)"
+        "--clean",
+        action="store_true",
+        help="no swearing (the default; kept for old commands)",
     )
     parser.add_argument(
         "--record",

@@ -25,12 +25,8 @@ class FakePersona:
 
 def run(tmp_path, monkeypatch, name, speed):
     db_path = str(tmp_path / f"{name}.db")
-    monkeypatch.setattr(
-        session, "connect_db", lambda: memory.connect_db(db_path)
-    )
-    session_id = session.run_session(
-        True, speed, out_loud=False, persona=FakePersona()
-    )
+    monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db_path))
+    session_id = session.run_session(True, speed, out_loud=False, persona=FakePersona())
     conn = memory.connect_db(db_path)
     return conn, session_id
 

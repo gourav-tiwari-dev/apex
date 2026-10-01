@@ -26,14 +26,32 @@ ENCODERS = [
     ["-c:v", "h264_qsv", "-preset", "veryfast", "-b:v", "12M"],
     # Windows' own encoder: always there. Apex ships an LGPL ffmpeg (a paid app can't carry
     # the GPL build), which has no libx264; it stays last for a developer's GPL ffmpeg.
-    ["-c:v", "h264_mf", "-rate_control", "quality", "-quality", "70", "-hw_encoding", "1"],
+    [
+        "-c:v",
+        "h264_mf",
+        "-rate_control",
+        "quality",
+        "-quality",
+        "70",
+        "-hw_encoding",
+        "1",
+    ],
     ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"],
 ]
 
 # for the finished short: quality over speed, same order
 SHORT_ENCODERS = [
     ["-c:v", "h264_nvenc", "-preset", "p6", "-rc", "vbr", "-cq", "19", "-b:v", "0"],
-    ["-c:v", "h264_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "19"],
+    [
+        "-c:v",
+        "h264_amf",
+        "-quality",
+        "quality",
+        "-rc",
+        "qvbr",
+        "-qvbr_quality_level",
+        "19",
+    ],
     ["-c:v", "h264_qsv", "-preset", "slow", "-global_quality", "19"],
     ["-c:v", "h264_mf", "-rate_control", "quality", "-quality", "85"],
     ["-c:v", "libx264", "-preset", "medium", "-crf", "18"],
@@ -44,8 +62,19 @@ def working_encoder(choices=ENCODERS):
     """The first encoder that can encode one test frame here."""
     for encoder in choices:
         test = subprocess.run(
-            ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
-             *encoder, "-f", "null", "-"],
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:s=256x256:d=0.1",
+                *encoder,
+                "-f",
+                "null",
+                "-",
+            ],
             capture_output=True,
         )
         if test.returncode == 0:
@@ -120,13 +149,40 @@ class RaceRecorder:
         stamp = time.strftime("%Y%m%d_%H%M%S")
         self.piece_dir = os.path.join(self.out_dir, f"race_{stamp}")
         os.makedirs(self.piece_dir, exist_ok=True)
-        capture = f"gfxcapture=window_exe='{self.window}':max_framerate=60:capture_cursor=0"
+        capture = (
+            f"gfxcapture=window_exe='{self.window}':max_framerate=60:capture_cursor=0"
+        )
         self.video = subprocess.Popen(
-            ["ffmpeg", "-hide_banner", "-v", "error", "-f", "lavfi", "-i", capture,
-             "-vf", "hwdownload,format=bgra", "-r", "60", *encoder, "-g", "120",
-             "-f", "segment", "-segment_time", str(PIECE_S), "-reset_timestamps", "1",
-             "-progress", "pipe:1", os.path.join(self.piece_dir, "piece_%04d.mp4")],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                capture,
+                "-vf",
+                "hwdownload,format=bgra",
+                "-r",
+                "60",
+                *encoder,
+                "-g",
+                "120",
+                "-f",
+                "segment",
+                "-segment_time",
+                str(PIECE_S),
+                "-reset_timestamps",
+                "1",
+                "-progress",
+                "pipe:1",
+                os.path.join(self.piece_dir, "piece_%04d.mp4"),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         threading.Thread(target=self.watch_first_frame, daemon=True).start()
         self.start_sound()
@@ -138,7 +194,7 @@ class RaceRecorder:
         and out_time reads N/A while writing pieces, so the frame count is the clock."""
         for line in self.video.stdout:
             if self.video_started_at is not None:
-                continue                      # keep reading so ffmpeg never blocks on the pipe
+                continue  # keep reading so ffmpeg never blocks on the pipe
             if line.startswith("frame="):
                 frames = line.split("=")[1].strip()
                 if frames.isdigit() and int(frames) > 0:
@@ -157,7 +213,9 @@ class RaceRecorder:
         if self.with_microphone:
             inputs.append(("mic", self.audio.get_default_input_device_info()))
         for name, device in inputs:
-            sound = SoundRecorder(self.audio, device, os.path.join(self.piece_dir, f"{name}.wav"))
+            sound = SoundRecorder(
+                self.audio, device, os.path.join(self.piece_dir, f"{name}.wav")
+            )
             sound.start()
             self.sounds.append(sound)
 
@@ -171,12 +229,17 @@ class RaceRecorder:
         speakers = None
         for number in range(self.audio.get_device_count()):
             device = self.audio.get_device_info_by_index(number)
-            if device["name"] == loopback["name"].replace(" [Loopback]", "") and \
-                    device["maxOutputChannels"] > 0 and device["hostApi"] == loopback["hostApi"]:
+            if (
+                device["name"] == loopback["name"].replace(" [Loopback]", "")
+                and device["maxOutputChannels"] > 0
+                and device["hostApi"] == loopback["hostApi"]
+            ):
                 speakers = device
                 break
         if speakers is None:
-            print("[clips] could not find the speakers behind the loopback - sound may drift")
+            print(
+                "[clips] could not find the speakers behind the loopback - sound may drift"
+            )
             return
         channels = max(1, min(2, int(speakers["maxOutputChannels"])))
         rate = int(speakers["defaultSampleRate"])
@@ -186,8 +249,12 @@ class RaceRecorder:
             return (quiet[: 2 * channels * frame_count], pyaudio.paContinue)
 
         self.silence = self.audio.open(
-            format=pyaudio.paInt16, channels=channels, rate=rate, output=True,
-            output_device_index=speakers["index"], frames_per_buffer=1024,
+            format=pyaudio.paInt16,
+            channels=channels,
+            rate=rate,
+            output=True,
+            output_device_index=speakers["index"],
+            frames_per_buffer=1024,
             stream_callback=more_silence,
         )
 
@@ -213,7 +280,9 @@ class RaceRecorder:
             self.audio.terminate()
         pieces = sorted(p for p in os.listdir(self.piece_dir) if p.startswith("piece_"))
         if not pieces or self.video_started_at is None:
-            print("[clips] the game window was never captured - is LMU running in a window?")
+            print(
+                "[clips] the game window was never captured - is LMU running in a window?"
+            )
             return None
         return self.join(pieces)
 
@@ -236,8 +305,22 @@ class RaceRecorder:
             maps += ["-map", f"{number}:a"]
         race = os.path.join(self.piece_dir, "race.mp4")
         subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", *inputs, *maps, "-c:v", "copy", "-c:a", "aac",
-             "-b:a", "192k", "-shortest", race],
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                *inputs,
+                *maps,
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-shortest",
+                race,
+            ],
             check=True,
         )
         for piece in pieces:

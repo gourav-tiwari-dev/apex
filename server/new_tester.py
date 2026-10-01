@@ -6,6 +6,7 @@ Prints a token for their server.json and the full TESTER_TOKENS value to paste i
 `npx wrangler secret put TESTER_TOKENS`. testers.json (never committed) remembers who has which,
 so a token can be taken back by deleting its line and putting the secret again.
 """
+
 import json
 import os
 import secrets

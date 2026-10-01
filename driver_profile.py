@@ -19,11 +19,11 @@ PROFILE_FILE = "profile.json"
 class Profile:
     name: str = "the driver"
     car: str = "a GT3"
-    input: str = "a wheel"             # "a wheel" or "a controller"
-    habit: str = ""                    # the driver's own words about a weakness, or ""
-    spicy: bool = False                # the engineer swears (never slurs, in any mode)
+    input: str = "a wheel"  # "a wheel" or "a controller"
+    habit: str = ""  # the driver's own words about a weakness, or ""
+    spicy: bool = False  # the engineer swears (never slurs, in any mode)
     voice: str = "standard"
-    clips: bool = False                # record the game window and make a short of every race
+    clips: bool = False  # record the game window and make a short of every race
 
 
 NEW_DRIVER = Profile()
@@ -43,7 +43,11 @@ def load_profile(path=PROFILE_FILE):
         return NEW_DRIVER
     with open(path, encoding="utf-8") as f:
         saved = json.load(f)
-    known = {key: value for key, value in saved.items() if key in Profile.__dataclass_fields__}
+    known = {
+        key: value
+        for key, value in saved.items()
+        if key in Profile.__dataclass_fields__
+    }
     return Profile(**known)
 
 

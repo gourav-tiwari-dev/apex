@@ -76,11 +76,11 @@ def test_a_twisty_track_is_cut_at_every_braking_zone():
     # learned corner was 1.3 km long. Every braking zone held on half the laps starts a corner.
     from driving.track_map import SLICE_M, split_at_braking
 
-    brake_share = [0.0] * 400                      # 2 km of track in 5 m slices
-    for start_m in (300, 900, 1500):               # three real braking zones, 40 m each
+    brake_share = [0.0] * 400  # 2 km of track in 5 m slices
+    for start_m in (300, 900, 1500):  # three real braking zones, 40 m each
         for s in range(start_m // SLICE_M, (start_m + 40) // SLICE_M):
             brake_share[s] = 1.0
     for s in range(1200 // SLICE_M, 1205 // SLICE_M):
-        brake_share[s] = 1.0                       # a 5 m dab of the brake: not a corner
+        brake_share[s] = 1.0  # a 5 m dab of the brake: not a corner
     windows = split_at_braking([[275, 1900]], brake_share)
     assert windows == [[275, 875], [875, 1475], [1475, 1900]]

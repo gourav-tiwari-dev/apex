@@ -314,7 +314,9 @@ class RaceAgent:
     def asked_with(self, question, snapshot):
         """What goes with this question: the system prompt, the race picture, the cars either
         side and his habits, and the voice reminder (longer for "why", speeds only if asked)."""
-        system = for_driver(AGENT_PROMPT, self.profile) + ("\n" + CLEAN_RULE if self.clean else "")
+        system = for_driver(AGENT_PROMPT, self.profile) + (
+            "\n" + CLEAN_RULE if self.clean else ""
+        )
         if snapshot.picture.get("session") == "race":
             snapshot.picture["plan_now"] = current_plan(
                 self.orders,
@@ -325,7 +327,11 @@ class RaceAgent:
         picture = json.dumps(without_empty(snapshot.picture))
         # the voice goes right next to the question: in the system prompt alone it got lost
         # (1 answer in 4 swore on 24 Sep), the same lesson as the persona's per-line flag
-        voice = VOICE_REMINDER_CLEAN if self.clean else for_driver(VOICE_REMINDER, self.profile)
+        voice = (
+            VOICE_REMINDER_CLEAN
+            if self.clean
+            else for_driver(VOICE_REMINDER, self.profile)
+        )
         explain = asks_to_explain(question)
         max_words = MAX_WORDS_EXPLAIN if explain else MAX_WORDS
         timeout = HEAVY_TIMEOUT_S if explain else MODEL_TIMEOUT_S

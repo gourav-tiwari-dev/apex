@@ -154,7 +154,9 @@ def for_driver(text, profile):
     """A prompt with the driver filled in (product, 30 Sep: it said Gourav for everyone)."""
     habit = ""
     if profile.habit:
-        habit = f"From his own words: {profile.habit} (my_habits has the measured numbers)."
+        habit = (
+            f"From his own words: {profile.habit} (my_habits has the measured numbers)."
+        )
     else:
         habit = "my_habits has what team memory has measured about how he drives."
     return (
@@ -163,6 +165,8 @@ def for_driver(text, profile):
         .replace("<<INPUT>>", profile.input)
         .replace("<<HABIT>>", habit)
     )
+
+
 VOICE_REMINDER_CLEAN = "Answer ONLY this question, in Max's voice: blunt, 'mate', no swearing. About 35 words."
 # 25 Sep bank run: "the car behind is 0.7 a lap quicker" was tacked onto ~45 of 78 answers
 # (tyres, ABS, sectors, history) although rule 7 forbids it. The rule now sits next to the

@@ -199,7 +199,9 @@ def record():
         with open(os.path.join(GOLDEN, name + ".json"), "w", encoding="utf-8") as f:
             json.dump(result, f)
         written = sum(len(rows) for rows in result["tables"].values())
-        print(f"{name}: recorded {len(result['rows'])} radio rows, {written} other rows")
+        print(
+            f"{name}: recorded {len(result['rows'])} radio rows, {written} other rows"
+        )
     return 0
 
 
@@ -220,7 +222,9 @@ def show_table_difference(table, golden_rows, rows):
     after = [json.dumps(row) for row in rows]
     gone = [row for row in before if row not in after]
     new = [row for row in after if row not in before]
-    print(f"   {table}: {len(golden_rows)} -> {len(rows)} rows, {len(gone)} gone, {len(new)} new")
+    print(
+        f"   {table}: {len(golden_rows)} -> {len(rows)} rows, {len(gone)} gone, {len(new)} new"
+    )
     for row in gone[:SHOWN_DIFFERENCES]:
         print(f"      - {row[:150]}")
     for row in new[:SHOWN_DIFFERENCES]:
@@ -263,7 +267,9 @@ def check():
         with open(golden_file, encoding="utf-8") as f:
             golden = json.load(f)
         if "tables" not in golden:
-            print(f"{name}: the baseline has no tables (recorded by the old lock): run record")
+            print(
+                f"{name}: the baseline has no tables (recorded by the old lock): run record"
+            )
             failures += 1
             continue
         print(f"{name}:")

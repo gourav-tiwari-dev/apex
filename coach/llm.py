@@ -40,7 +40,9 @@ def where_to_ask(env_file=ENV_FILE, server_file=SERVER_FILE):
         with open(server_file, encoding="utf-8") as f:
             door = json.load(f)
         return door["url"].rstrip("/") + "/v1", door["token"]
-    raise RuntimeError("no AI access: neither .env nor server.json - the radio runs, the coach can't answer")
+    raise RuntimeError(
+        "no AI access: neither .env nor server.json - the radio runs, the coach can't answer"
+    )
 
 
 def open_client(timeout):

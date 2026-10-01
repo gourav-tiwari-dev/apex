@@ -29,9 +29,7 @@ class NoModel:
 import io, contextlib
 
 with contextlib.redirect_stdout(io.StringIO()):
-    sid = session.run_session(
-        True, None, tape, out_loud=False, persona=NoModel()
-    )
+    sid = session.run_session(True, None, tape, out_loud=False, persona=NoModel())
 conn = sqlite3.connect(out_db)
 rows = conn.execute(
     "select seat, kind, status, reason from radio_log where session_id=?", (sid,)

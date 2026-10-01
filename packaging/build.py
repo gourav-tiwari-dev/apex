@@ -25,23 +25,80 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # and the LGPL libraries stay separate files a user could replace
 LGPL_FFMPEG = r"C:\Users\gourav\Downloads\apex-launch\vendor\ffmpeg-n8.1-latest-win64-lgpl-shared-8.1"
 DEFAULT_OUT = r"C:\Users\gourav\Downloads\apex-launch\build"
-NEVER_SHIP = ["clone", ".env", "apex.db", "profile.json", "ptt_button.json", "testers.json"]
+NEVER_SHIP = [
+    "clone",
+    ".env",
+    "apex.db",
+    "profile.json",
+    "ptt_button.json",
+    "testers.json",
+]
 # installed in his Python for other projects; Apex imports none of them
-EXCLUDE = ["torch", "torchvision", "torchaudio", "tensorflow", "pandas", "matplotlib", "scipy",
-           "sympy", "networkx", "IPython", "notebook", "jupyter", "cv2", "sklearn", "PIL",
-           "transformers", "datasets", "numba", "llvmlite",
-           # dev/lmu_import.py only; pulled in through optional imports (117 MB, 30 Sep)
-           "duckdb", "pyarrow"]
-COLLECT = ["faster_whisper", "ctranslate2", "onnxruntime", "tokenizers", "pyaudiowpatch",
-           "sounddevice", "_sounddevice_data", "pygame", "edge_tts", "pyttsx3", "comtypes"]
-HIDDEN = ["pyttsx3.drivers", "pyttsx3.drivers.sapi5", "win32com", "pythoncom", "tkinter"]
+EXCLUDE = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "tensorflow",
+    "pandas",
+    "matplotlib",
+    "scipy",
+    "sympy",
+    "networkx",
+    "IPython",
+    "notebook",
+    "jupyter",
+    "cv2",
+    "sklearn",
+    "PIL",
+    "transformers",
+    "datasets",
+    "numba",
+    "llvmlite",
+    # dev/lmu_import.py only; pulled in through optional imports (117 MB, 30 Sep)
+    "duckdb",
+    "pyarrow",
+]
+COLLECT = [
+    "faster_whisper",
+    "ctranslate2",
+    "onnxruntime",
+    "tokenizers",
+    "pyaudiowpatch",
+    "sounddevice",
+    "_sounddevice_data",
+    "pygame",
+    "edge_tts",
+    "pyttsx3",
+    "comtypes",
+]
+HIDDEN = [
+    "pyttsx3.drivers",
+    "pyttsx3.drivers.sapi5",
+    "win32com",
+    "pythoncom",
+    "tkinter",
+]
 
 
 def pyinstaller(out):
-    args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--name", "Apex",
-            "--console", "--distpath", os.path.join(out, "dist"), "--workpath", os.path.join(out, "work"),
-            "--specpath", os.path.join(out, "spec"),
-            "--add-data", f"{os.path.join(REPO, 'knowledge.md')}{os.pathsep}."]
+    args = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--name",
+        "Apex",
+        "--console",
+        "--distpath",
+        os.path.join(out, "dist"),
+        "--workpath",
+        os.path.join(out, "work"),
+        "--specpath",
+        os.path.join(out, "spec"),
+        "--add-data",
+        f"{os.path.join(REPO, 'knowledge.md')}{os.pathsep}.",
+    ]
     for name in COLLECT:
         args += ["--collect-all", name]
     for name in HIDDEN:
@@ -64,7 +121,11 @@ def copy_voices(app):
 
 
 def copy_rest(app):
-    shutil.copytree(os.path.join(REPO, "track_maps"), os.path.join(app, "track_maps"), dirs_exist_ok=True)
+    shutil.copytree(
+        os.path.join(REPO, "track_maps"),
+        os.path.join(app, "track_maps"),
+        dirs_exist_ok=True,
+    )
     ffmpeg = os.path.join(app, "ffmpeg")
     os.makedirs(ffmpeg, exist_ok=True)
     for name in os.listdir(os.path.join(LGPL_FFMPEG, "bin")):
@@ -72,7 +133,10 @@ def copy_rest(app):
             shutil.copy2(os.path.join(LGPL_FFMPEG, "bin", name), ffmpeg)
     licenses = os.path.join(app, "licenses")
     os.makedirs(licenses, exist_ok=True)
-    shutil.copy2(os.path.join(LGPL_FFMPEG, "LICENSE.txt"), os.path.join(licenses, "ffmpeg-LGPL.txt"))
+    shutil.copy2(
+        os.path.join(LGPL_FFMPEG, "LICENSE.txt"),
+        os.path.join(licenses, "ffmpeg-LGPL.txt"),
+    )
     shutil.copy2(os.path.join(REPO, "packaging", "THIRD_PARTY_NOTICES.txt"), licenses)
 
 
@@ -103,7 +167,9 @@ def size_mb(folder):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=DEFAULT_OUT)
-    ap.add_argument("--door", help="the Apex door's address: makes this an open-beta build")
+    ap.add_argument(
+        "--door", help="the Apex door's address: makes this an open-beta build"
+    )
     args = ap.parse_args()
     app = pyinstaller(args.out)
     copy_voices(app)

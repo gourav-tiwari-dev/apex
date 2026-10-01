@@ -32,7 +32,9 @@ def steam_libraries(vdf_path=STEAM_LIBRARIES):
         return []
     with open(vdf_path, encoding="utf-8", errors="ignore") as f:
         text = f.read()
-    return [path.replace("\\\\", "\\") for path in re.findall(r'"path"\s+"([^"]+)"', text)]
+    return [
+        path.replace("\\\\", "\\") for path in re.findall(r'"path"\s+"([^"]+)"', text)
+    ]
 
 
 def find_lmu(vdf_path=STEAM_LIBRARIES):
@@ -52,8 +54,15 @@ def profile_from_answers(name, car, input_device, spicy, clips, old=None):
         car = "a GT3"
     if input_device not in INPUTS:
         input_device = "a wheel"
-    return Profile(name=name, car=car, input=input_device, habit=old.habit, spicy=bool(spicy),
-                   voice=old.voice, clips=bool(clips))
+    return Profile(
+        name=name,
+        car=car,
+        input=input_device,
+        habit=old.habit,
+        spicy=bool(spicy),
+        voice=old.voice,
+        clips=bool(clips),
+    )
 
 
 # ---------- the window ----------
@@ -64,7 +73,7 @@ class Wizard:
     def __init__(self, root):
         self.root = root
         self.old = load_profile()
-        self.button = None           # (controller name, button number) once pressed
+        self.button = None  # (controller name, button number) once pressed
         self.pygame = None
         root.title("Apex setup")
         root.configure(bg=BG)
@@ -76,25 +85,45 @@ class Wizard:
         style = ttk.Style(root)
         style.theme_use("clam")
         style.configure("TFrame", background=BG)
-        style.configure("TLabel", background=BG, foreground=INK, font=("Bahnschrift", 12))
+        style.configure(
+            "TLabel", background=BG, foreground=INK, font=("Bahnschrift", 12)
+        )
         style.configure("Head.TLabel", font=("Bahnschrift", 22, "bold"))
         style.configure("Dim.TLabel", foreground=DIM, font=("Bahnschrift", 11))
-        style.configure("Step.TLabel", foreground=ORANGE, font=("Bahnschrift", 11, "bold"))
-        style.configure("TRadiobutton", background=BG, foreground=INK, font=("Bahnschrift", 12))
-        style.configure("TCheckbutton", background=BG, foreground=INK, font=("Bahnschrift", 12))
+        style.configure(
+            "Step.TLabel", foreground=ORANGE, font=("Bahnschrift", 11, "bold")
+        )
+        style.configure(
+            "TRadiobutton", background=BG, foreground=INK, font=("Bahnschrift", 12)
+        )
+        style.configure(
+            "TCheckbutton", background=BG, foreground=INK, font=("Bahnschrift", 12)
+        )
         style.configure("Go.TButton", font=("Bahnschrift", 12, "bold"), padding=8)
         # the chosen option is orange, so which one is picked can't be misread
         for kind in ("TRadiobutton", "TCheckbutton"):
-            style.map(kind, indicatorcolor=[("selected", ORANGE), ("!selected", CARD)],
-                      background=[("active", BG)], foreground=[("active", INK)])
-        self.name = tk.StringVar(value="" if self.old.name == "the driver" else self.old.name)
+            style.map(
+                kind,
+                indicatorcolor=[("selected", ORANGE), ("!selected", CARD)],
+                background=[("active", BG)],
+                foreground=[("active", INK)],
+            )
+        self.name = tk.StringVar(
+            value="" if self.old.name == "the driver" else self.old.name
+        )
         self.car = tk.StringVar(value=self.old.car)
         self.input = tk.StringVar(value=self.old.input)
         # text, not a BooleanVar: a ttk radio button compares its value as text, and True never matched
         self.talk = tk.StringVar(value="spicy" if self.old.spicy else "clean")
         self.clips = tk.BooleanVar(value=self.old.clips)
         self.button_text = tk.StringVar(value="Waiting for a button...")
-        self.steps = [self.step_you, self.step_button, self.step_engineer, self.step_clips, self.step_game]
+        self.steps = [
+            self.step_you,
+            self.step_button,
+            self.step_engineer,
+            self.step_clips,
+            self.step_game,
+        ]
         self.at = 0
         self.page = None
         self.show()
@@ -104,15 +133,23 @@ class Wizard:
             self.page.destroy()
         self.page = ttk.Frame(self.root, padding=32)
         self.page.pack(fill="both", expand=True)
-        ttk.Label(self.page, text=f"STEP {self.at + 1} OF {len(self.steps)}", style="Step.TLabel").pack(anchor="w")
+        ttk.Label(
+            self.page,
+            text=f"STEP {self.at + 1} OF {len(self.steps)}",
+            style="Step.TLabel",
+        ).pack(anchor="w")
         self.steps[self.at]()
         buttons = ttk.Frame(self.page)
         buttons.pack(side="bottom", fill="x")
         if self.at > 0:
             ttk.Button(buttons, text="Back", command=self.back).pack(side="left")
         last = self.at == len(self.steps) - 1
-        ttk.Button(buttons, text="Finish" if last else "Next", style="Go.TButton",
-                   command=self.finish if last else self.next).pack(side="right")
+        ttk.Button(
+            buttons,
+            text="Finish" if last else "Next",
+            style="Go.TButton",
+            command=self.finish if last else self.next,
+        ).pack(side="right")
 
     def next(self):
         self.at += 1
@@ -123,33 +160,68 @@ class Wizard:
         self.show()
 
     def heading(self, text, under):
-        ttk.Label(self.page, text=text, style="Head.TLabel").pack(anchor="w", pady=(8, 4))
-        ttk.Label(self.page, text=under, style="Dim.TLabel", wraplength=round(520 * self.scale),
-                  justify="left").pack(anchor="w", pady=(0, 18))
+        ttk.Label(self.page, text=text, style="Head.TLabel").pack(
+            anchor="w", pady=(8, 4)
+        )
+        ttk.Label(
+            self.page,
+            text=under,
+            style="Dim.TLabel",
+            wraplength=round(520 * self.scale),
+            justify="left",
+        ).pack(anchor="w", pady=(0, 18))
 
     def choice(self, text, value, variable):
         """A big toggle that turns orange when picked: the theme's radio dots were too small to
         read at 200% scaling (30 Sep, his profile's choice looked unpicked)."""
-        tk.Radiobutton(self.page, text=text, value=value, variable=variable, indicatoron=0,
-                       font=("Bahnschrift", 12, "bold"), width=14, pady=6, bd=0, relief="flat",
-                       bg=CARD, fg=INK, activebackground=CARD, activeforeground=INK,
-                       selectcolor=ORANGE, cursor="hand2").pack(anchor="w", pady=3)
+        tk.Radiobutton(
+            self.page,
+            text=text,
+            value=value,
+            variable=variable,
+            indicatoron=0,
+            font=("Bahnschrift", 12, "bold"),
+            width=14,
+            pady=6,
+            bd=0,
+            relief="flat",
+            bg=CARD,
+            fg=INK,
+            activebackground=CARD,
+            activeforeground=INK,
+            selectcolor=ORANGE,
+            cursor="hand2",
+        ).pack(anchor="w", pady=3)
 
     def step_you(self):
-        self.heading("Your engineer", "Apex talks to you by name and knows what you drive.")
+        self.heading(
+            "Your engineer", "Apex talks to you by name and knows what you drive."
+        )
         ttk.Label(self.page, text="Your name").pack(anchor="w")
-        ttk.Entry(self.page, textvariable=self.name, font=("Bahnschrift", 13)).pack(fill="x", pady=(2, 14))
+        ttk.Entry(self.page, textvariable=self.name, font=("Bahnschrift", 13)).pack(
+            fill="x", pady=(2, 14)
+        )
         ttk.Label(self.page, text="What you race most").pack(anchor="w")
-        ttk.Combobox(self.page, textvariable=self.car, values=CARS, state="readonly", font=("Bahnschrift", 12)).pack(fill="x", pady=(2, 14))
+        ttk.Combobox(
+            self.page,
+            textvariable=self.car,
+            values=CARS,
+            state="readonly",
+            font=("Bahnschrift", 12),
+        ).pack(fill="x", pady=(2, 14))
         ttk.Label(self.page, text="You drive with").pack(anchor="w")
         for choice in INPUTS:
             self.choice(choice.split(" ", 1)[1].capitalize(), choice, self.input)
 
     def step_button(self):
-        self.heading("Your radio button",
-                     "Press the button on your wheel or controller that you'll HOLD to talk to Apex. "
-                     "Apex keeps hearing it while the game has focus.")
-        ttk.Label(self.page, textvariable=self.button_text, font=("Bahnschrift", 16, "bold")).pack(anchor="w", pady=20)
+        self.heading(
+            "Your radio button",
+            "Press the button on your wheel or controller that you'll HOLD to talk to Apex. "
+            "Apex keeps hearing it while the game has focus.",
+        )
+        ttk.Label(
+            self.page, textvariable=self.button_text, font=("Bahnschrift", 16, "bold")
+        ).pack(anchor="w", pady=20)
         self.listen_for_button()
 
     def listen_for_button(self):
@@ -157,10 +229,13 @@ class Wizard:
         if self.pygame is None:
             try:
                 from talk.ptt import start_sdl
+
                 self.pygame = start_sdl()
                 self.pads = {}
             except Exception as error:
-                self.button_text.set(f"Can't read controllers here ({error.__class__.__name__}).")
+                self.button_text.set(
+                    f"Can't read controllers here ({error.__class__.__name__})."
+                )
                 return
         pygame = self.pygame
         for event in pygame.event.get():
@@ -170,25 +245,35 @@ class Wizard:
             elif event.type == pygame.JOYBUTTONDOWN:
                 pad = self.pads.get(event.instance_id)
                 self.button = (pad.get_name() if pad else None, event.button)
-                self.button_text.set(f"Got it: button {event.button} on {self.button[0] or 'your device'}.")
+                self.button_text.set(
+                    f"Got it: button {event.button} on {self.button[0] or 'your device'}."
+                )
         if self.at == 1:
             self.root.after(20, self.listen_for_button)
 
     def step_engineer(self):
-        self.heading("How it talks",
-                     "Clean is straight talk. Spicy swears at the situation and the other cars, never at you. "
-                     "Neither mode ever uses a slur.")
+        self.heading(
+            "How it talks",
+            "Clean is straight talk. Spicy swears at the situation and the other cars, never at you. "
+            "Neither mode ever uses a slur.",
+        )
         self.choice("Clean", "clean", self.talk)
         self.choice("Spicy", "spicy", self.talk)
-        ttk.Button(self.page, text="Hear it", style="Go.TButton", command=self.voice_test).pack(anchor="w", pady=18)
+        ttk.Button(
+            self.page, text="Hear it", style="Go.TButton", command=self.voice_test
+        ).pack(anchor="w", pady=18)
 
     def voice_test(self):
-        line = ("Pass into the Esses. Not before. Oh, get in there! Fucking lovely."
-                if self.talk.get() == "spicy" else "Pass into the Esses. Not before. Oh, get in there! Lovely.")
+        line = (
+            "Pass into the Esses. Not before. Oh, get in there! Fucking lovely."
+            if self.talk.get() == "spicy"
+            else "Pass into the Esses. Not before. Oh, get in there! Lovely."
+        )
 
         def speak():
             try:
                 from radio.voice import Voice
+
                 Voice(out_loud=True, azure=False).say(line)
             except Exception as error:
                 print(f"[voice test: {error}]")
@@ -196,31 +281,49 @@ class Wizard:
         threading.Thread(target=speak, daemon=True).start()
 
     def step_clips(self):
-        self.heading("Auto-clips",
-                     "Apex records only the Le Mans Ultimate window, the game sound and your microphone "
-                     "while you race, then makes a short of your best radio moment after every race. "
-                     "Everything stays on this PC, in Videos\\Apex. You can turn it off any time.")
+        self.heading(
+            "Auto-clips",
+            "Apex records only the Le Mans Ultimate window, the game sound and your microphone "
+            "while you race, then makes a short of your best radio moment after every race. "
+            "Everything stays on this PC, in Videos\\Apex. You can turn it off any time.",
+        )
         self.choice("Yes, make shorts", True, self.clips)
         self.choice("No thanks", False, self.clips)
 
     def step_game(self):
         folder = find_lmu()
         if folder:
-            self.heading("You're set", "Found Le Mans Ultimate. Start the game and join a session: "
-                                       "Apex connects by itself when you start it.")
+            self.heading(
+                "You're set",
+                "Found Le Mans Ultimate. Start the game and join a session: "
+                "Apex connects by itself when you start it.",
+            )
         else:
-            self.heading("Almost set", "Apex couldn't find Le Mans Ultimate in your Steam libraries. "
-                                       "That's fine if it's installed somewhere else: Apex connects "
-                                       "to the running game either way.")
-        ttk.Label(self.page, text="Hold your radio button and ask:\n  \"How's the fuel?\"\n  \"Where am I losing time?\"\n  \"What's the plan?\"",
-                  justify="left").pack(anchor="w")
+            self.heading(
+                "Almost set",
+                "Apex couldn't find Le Mans Ultimate in your Steam libraries. "
+                "That's fine if it's installed somewhere else: Apex connects "
+                "to the running game either way.",
+            )
+        ttk.Label(
+            self.page,
+            text='Hold your radio button and ask:\n  "How\'s the fuel?"\n  "Where am I losing time?"\n  "What\'s the plan?"',
+            justify="left",
+        ).pack(anchor="w")
 
     def finish(self):
-        profile = profile_from_answers(self.name.get(), self.car.get(), self.input.get(),
-                                       self.talk.get() == "spicy", self.clips.get(), self.old)
+        profile = profile_from_answers(
+            self.name.get(),
+            self.car.get(),
+            self.input.get(),
+            self.talk.get() == "spicy",
+            self.clips.get(),
+            self.old,
+        )
         save_profile(profile)
         if self.button is not None:
             from talk.ptt import save_button
+
             save_button(*self.button)
         self.root.destroy()
 
@@ -229,6 +332,7 @@ def sharp_on_scaled_screens():
     """Without this Windows stretches the window on a 125-150% display and the text blurs."""
     try:
         import ctypes
+
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except (AttributeError, OSError):
         pass

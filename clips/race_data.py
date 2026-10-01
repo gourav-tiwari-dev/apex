@@ -39,8 +39,15 @@ def sample(tape_path):
             race = session.source.race
             place = race.me.place if race is not None and race.me is not None else None
             racecraft = session.racecraft
-            samples.append([round(now, 2), racecraft.gap_ahead, getattr(racecraft, "gap_behind", None), place,
-                            round(frame.speed_kmh, 1)])
+            samples.append(
+                [
+                    round(now, 2),
+                    racecraft.gap_ahead,
+                    getattr(racecraft, "gap_behind", None),
+                    place,
+                    round(frame.speed_kmh, 1),
+                ]
+            )
         return ended
 
     session.one_frame = watched
@@ -65,10 +72,17 @@ def write(tape_path, out):
             json.dump(rows, f)
         return out
     with tempfile.TemporaryDirectory() as scratch:
-        code = (f"import json, sys; sys.path.insert(0, {apex!r}); from clips.race_data import sample; "
-                f"json.dump(sample({os.path.abspath(tape_path)!r}), open({os.path.abspath(out)!r}, 'w'))")
-        subprocess.run([sys.executable, "-c", code], cwd=scratch, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        code = (
+            f"import json, sys; sys.path.insert(0, {apex!r}); from clips.race_data import sample; "
+            f"json.dump(sample({os.path.abspath(tape_path)!r}), open({os.path.abspath(out)!r}, 'w'))"
+        )
+        subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=scratch,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
     return out
 
 
@@ -77,7 +91,10 @@ def main():
     ap.add_argument("tape")
     ap.add_argument("--out")
     args = ap.parse_args()
-    out = args.out or os.path.splitext(os.path.splitext(args.tape)[0])[0] + ".race_data.json"
+    out = (
+        args.out
+        or os.path.splitext(os.path.splitext(args.tape)[0])[0] + ".race_data.json"
+    )
     write(args.tape, out)
     rows = json.load(open(out))
     print(f"[clips] {len(rows)} samples, sim {rows[0][0]}-{rows[-1][0]} s -> {out}")

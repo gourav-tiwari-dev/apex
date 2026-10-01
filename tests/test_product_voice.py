@@ -30,11 +30,18 @@ def test_a_slur_is_refused_even_when_swearing_is_on():
 
 def test_swearing_at_the_situation_is_still_fine_when_spicy():
     assert gate("Fucking send it.", call(), clean=False) == (True, "ok")
-    assert check_answer("Fucking send it into the Esses, mate.", [], clean=False) == (True, "ok")
+    assert check_answer("Fucking send it into the Esses, mate.", [], clean=False) == (
+        True,
+        "ok",
+    )
 
 
 def test_clean_mode_catches_the_forms_the_old_list_missed():
-    for line in ("You got fucked there.", "Bollocks. Reset.", "Stop being a prick about it."):
+    for line in (
+        "You got fucked there.",
+        "Bollocks. Reset.",
+        "Stop being a prick about it.",
+    ):
         assert gate(line, call(), clean=True)[0] is False, line
         assert check_answer(line, [], clean=True)[0] is False, line
 

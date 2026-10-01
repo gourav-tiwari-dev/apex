@@ -1,8 +1,9 @@
 """dist/Apex -> ApexSetup-<version>.exe with Inno Setup (product, 30 Sep 2026).
 
-    python packaging/build.py --out BUILD      (first: the app folder)
-    python packaging/make_installer.py BUILD [--version 0.1.0]
+python packaging/build.py --out BUILD      (first: the app folder)
+python packaging/make_installer.py BUILD [--version 0.1.0]
 """
+
 import argparse
 import os
 import subprocess
@@ -18,8 +19,16 @@ def main():
     args = ap.parse_args()
     source = os.path.join(os.path.abspath(args.build), "dist", "Apex")
     out = os.path.join(os.path.abspath(args.build), "installer")
-    subprocess.run([ISCC, f"/DSourceDir={source}", f"/DAppVersion={args.version}", f"/O{out}",
-                    os.path.join(HERE, "apex.iss")], check=True)
+    subprocess.run(
+        [
+            ISCC,
+            f"/DSourceDir={source}",
+            f"/DAppVersion={args.version}",
+            f"/O{out}",
+            os.path.join(HERE, "apex.iss"),
+        ],
+        check=True,
+    )
     for name in os.listdir(out):
         size = os.path.getsize(os.path.join(out, name)) / 1e6
         print(f"{os.path.join(out, name)}: {size:.0f} MB")

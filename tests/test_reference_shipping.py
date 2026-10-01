@@ -20,7 +20,13 @@ def test_monza_without_the_file_is_measured_like_any_track(tmp_path, monkeypatch
     conn = memory.connect_db("apex.db")
     session = add_session(conn, "tape.jsonl.gz", track="Autodromo Nazionale Monza")
     measured = []
-    monkeypatch.setattr(debrief, "reference_from_race", lambda *a: measured.append("race") or None)
-    monkeypatch.setattr(debrief, "reference_from_self", lambda *a: measured.append("self") or None)
-    assert debrief.reference_for(conn, session) is None       # no file, no other cars, no laps
+    monkeypatch.setattr(
+        debrief, "reference_from_race", lambda *a: measured.append("race") or None
+    )
+    monkeypatch.setattr(
+        debrief, "reference_from_self", lambda *a: measured.append("self") or None
+    )
+    assert (
+        debrief.reference_for(conn, session) is None
+    )  # no file, no other cars, no laps
     assert measured == ["race", "self"]

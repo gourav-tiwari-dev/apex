@@ -35,7 +35,9 @@ def read_door(path=SERVER_FILE):
 def post(url, body, token=None, raw=False, timeout=30):
     data = body if raw else json.dumps(body).encode("utf-8")
     request = urllib.request.Request(url, data=data, method="POST")
-    request.add_header("content-type", "application/gzip" if raw else "application/json")
+    request.add_header(
+        "content-type", "application/gzip" if raw else "application/json"
+    )
     # Cloudflare refuses Python's default "Python-urllib" signature with error 1010 (found 1 Oct
     # testing the installed beta: every tester's registration would have failed)
     request.add_header("user-agent", f"Apex/{APP_VERSION}")
@@ -49,13 +51,15 @@ def ensure_registered(path=SERVER_FILE):
     """A beta install without a token asks the door for one. True once it has one."""
     door = read_door(path)
     if door is None:
-        return False                     # not a beta install (a developer's machine)
+        return False  # not a beta install (a developer's machine)
     if door.get("token"):
         return True
     try:
         door["token"] = post(door["url"].rstrip("/") + "/v1/register", {})["token"]
     except Exception as error:
-        print(f"[beta: couldn't register yet ({error.__class__.__name__}) - the coach waits]")
+        print(
+            f"[beta: couldn't register yet ({error.__class__.__name__}) - the coach waits]"
+        )
         return False
     with open(path, "w", encoding="utf-8") as f:
         json.dump(door, f, indent=1)
@@ -67,7 +71,10 @@ def anonymised_tape(path):
     (the same N for the same driver all race)."""
     codes = {}
     out = io.BytesIO()
-    with gzip.open(path, "rt", encoding="utf-8") as source, gzip.open(out, "wt", encoding="utf-8") as target:
+    with (
+        gzip.open(path, "rt", encoding="utf-8") as source,
+        gzip.open(out, "wt", encoding="utf-8") as target,
+    ):
         for line in source:
             frame = json.loads(line)
             if isinstance(frame.get("me"), dict) and "driver" in frame["me"]:
@@ -86,15 +93,28 @@ def race_summary(conn, session_id):
     """What the race was and everything the radio said: enough to read a complaint against."""
     row = conn.execute(
         "SELECT track, session_type, grid, final_place, car_class, car_model, end_reason, tape_path "
-        "FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    keys = ["track", "session_type", "grid", "final_place", "car_class", "car_model", "end_reason", "tape_path"]
+        "FROM sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    keys = [
+        "track",
+        "session_type",
+        "grid",
+        "final_place",
+        "car_class",
+        "car_model",
+        "end_reason",
+        "tape_path",
+    ]
     summary = dict(zip(keys, row)) if row else {}
     summary["tape"] = os.path.basename(summary.pop("tape_path", None) or "")
     summary["radio"] = [
         {"t": round(r[0], 1), "seat": r[1], "kind": r[2], "line": r[3]}
         for r in conn.execute(
             "SELECT sim_time, seat, kind, line FROM radio_log WHERE session_id = ? AND status = 'spoken' "
-            "AND line IS NOT NULL ORDER BY sim_time", (session_id,))
+            "AND line IS NOT NULL ORDER BY sim_time",
+            (session_id,),
+        )
     ]
     return summary
 
@@ -106,7 +126,12 @@ def send_feedback(conn, session_id, rating, comment, send_tape, path=SERVER_FILE
         return None
     base = door["url"].rstrip("/") + "/v1/feedback"
     summary = race_summary(conn, session_id)
-    body = {"version": APP_VERSION, "rating": rating, "comment": comment.strip(), "race": summary}
+    body = {
+        "version": APP_VERSION,
+        "rating": rating,
+        "comment": comment.strip(),
+        "race": summary,
+    }
     try:
         feedback_id = post(base, body, door["token"])["id"]
     except Exception as error:
@@ -117,7 +142,13 @@ def send_feedback(conn, session_id, rating, comment, send_tape, path=SERVER_FILE
         data = anonymised_tape(tape)
         if len(data) <= TAPE_LIMIT:
             try:
-                post(f"{base}/{urllib.parse.quote(feedback_id)}/tape", data, door["token"], raw=True, timeout=120)
+                post(
+                    f"{base}/{urllib.parse.quote(feedback_id)}/tape",
+                    data,
+                    door["token"],
+                    raw=True,
+                    timeout=120,
+                )
             except Exception as error:
                 print(f"[beta: tape not sent ({error.__class__.__name__})]")
         else:
@@ -140,30 +171,69 @@ def ask_after_race(conn, session_id, path=SERVER_FILE):
     root.configure(bg="#0b0e12", padx=24, pady=20)
     root.attributes("-topmost", True)
     style = {"bg": "#0b0e12", "fg": "#eef1f4", "font": ("Bahnschrift", 12)}
-    tk.Label(root, text="How was the radio this race?", **{**style, "font": ("Bahnschrift", 16, "bold")}).pack(anchor="w")
+    tk.Label(
+        root,
+        text="How was the radio this race?",
+        **{**style, "font": ("Bahnschrift", 16, "bold")},
+    ).pack(anchor="w")
     rating = tk.IntVar(value=0)
     row = tk.Frame(root, bg="#0b0e12")
     row.pack(anchor="w", pady=10)
     for score in range(1, 6):
-        tk.Radiobutton(row, text=str(score), value=score, variable=rating, indicatoron=0, width=4,
-                       font=("Bahnschrift", 13, "bold"), bg="#141920", fg="#eef1f4", selectcolor="#ff5b1f",
-                       bd=0, relief="flat").pack(side="left", padx=3)
-    tk.Label(root, text="What was wrong, or what do you want it to do?", **style).pack(anchor="w")
+        tk.Radiobutton(
+            row,
+            text=str(score),
+            value=score,
+            variable=rating,
+            indicatoron=0,
+            width=4,
+            font=("Bahnschrift", 13, "bold"),
+            bg="#141920",
+            fg="#eef1f4",
+            selectcolor="#ff5b1f",
+            bd=0,
+            relief="flat",
+        ).pack(side="left", padx=3)
+    tk.Label(root, text="What was wrong, or what do you want it to do?", **style).pack(
+        anchor="w"
+    )
     comment = tk.Text(root, width=48, height=4, font=("Bahnschrift", 11))
     comment.pack(anchor="w", pady=(2, 10))
     send_tape = tk.BooleanVar(value=True)
-    tk.Checkbutton(root, text="Send this race's tape so the bug can be replayed\n"
-                              "(other drivers' names are removed first)",
-                   variable=send_tape, justify="left", bg="#0b0e12", fg="#eef1f4", selectcolor="#141920",
-                   activebackground="#0b0e12", activeforeground="#eef1f4", font=("Bahnschrift", 11)).pack(anchor="w")
+    tk.Checkbutton(
+        root,
+        text="Send this race's tape so the bug can be replayed\n"
+        "(other drivers' names are removed first)",
+        variable=send_tape,
+        justify="left",
+        bg="#0b0e12",
+        fg="#eef1f4",
+        selectcolor="#141920",
+        activebackground="#0b0e12",
+        activeforeground="#eef1f4",
+        font=("Bahnschrift", 11),
+    ).pack(anchor="w")
 
     def done():
-        answer.update(rating=rating.get(), comment=comment.get("1.0", "end"), tape=send_tape.get())
+        answer.update(
+            rating=rating.get(), comment=comment.get("1.0", "end"), tape=send_tape.get()
+        )
         root.destroy()
 
-    tk.Button(root, text="Send", command=done, font=("Bahnschrift", 12, "bold"), bg="#ff5b1f", fg="#07090c",
-              bd=0, padx=18, pady=6).pack(anchor="e", pady=(14, 0))
+    tk.Button(
+        root,
+        text="Send",
+        command=done,
+        font=("Bahnschrift", 12, "bold"),
+        bg="#ff5b1f",
+        fg="#07090c",
+        bd=0,
+        padx=18,
+        pady=6,
+    ).pack(anchor="e", pady=(14, 0))
     root.mainloop()
     if not answer or (answer["rating"] == 0 and not answer["comment"].strip()):
         return None
-    return send_feedback(conn, session_id, answer["rating"], answer["comment"], answer["tape"], path)
+    return send_feedback(
+        conn, session_id, answer["rating"], answer["comment"], answer["tape"], path
+    )

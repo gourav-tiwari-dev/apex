@@ -38,8 +38,10 @@ def main():
     import apex
     import beta
 
-    beta.ensure_registered()      # a beta install gets its own AI token on the first start
-    print("Apex is listening. Start a session in Le Mans Ultimate. Ctrl+C here to stop.")
+    beta.ensure_registered()  # a beta install gets its own AI token on the first start
+    print(
+        "Apex is listening. Start a session in Le Mans Ultimate. Ctrl+C here to stop."
+    )
     apex.main(args)
 
 
