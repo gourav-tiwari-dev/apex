@@ -38,3 +38,6 @@ server/testers.json
 # a tester's own token for the AI door (written by the installer's invite step)
 server.json
 !server/README.md
+
+# testers' feedback and tapes pulled by server/inbox.py: private
+server/inbox/

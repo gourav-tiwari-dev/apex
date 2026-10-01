@@ -8,7 +8,14 @@ Tests: `node server/worker.test.mjs`.
 1. Make a free Cloudflare account at https://dash.cloudflare.com/sign-up
 2. From `apex_telemetry/server`: `npx wrangler login` (opens the browser once)
 3. `npx wrangler secret put AICREDITS_API_KEY`, then paste the key from `.env`
-4. `npx wrangler deploy`. It prints the door's address, `https://apex-ai-door.<you>.workers.dev`
+4. `npx wrangler kv namespace create TESTERS` and `npx wrangler kv namespace create FEEDBACK`, then
+   put the two printed ids into wrangler.toml
+5. `npx wrangler deploy`. It prints the door's address, `https://apex-ai-door.<you>.workers.dev`
+6. Beta build: `python packaging/build.py --out BUILD --door https://apex-ai-door.<you>.workers.dev`,
+   then `python packaging/make_installer.py BUILD`. Each install registers its own token.
+
+## Reading the beta
+`python server/inbox.py --replay`: feedback newest first, downloads tapes and replays them.
 
 ## Each new tester
 1. `python server/new_tester.py their@email`. It prints their token and the new TESTER_TOKENS
