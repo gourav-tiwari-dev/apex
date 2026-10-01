@@ -7,7 +7,8 @@ import os
 
 from clips import auto
 from clips.find_moments import keep_in_order, norm_words, place_all
-from clips.make_short import chunks, pick_ask, pick_hook, star, timed_line_words
+from clips.captions import chunks, star
+from clips.beats import pick_ask, pick_hook, timed_line_words
 
 
 def words(text):
@@ -62,11 +63,10 @@ def test_the_hook_is_the_attack_plan_followed_soonest_by_a_pass():
         radio_line("PASS_PRAISE", 85.0, "Simply lovely, mate. Great tow."),
     ]
     hook = pick_hook(radio)
-    assert [beat[0] for beat in hook] == ["hook", "hook"]
-    assert hook[0][3][0]["line"].startswith("You're faster out of Arnage")
-    assert (
-        hook[0][2] < 70.0 + 6.0 + 0.5
-    )  # the call is cut at a sentence end, not run long
+    assert [beat.kind for beat in hook] == ["hook", "hook"]
+    assert hook[0].lines[0]["line"].startswith("You're faster out of Arnage")
+    # the call is cut at a sentence end, not run long
+    assert hook[0].end < 70.0 + 6.0 + 0.5
 
 
 def test_a_line_with_a_slur_is_never_picked():
@@ -89,8 +89,8 @@ def test_a_long_wait_for_the_answer_is_jump_cut():
         "ANSWER_AGENT", 104.0, "Yeah, you got hit. Damage on the car.", "race_engineer"
     )
     beats = pick_ask([answer], [question])
-    assert [b[0] for b in beats] == ["ask", "answer"]
-    assert beats[0][2] < 102.0 and beats[1][1] > 103.5
+    assert [beat.kind for beat in beats] == ["ask", "answer"]
+    assert beats[0].end < 102.0 and beats[1].start > 103.5
 
 
 def test_captions_show_apex_words_with_whispers_timing():
@@ -164,7 +164,7 @@ def test_practice_recordings_are_deleted_and_nothing_is_built(tmp_path):
 
 def test_the_hook_cuts_to_the_pass_the_data_saw_not_three_seconds_before_the_praise():
     # session 59: the pass at ~359 s, the praise waited for a quiet radio until 373.8 s
-    from clips.make_short import passes, pick_hook_measured
+    from clips.beats import passes, pick_hook_measured
 
     race = [[t / 10, 0.1, None, 8 if t < 3590 else 7, 200.0] for t in range(3400, 3800)]
     assert passes(race) == [(359.0, 8, 7)]
@@ -187,22 +187,24 @@ def test_the_hook_cuts_to_the_pass_the_data_saw_not_three_seconds_before_the_pra
         },
     ]
     beats = pick_hook_measured(radio, race)
-    lines = [ln["kind"] for beat in beats for ln in beat[3]]
-    assert lines[0] == "ATTACK_PLAN"  # the plan that set THIS pass up, not "stick it"
-    pass_beat = next(b for b in beats if b[0] == "pass")
-    assert pass_beat[4] == {"pass_sim": 359.0, "before": 8, "after": 7}
-    assert (
-        pass_beat[1] <= 79.0 <= pass_beat[2]
-    )  # sim 359 = video 79: the pass is on screen
+    # the plan that set THIS pass up, not "stick it"
+    assert beats[0].lines[0]["kind"] == "ATTACK_PLAN"
+    pass_beats = [beat for beat in beats if beat.kind == "pass"]
+    assert pass_beats[0].overtake == {"pass_sim": 359.0, "before": 8, "after": 7}
+    # sim 359 = video 79: the pass is on screen
+    assert pass_beats[0].start <= 79.0 <= pass_beats[0].end
 
 
 def test_the_gap_is_shown_in_metres_and_never_as_minus_zero():
-    from clips.make_short import Captions
+    from clips.captions import Captions
+    from clips.beats import Beat, VideoClock
 
     caps = Captions()
     race = [[10.0, 0.14, None, 8, 200.0], [10.1, -0.0, None, 8, 200.0]]
-    caps.gap_ticker(race, 10.2, lambda sim: sim, 0.0, 0.0, 20.0)
-    texts = [e[3] for e in caps.events]
+    the_pass = Beat("pass", 0.0, 20.0, [], overtake={"pass_sim": 10.2})
+    same_time = VideoClock([{"matched": True, "sim_time": 0.0, "video_t": 0.0}])
+    caps.gap_ticker(race, the_pass, same_time, 0.0)
+    texts = [event[3] for event in caps.events]
     assert texts[0].endswith("GAP 7.8 m") and texts[1].endswith("GAP 0.0 m")
 
 

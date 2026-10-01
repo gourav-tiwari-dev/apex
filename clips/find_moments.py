@@ -3,23 +3,31 @@
     python -m clips.find_moments RECORDING.mp4 [--session ID] [--out moments.json]
 
 How it works:
-1. faster-whisper (small.en, GPU) transcribes the recording with word timings. With the NVIDIA
-   App's "separate both tracks", audio stream 0 is the game + Apex and stream 1 is the mic; both
-   are transcribed, and mic speech becomes the driver's questions.
-2. Each spoken line in apex.db's radio_log is searched for in the transcript (word-window fuzzy
-   match). A match pins that line's sim time to a video time.
-3. Only matches that keep time order are trusted (a line said later in the race must sit later
-   in the video). Lines Whisper missed get a video time interpolated from their neighbours, so
-   pauses in the game don't break the timing.
+1. faster-whisper (small.en, GPU) transcribes the recording with word timings. With
+   the NVIDIA App's "separate both tracks", audio stream 0 is the game + Apex and
+   stream 1 is the mic; both are transcribed, and mic speech becomes the driver's
+   questions.
+2. Each spoken line in apex.db's radio_log is searched for in the transcript
+   (word-window fuzzy match). A match pins that line's sim time to a video time.
+3. Only matches that keep time order are trusted (a line said later in the race must sit
+   later in the video). Lines Whisper missed get a video time from their nearest matched
+   neighbour, so pauses in the game don't break the timing.
 If --session is not given, the session whose lines match best is picked.
 """
 
-import argparse, bisect, json, os, re, sqlite3, subprocess
+import argparse
+import bisect
+import json
+import os
+import re
+import sqlite3
+import subprocess
 from difflib import SequenceMatcher
 
 APEX_DB = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "apex.db"
 )
+# Whisper writes small numbers as words, Apex as digits
 NUMBERS = {
     "zero": "0",
     "one": "1",
@@ -35,16 +43,37 @@ NUMBERS = {
     "eleven": "11",
     "twelve": "12",
 }
-MIN_RATIO = 0.72
+MIN_RATIO = 0.72  # a window at least this much like the line is where it was said
+SHORTEST_LINE = 3  # words; shorter lines match anything
+SHORTEST_WINDOW = 2  # words
+FIRST_WORDS = 3  # a window starts at one of the line's first 3 words,
+WORDS_BACK = 3  # or up to 2 words before it
+QUESTION_PAUSE_S = 0.8  # a longer pause ends what he was saying
+SHORTEST_QUESTION = 2  # words
+# said after the race, in the debrief: never in the recording
 SKIP_KINDS = {"VERDICT", "DEBRIEF", "DEBRIEF_TC_UP", "DEBRIEF_INCIDENTS"}
+SPOKEN_LINES = (
+    "SELECT id, sim_time, seat, kind, line FROM radio_log WHERE session_id = ? "
+    "AND status = 'spoken' AND line IS NOT NULL AND sim_time > 0 ORDER BY sim_time"
+)
+SESSIONS_WITH_RADIO = (
+    "SELECT session_id FROM radio_log WHERE status='spoken' GROUP BY session_id "
+    "HAVING COUNT(*) >= 5"
+)
 
 
 def norm_words(text):
+    """Words as both sides can match them: lower case, no punctuation, numbers as
+    digits."""
     words = re.findall(r"[a-z0-9]+(?:\.[0-9]+)?", text.lower().replace("'", ""))
-    return [NUMBERS.get(w, w) for w in words]
+    normal = []
+    for word in words:
+        normal.append(NUMBERS.get(word, word))
+    return normal
 
 
 def audio_streams(video):
+    """How many sound tracks the recording has."""
     out = subprocess.run(
         [
             "ffprobe",
@@ -62,10 +91,11 @@ def audio_streams(video):
         text=True,
         check=True,
     ).stdout
-    return len([x for x in out.split() if x.strip()])
+    return len(out.split())
 
 
 def transcribe(video, stream, model):
+    """Every word Whisper hears on one sound track, with its time."""
     wav = os.path.splitext(video)[0] + f".a{stream}.wav"
     subprocess.run(
         [
@@ -89,213 +119,296 @@ def transcribe(video, stream, model):
         wav, word_timestamps=True, vad_filter=True, language="en"
     )
     words = []
-    for seg in segments:
-        for w in seg.words:
-            for token in norm_words(w.word):
+    for segment in segments:
+        for heard in segment.words:
+            for token in norm_words(heard.word):
                 words.append(
                     {
                         "w": token,
-                        "start": round(w.start, 3),
-                        "end": round(w.end, 3),
-                        "raw": w.word.strip(),
+                        "start": round(heard.start, 3),
+                        "end": round(heard.end, 3),
+                        "raw": heard.word.strip(),
                     }
                 )
     return words
 
 
 def spoken_lines(conn, session_id):
-    rows = conn.execute(
-        "SELECT id, sim_time, seat, kind, line FROM radio_log WHERE session_id = ? AND status = 'spoken' "
-        "AND line IS NOT NULL AND sim_time > 0 ORDER BY sim_time",
-        (session_id,),
-    ).fetchall()
-    return [
-        {"id": r[0], "sim_time": r[1], "seat": r[2], "kind": r[3], "line": r[4]}
-        for r in rows
-        if r[3] not in SKIP_KINDS
-    ]
+    """The session's spoken lines in sim-time order, without the debrief's."""
+    lines = []
+    for row_id, sim_time, seat, kind, line in conn.execute(SPOKEN_LINES, (session_id,)):
+        if kind in SKIP_KINDS:
+            continue
+        lines.append(
+            {
+                "id": row_id,
+                "sim_time": sim_time,
+                "seat": seat,
+                "kind": kind,
+                "line": line,
+            }
+        )
+    return lines
 
 
 def best_window(tokens, words, index):
-    """The transcript window that looks most like this line: (ratio, first word, last word)."""
-    n = len(tokens)
-    starts = set()
-    for t in tokens[:3]:
-        for i in index.get(t, []):
-            for back in range(3):
-                if i - back >= 0:
-                    starts.add(i - back)
+    """The transcript window that looks most like this line: (ratio, first word, last
+    word)."""
+    count = len(tokens)
     best = (0.0, None, None)
-    for s in starts:
-        for size in (n - 1, n, n + 1):
-            if size < 2 or s + size > len(words):
+    for start in window_starts(tokens, index):
+        for size in (count - 1, count, count + 1):
+            if size < SHORTEST_WINDOW or start + size > len(words):
                 continue
-            window = [w["w"] for w in words[s : s + size]]
-            r = SequenceMatcher(None, tokens, window, autojunk=False).ratio()
-            if r > best[0]:
-                best = (r, s, s + size - 1)
+            ratio = window_ratio(tokens, words, start, size)
+            if ratio > best[0]:
+                best = (ratio, start, start + size - 1)
     return best
 
 
+def window_starts(tokens, index):
+    """Where a window may start: at, or up to 2 words before, any place the transcript
+    has one of the line's first 3 words."""
+    starts = set()
+    for token in tokens[:FIRST_WORDS]:
+        for position in index.get(token, []):
+            add_starts_back_from(starts, position)
+    return starts
+
+
+def add_starts_back_from(starts, position):
+    """This word and the 2 before it."""
+    for back in range(WORDS_BACK):
+        if position - back >= 0:
+            starts.add(position - back)
+
+
+def window_ratio(tokens, words, start, size):
+    """How alike the line and this window of the transcript are, 0 to 1."""
+    window = []
+    for word in words[start : start + size]:
+        window.append(word["w"])
+    return SequenceMatcher(None, tokens, window, autojunk=False).ratio()
+
+
 def match_session(lines, words):
+    """Every line found in the transcript, kept only while they stay in time order."""
     index = {}
-    for i, w in enumerate(words):
-        index.setdefault(w["w"], []).append(i)
+    for position, word in enumerate(words):
+        index.setdefault(word["w"], []).append(position)
     hits = []
-    for ln in lines:
-        tokens = norm_words(ln["line"])
-        if len(tokens) < 3:
+    for line in lines:
+        tokens = norm_words(line["line"])
+        if len(tokens) < SHORTEST_LINE:
             continue
-        ratio, a, b = best_window(tokens, words, index)
-        if ratio >= MIN_RATIO:
-            hits.append(
-                {
-                    **ln,
-                    "ratio": round(ratio, 3),
-                    "w0": a,
-                    "w1": b,
-                    "video_t": words[a]["start"],
-                    "video_end": words[b]["end"],
-                }
-            )
+        ratio, first, last = best_window(tokens, words, index)
+        if ratio < MIN_RATIO:
+            continue
+        hit = dict(line)
+        hit["ratio"] = round(ratio, 3)
+        hit["w0"] = first
+        hit["w1"] = last
+        hit["video_t"] = words[first]["start"]
+        hit["video_end"] = words[last]["end"]
+        hits.append(hit)
     return keep_in_order(hits)
+
+
+def sim_time_of(hit):
+    """When a hit's line was said in the race."""
+    return hit["sim_time"]
 
 
 def keep_in_order(hits):
     """Longest run of matches whose video times rise with their sim times."""
-    hits = sorted(hits, key=lambda h: h["sim_time"])
-    tails, tail_idx, prev = [], [], [None] * len(hits)
-    for i, h in enumerate(hits):
-        k = bisect.bisect_left(tails, h["video_t"])
-        if k > 0:
-            prev[i] = tail_idx[k - 1]
-        if k == len(tails):
-            tails.append(h["video_t"])
-            tail_idx.append(i)
+    hits = sorted(hits, key=sim_time_of)
+    tails = []  # tails[n]: the lowest video time that ends a rising run of n + 1 hits
+    tail_hits = []  # which hit that is
+    previous = [None] * len(hits)  # the hit before each one in its run
+    for position, hit in enumerate(hits):
+        run = bisect.bisect_left(tails, hit["video_t"])
+        if run > 0:
+            previous[position] = tail_hits[run - 1]
+        if run == len(tails):
+            tails.append(hit["video_t"])
+            tail_hits.append(position)
         else:
-            tails[k] = h["video_t"]
-            tail_idx[k] = i
-    chain, i = [], tail_idx[-1] if tail_idx else None
-    while i is not None:
-        chain.append(hits[i])
-        i = prev[i]
-    return chain[::-1]
+            tails[run] = hit["video_t"]
+            tail_hits[run] = position
+    chain = []
+    position = None
+    if tail_hits:
+        position = tail_hits[-1]
+    while position is not None:
+        chain.append(hits[position])
+        position = previous[position]
+    chain.reverse()
+    return chain
 
 
 def place_all(lines, hits):
-    """Every line gets a video time: its own match, or interpolated between matched neighbours."""
+    """Every line gets a video time: its own match, or the offset of its nearest matched
+    neighbour."""
     if not hits:
         return []
-    sims = [h["sim_time"] for h in hits]
-    by_id = {h["id"]: h for h in hits}
+    sims = []
+    by_id = {}
+    for hit in hits:
+        sims.append(hit["sim_time"])
+        by_id[hit["id"]] = hit
     placed = []
-    for ln in lines:
-        if ln["id"] in by_id:
-            placed.append({**by_id[ln["id"]], "matched": True})
+    for line in lines:
+        if line["id"] in by_id:
+            found = dict(by_id[line["id"]])
+            found["matched"] = True
+            placed.append(found)
             continue
-        k = bisect.bisect_left(sims, ln["sim_time"])
-        lo, hi = hits[max(k - 1, 0)], hits[min(k, len(hits) - 1)]
-        offset = (
-            lo["video_t"] - lo["sim_time"]
-            if abs(ln["sim_time"] - lo["sim_time"])
-            <= abs(hi["sim_time"] - ln["sim_time"])
-            else hi["video_t"] - hi["sim_time"]
-        )
-        placed.append(
-            {**ln, "matched": False, "video_t": round(ln["sim_time"] + offset, 3)}
-        )
+        offset = nearest_offset(line, hits, sims)
+        guessed = dict(line)
+        guessed["matched"] = False
+        guessed["video_t"] = round(line["sim_time"] + offset, 3)
+        placed.append(guessed)
     return placed
+
+
+def nearest_offset(line, hits, sims):
+    """Video time minus sim time of the matched line nearest in sim time."""
+    after_index = bisect.bisect_left(sims, line["sim_time"])
+    before = hits[max(after_index - 1, 0)]
+    after = hits[min(after_index, len(hits) - 1)]
+    to_before = abs(line["sim_time"] - before["sim_time"])
+    to_after = abs(after["sim_time"] - line["sim_time"])
+    if to_before <= to_after:
+        return before["video_t"] - before["sim_time"]
+    return after["video_t"] - after["sim_time"]
 
 
 def questions(words, radio_hits, from_mic):
     """Speech that is not Apex: the driver's push-to-talk questions."""
     used = set()
-    for h in radio_hits:
-        used.update(range(h["w0"], h["w1"] + 1))
-    free = [w for i, w in enumerate(words) if from_mic or i not in used]
-    groups, cur = [], []
-    for w in free:
-        if cur and w["start"] - cur[-1]["end"] > 0.8:
-            groups.append(cur)
-            cur = []
-        cur.append(w)
-    if cur:
-        groups.append(cur)
-    return [
-        {
-            "video_t": g[0]["start"],
-            "video_end": g[-1]["end"],
-            "text": " ".join(x["raw"] for x in g),
-        }
-        for g in groups
-        if len(g) >= 2
-    ]
+    for hit in radio_hits:
+        used.update(range(hit["w0"], hit["w1"] + 1))
+    free = []
+    for position, word in enumerate(words):
+        if from_mic or position not in used:
+            free.append(word)
+    asked = []
+    for group in pauses_apart(free):
+        if len(group) >= SHORTEST_QUESTION:
+            asked.append(question_of(group))
+    return asked
 
 
-def find(video, db_path, session=None, out=None):
-    """Writes VIDEO.moments.json and returns its path."""
+def pauses_apart(words):
+    """Words grouped by what he said in one go: a pause over 0.8 s starts a group."""
+    groups = []
+    current = []
+    for word in words:
+        if current and word["start"] - current[-1]["end"] > QUESTION_PAUSE_S:
+            groups.append(current)
+            current = []
+        current.append(word)
+    if current:
+        groups.append(current)
+    return groups
+
+
+def question_of(group):
+    """A question: when he started and stopped, and his words."""
+    said = []
+    for word in group:
+        said.append(word["raw"])
+    return {
+        "video_t": group[0]["start"],
+        "video_end": group[-1]["end"],
+        "text": " ".join(said),
+    }
+
+
+def whisper_model():
+    """small.en on the graphics card, or on the processor when that fails."""
     from faster_whisper import WhisperModel
 
     try:
-        model = WhisperModel("small.en", device="cuda", compute_type="float16")
+        return WhisperModel("small.en", device="cuda", compute_type="float16")
     except Exception:
-        model = WhisperModel("small.en", device="cpu", compute_type="int8")
+        return WhisperModel("small.en", device="cpu", compute_type="int8")
 
-    streams = audio_streams(video)
-    game_words = transcribe(video, 0, model)
-    mic_words = transcribe(video, 1, model) if streams > 1 else None
 
+def best_session(db_path, session, game_words):
+    """(session id, hits, lines) of the session whose lines match best: the one asked
+    for, or any session with radio. (None, [], []) when nothing matches."""
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     if session:
         candidates = [session]
     else:
-        candidates = [
-            r[0]
-            for r in conn.execute(
-                "SELECT session_id FROM radio_log WHERE status='spoken' GROUP BY session_id HAVING COUNT(*) >= 5"
-            )
-        ]
+        candidates = []
+        for row in conn.execute(SESSIONS_WITH_RADIO):
+            candidates.append(row[0])
     best = (None, [], [])
-    for sid in candidates:
-        lines = spoken_lines(conn, sid)
+    for session_id in candidates:
+        lines = spoken_lines(conn, session_id)
         hits = match_session(lines, game_words)
         if len(hits) > len(best[1]):
-            best = (sid, hits, lines)
+            best = (session_id, hits, lines)
     conn.close()
-    sid, hits, lines = best
-    placed = place_all(lines, hits)
-    asked = (
-        questions(mic_words, [], True)
-        if mic_words is not None
-        else questions(game_words, hits, False)
-    )
+    return best
+
+
+def without_word_numbers(line):
+    """A placed line as moments.json keeps it: w0 and w1 only matter while matching."""
+    kept = {}
+    for key, value in line.items():
+        if key not in ("w0", "w1"):
+            kept[key] = value
+    return kept
+
+
+def find(video, db_path, session=None, out=None):
+    """Writes VIDEO.moments.json and returns its path."""
+    model = whisper_model()
+    streams = audio_streams(video)
+    game_words = transcribe(video, 0, model)
+    mic_words = None
+    if streams > 1:
+        mic_words = transcribe(video, 1, model)
+    session_id, hits, lines = best_session(db_path, session, game_words)
+    radio = []
+    for line in place_all(lines, hits):
+        radio.append(without_word_numbers(line))
+    if mic_words is not None:
+        asked = questions(mic_words, [], True)
+    else:
+        asked = questions(game_words, hits, False)
     result = {
         "video": os.path.abspath(video),
-        "session": sid,
+        "session": session_id,
         "matched": len(hits),
         "lines": len(lines),
-        "radio": [
-            {k: v for k, v in p.items() if k not in ("w0", "w1")} for p in placed
-        ],
+        "radio": radio,
         "words": game_words,
         "questions": asked,
     }
-    path = out or os.path.splitext(video)[0] + ".moments.json"
-    json.dump(result, open(path, "w"), indent=1)
+    path = out
+    if not path:
+        path = os.path.splitext(video)[0] + ".moments.json"
+    with open(path, "w") as f:
+        json.dump(result, f, indent=1)
     print(
-        f"[clips] session {sid}: {len(hits)} of {len(lines)} radio lines found by ear; "
-        f"{len(asked)} questions; wrote {path}"
+        f"[clips] session {session_id}: {len(hits)} of {len(lines)} radio lines "
+        f"found by ear; {len(asked)} questions; wrote {path}"
     )
     return path
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("video")
-    ap.add_argument("--session", type=int)
-    ap.add_argument("--db", default=APEX_DB)
-    ap.add_argument("--out")
-    args = ap.parse_args()
+    """The command line: python -m clips.find_moments RECORDING.mp4 [options]."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video")
+    parser.add_argument("--session", type=int)
+    parser.add_argument("--db", default=APEX_DB)
+    parser.add_argument("--out")
+    args = parser.parse_args()
     find(args.video, args.db, args.session, args.out)
 
 

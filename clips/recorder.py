@@ -1,14 +1,15 @@
-"""Records a race the way the NVIDIA App would, so auto-clips need nothing else installed.
+"""Records a race like the NVIDIA App does, so auto-clips need nothing else installed.
 
-Picture: only the Le Mans Ultimate window (Windows Graphics Capture through ffmpeg's gfxcapture),
-never the desktop. Encoded on the graphics card's own encoder when there is one (NVENC, AMD,
-Intel), in 30 s pieces so a crash loses at most the last piece. Measured 30 Sep on his laptop:
-2560x1600 at 60 fps for about 4% extra CPU on the desktop (ddagrab does not work on a laptop
-whose screen hangs off the integrated GPU, gfxcapture does).
-Sound: what the driver hears (WASAPI loopback: the game and Apex's radio) and the microphone
-(his push-to-talk questions), each to its own file.
-stop() joins them into one file shaped like an NVIDIA recording: video, audio 0 = game + radio,
-audio 1 = microphone. That is the shape clips/find_moments.py reads.
+Picture: only the Le Mans Ultimate window (Windows Graphics Capture through ffmpeg's
+gfxcapture), never the desktop. Encoded on the graphics card's own encoder when there is
+one (NVENC, AMD, Intel), in 30 s pieces so a crash loses at most the last piece.
+Measured 30 Sep on his laptop: 2560x1600 at 60 fps for about 4% extra CPU on the desktop
+(ddagrab does not work on a laptop whose screen hangs off the integrated GPU, gfxcapture
+does).
+Sound: what the driver hears (WASAPI loopback: the game and Apex's radio) and the
+microphone (his push-to-talk questions), each to its own file.
+stop() joins them into one file shaped like an NVIDIA recording: video, audio 0 = game +
+radio, audio 1 = microphone. That is the shape clips/find_moments.py reads.
 """
 
 import os
@@ -24,8 +25,9 @@ ENCODERS = [
     ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "12M"],
     ["-c:v", "h264_amf", "-quality", "speed", "-rc", "vbr_peak", "-b:v", "12M"],
     ["-c:v", "h264_qsv", "-preset", "veryfast", "-b:v", "12M"],
-    # Windows' own encoder: always there. Apex ships an LGPL ffmpeg (a paid app can't carry
-    # the GPL build), which has no libx264; it stays last for a developer's GPL ffmpeg.
+    # Windows' own encoder: always there. Apex ships an LGPL ffmpeg (a paid app can't
+    # carry the GPL build), which has no libx264; it stays last for a developer's GPL
+    # ffmpeg.
     [
         "-c:v",
         "h264_mf",
@@ -94,6 +96,7 @@ class SoundRecorder:
         self.file = None
 
     def start(self):
+        """Opens the input and writes each block to the file as it arrives."""
         import pyaudiowpatch as pyaudio
 
         channels = max(1, min(2, int(self.device["maxInputChannels"])))
@@ -121,6 +124,7 @@ class SoundRecorder:
         )
 
     def stop(self):
+        """Closes the input and the file."""
         if self.stream is not None:
             self.stream.stop_stream()
             self.stream.close()
@@ -129,6 +133,8 @@ class SoundRecorder:
 
 
 class RaceRecorder:
+    """The game window and its sound for one session (see the top of this file)."""
+
     def __init__(self, out_dir, window=GAME_WINDOW, with_microphone=True):
         self.out_dir = out_dir
         self.window = window
@@ -189,9 +195,10 @@ class RaceRecorder:
         return True
 
     def watch_first_frame(self):
-        """ffmpeg's progress: the wall time of frame 0 = now minus the frames encoded so far.
-        The output is a constant 60 fps (ffmpeg repeats frames when the window doesn't change),
-        and out_time reads N/A while writing pieces, so the frame count is the clock."""
+        """ffmpeg's progress: the wall time of frame 0 = now minus the frames encoded so
+        far. The output is a constant 60 fps (ffmpeg repeats frames when the window
+        doesn't change), and out_time reads N/A while writing pieces, so the frame count
+        is the clock."""
         for line in self.video.stdout:
             if self.video_started_at is not None:
                 continue  # keep reading so ffmpeg never blocks on the pipe
@@ -201,6 +208,7 @@ class RaceRecorder:
                     self.video_started_at = time.perf_counter() - int(frames) / 60
 
     def start_sound(self):
+        """Records what he hears and his microphone, each to its own file."""
         try:
             import pyaudiowpatch as pyaudio
         except ImportError:
@@ -220,10 +228,10 @@ class RaceRecorder:
             self.sounds.append(sound)
 
     def keep_loopback_flowing(self, loopback):
-        """Windows only sends loopback sound while something plays: a quiet moment would send
-        nothing, and every gap would pull the sound out of step with the picture (seen 30 Sep:
-        8 s of silence gave no samples at all). Playing silence on the same speakers keeps it
-        coming, and silence is recorded as silence."""
+        """Windows only sends loopback sound while something plays: a quiet moment would
+        send nothing, and every gap would pull the sound out of step with the picture
+        (seen 30 Sep: 8 s of silence gave no samples at all). Playing silence on the
+        same speakers keeps it coming, and silence is recorded as silence."""
         import pyaudiowpatch as pyaudio
 
         speakers = None
@@ -238,7 +246,8 @@ class RaceRecorder:
                 break
         if speakers is None:
             print(
-                "[clips] could not find the speakers behind the loopback - sound may drift"
+                "[clips] could not find the speakers behind the loopback"
+                " - sound may drift"
             )
             return
         channels = max(1, min(2, int(speakers["maxOutputChannels"])))
@@ -281,12 +290,15 @@ class RaceRecorder:
         pieces = sorted(p for p in os.listdir(self.piece_dir) if p.startswith("piece_"))
         if not pieces or self.video_started_at is None:
             print(
-                "[clips] the game window was never captured - is LMU running in a window?"
+                "[clips] the game window was never captured"
+                " - is LMU running in a window?"
             )
             return None
         return self.join(pieces)
 
     def join(self, pieces):
+        """The picture's pieces and the sound files as one race.mp4, the sound lined up
+        with the picture; the pieces are deleted."""
         listing = os.path.join(self.piece_dir, "pieces.txt")
         with open(listing, "w") as f:
             for piece in pieces:
@@ -299,7 +311,8 @@ class RaceRecorder:
                 print(f"[clips] {os.path.basename(sound.path)} got no sound - left out")
                 continue
             number += 1
-            # a positive offset: the sound started after the picture, so it is delayed to match
+            # a positive offset: the sound started after the picture, so it is delayed
+            # to match
             offset = sound.first_sample_at - self.video_started_at
             inputs += ["-itsoffset", f"{offset:.3f}", "-i", sound.path]
             maps += ["-map", f"{number}:a"]
