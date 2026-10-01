@@ -36,6 +36,9 @@ def post(url, body, token=None, raw=False, timeout=30):
     data = body if raw else json.dumps(body).encode("utf-8")
     request = urllib.request.Request(url, data=data, method="POST")
     request.add_header("content-type", "application/gzip" if raw else "application/json")
+    # Cloudflare refuses Python's default "Python-urllib" signature with error 1010 (found 1 Oct
+    # testing the installed beta: every tester's registration would have failed)
+    request.add_header("user-agent", f"Apex/{APP_VERSION}")
     if token:
         request.add_header("authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=timeout) as response:

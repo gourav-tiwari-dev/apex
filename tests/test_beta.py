@@ -70,3 +70,27 @@ def test_feedback_carries_the_race_and_its_radio_and_the_tape_only_when_ticked(t
 
     beta.send_feedback(conn, session, 2, "again", send_tape=True, path=path)
     assert sent[-1][0] == "https://door.example/v1/feedback/f1/tape" and sent[-1][2] is True
+
+
+def test_requests_carry_apex_s_own_signature(monkeypatch):
+    # Cloudflare answers Python's default "Python-urllib" signature with error 1010: the installed
+    # beta's registration failed on 1 Oct until every request said who it is
+    seen = {}
+
+    class Answer:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"token": "apx_x"}'
+
+    def fake_urlopen(request, timeout):
+        seen["agent"] = request.get_header("User-agent")
+        return Answer()
+
+    monkeypatch.setattr(beta.urllib.request, "urlopen", fake_urlopen)
+    beta.post("https://door.example/v1/register", {})
+    assert seen["agent"].startswith("Apex/")
