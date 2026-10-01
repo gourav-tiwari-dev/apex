@@ -51,6 +51,19 @@ def sample(tape_path):
 def write(tape_path, out):
     """Samples the tape in a scratch folder (so no apex.db is touched) and writes out."""
     apex = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if getattr(sys, "frozen", False):
+        # the installed app has no separate Python to launch: measure in this process, in a
+        # scratch folder, and come back
+        here = os.getcwd()
+        with tempfile.TemporaryDirectory() as scratch:
+            os.chdir(scratch)
+            try:
+                rows = sample(os.path.join(here, tape_path))
+            finally:
+                os.chdir(here)
+        with open(out, "w") as f:
+            json.dump(rows, f)
+        return out
     with tempfile.TemporaryDirectory() as scratch:
         code = (f"import json, sys; sys.path.insert(0, {apex!r}); from clips.race_data import sample; "
                 f"json.dump(sample({os.path.abspath(tape_path)!r}), open({os.path.abspath(out)!r}, 'w'))")
