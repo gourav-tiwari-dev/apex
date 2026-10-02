@@ -80,6 +80,36 @@ def urgent(kind, text, now, priority=RACE_CONTROL):
     )
 
 
+def yellow_here(race):
+    """A yellow flag in his sector or the next one."""
+    yellow_sectors = []
+    for slot, flag in enumerate(race.session.sector_flags):
+        if flag == SECTOR_YELLOW:
+            yellow_sectors.append(slot)
+    me = race.me
+    here = FLAG_SLOT.get(me.sector)
+    next_one = FLAG_SLOT.get(NEXT_SECTOR.get(me.sector))
+    return here in yellow_sectors or next_one in yellow_sectors
+
+
+def followed_for_a_lap(model, ahead, lap, now):
+    """He has been within a second of the car ahead for most of a lap (90% of it)."""
+    if ahead is None or lap is None:
+        return False
+    stuck_since = model.close_since.get((ahead.id, "me"))
+    return stuck_since is not None and now - stuck_since >= 0.9 * lap
+
+
+def strongest_corner(model, car_id, corners):
+    """The corner where I gain most on that car on the road (0.15 s or more), or None."""
+    if not corners:
+        return None
+    gains = model.corner_gains("me", car_id, corners)
+    if not gains or max(gains.values()) < 0.15:
+        return None
+    return max(gains, key=gains.get)
+
+
 def spoken(kind, conclusion, now, facts, template=None):
     """A line of the race engineer's: it can wait for a straight, but not for ever."""
     return Call(
@@ -231,7 +261,13 @@ class RaceEngineer:
     def start_and_finish(self, race, moment, phase, now):
         """The start (E1): formation lap, lights out, safety car and green. The end: the
         leader's flag makes this his last lap, then the chequered flag and his place."""
-        me = race.me
+        calls = self.start_calls(phase, now)
+        calls += self.finish_calls(race, moment, phase, now)
+        self.phase = phase
+        return calls
+
+    def start_calls(self, phase, now):
+        """The formation lap, lights out, the safety car, and green again after it."""
         calls = []
         if phase == FORMATION_LAP and not self.formation_called:
             self.formation_called = True
@@ -250,7 +286,13 @@ class RaceEngineer:
             calls.append(urgent("SAFETY_CAR", "Safety car. Safety car.", now))
         if phase == GREEN_FLAG and self.phase == SAFETY_CAR:
             calls.append(urgent("GREEN", "Green, green, green.", now))
-        # the end: the leader's flag makes this my last lap, unless the lap count already said so
+        return calls
+
+    def finish_calls(self, race, moment, phase, now):
+        """The leader's flag makes this his last lap (unless the lap count already said so),
+        then the chequered flag and his place."""
+        me = race.me
+        calls = []
         in_race = moment.session_type in RACE_SESSIONS
         if (
             in_race
@@ -285,7 +327,6 @@ class RaceEngineer:
                     f"Chequered flag. {place}.",
                 )
             )
-        self.phase = phase
         return calls
 
     def flags(self, race, moment, phase, now):
@@ -297,18 +338,15 @@ class RaceEngineer:
             calls.append(urgent("BLUE_FLAG", "Blue flag. Let him by on the exit.", now))
         self.blue_flag = me.flag == BLUE_FLAG
         calls.extend(self.after_a_crash(moment, me, phase, now))
-        yellow_sectors = [
-            i
-            for i, flag in enumerate(race.session.sector_flags)
-            if flag == SECTOR_YELLOW
-        ]
-        here, next_one = (
-            FLAG_SLOT.get(me.sector),
-            FLAG_SLOT.get(NEXT_SECTOR.get(me.sector)),
-        )
-        yellow_now = here in yellow_sectors or next_one in yellow_sectors
-        # not for the yellow his own spin causes, and not twice in 30 s (live 25 Sep: "yellow"
-        # twice right after he spun at Indianapolis)
+        calls.extend(self.yellow_call(race, phase, crawling, now))
+        return calls
+
+    def yellow_call(self, race, phase, crawling, now):
+        """A yellow in his sector or the next, said once: not for the yellow his own spin
+        causes (or while he crawls), and not twice in 30 s (live 25 Sep: "yellow" twice right
+        after he spun at Indianapolis)."""
+        calls = []
+        yellow_now = yellow_here(race)
         own_yellow = (
             self.own_spin_at is not None and now - self.own_spin_at < OWN_SPIN_YELLOW_S
         )
@@ -500,14 +538,7 @@ class RaceEngineer:
         two ways out. Real engineers make this call; Apex never did."""
         lap = model.road_lap("me")
         ahead, _, _, _ = same_class_neighbours(race, model)
-        stuck_since = (
-            model.close_since.get((ahead.id, "me")) if ahead is not None else None
-        )
-        followed = (
-            stuck_since is not None
-            and lap is not None
-            and now - stuck_since >= 0.9 * lap
-        )
+        followed = followed_for_a_lap(model, ahead, lap, now)
         if lap is not None and not followed:
             self.clean_laps.append(lap)
             return []
@@ -520,14 +551,7 @@ class RaceEngineer:
         if cost < HELD_UP_COST_S or closing:
             return []
         self.held_up_said.add(ahead.id)
-        strong = None
-        if corners:
-            gains = model.corner_gains("me", ahead.id, corners)
-            strong = (
-                max(gains, key=gains.get)
-                if gains and max(gains.values()) >= 0.15
-                else None
-            )
+        strong = strongest_corner(model, ahead.id, corners)
         where = f"Pass it into {strong}" if strong else "Pass it"
         words = f"You're losing {cost} a lap stuck behind that car. {where}, or drop back to two seconds."
         return [
@@ -557,29 +581,41 @@ class RaceEngineer:
         that would catch it by the flag."""
         if gap < FIGHT_GAP_S or gap > WATCH_GAP_S or gained is None:
             return None
-        lap, to_go, final_lap = laps
-        driver = ahead.driver
         gap = round(gap, 1)
         if gained >= TREND_S_PER_LAP:
-            # "by lap N" is an upper bound: sure catch forecasts were right 20 of 21 times on his
-            # tapes, their timing off by a median 64%, inside 1.5x the forecast ~95% (25 Sep)
-            catch_lap = lap + math.ceil(round(gap / gained * CATCH_UPPER, 3)) - 1
-            if final_lap is None or catch_lap <= final_lap:
-                self.last_said_lap["CATCHING"] = lap
-                facts = {
-                    "driver": driver,
-                    "gap_s": gap,
-                    "gain_per_lap_s": gained,
-                    "catch_lap": catch_lap,
-                }
-                return spoken(
-                    "CATCHING",
-                    f"The car ahead is {gap} s up the road and you are taking {gained} s a lap out of that: at this pace you are on it by lap {catch_lap}. Keep pushing.",
-                    now,
-                    facts,
-                    template=f"Car ahead, {gap}. You're taking {tenths_words(gained)} a lap. On it by lap {catch_lap}.",
-                )
+            catching = self.catching_call(ahead, gap, gained, laps, now)
+            if catching is not None:
+                return catching
         # not closing fast enough to catch before the flag: the lap time that would
+        return self.pace_target_call(ahead, gap, laps, now)
+
+    def catching_call(self, ahead, gap, gained, laps, now):
+        """ "On it by lap N", when that lap comes before the flag; else None."""
+        lap, _, final_lap = laps
+        # "by lap N" is an upper bound: sure catch forecasts were right 20 of 21 times on his
+        # tapes, their timing off by a median 64%, inside 1.5x the forecast ~95% (25 Sep)
+        catch_lap = lap + math.ceil(round(gap / gained * CATCH_UPPER, 3)) - 1
+        if final_lap is not None and catch_lap > final_lap:
+            return None
+        self.last_said_lap["CATCHING"] = lap
+        facts = {
+            "driver": ahead.driver,
+            "gap_s": gap,
+            "gain_per_lap_s": gained,
+            "catch_lap": catch_lap,
+        }
+        return spoken(
+            "CATCHING",
+            f"The car ahead is {gap} s up the road and you are taking {gained} s a lap out of that: at this pace you are on it by lap {catch_lap}. Keep pushing.",
+            now,
+            facts,
+            template=f"Car ahead, {gap}. You're taking {tenths_words(gained)} a lap. On it by lap {catch_lap}.",
+        )
+
+    def pace_target_call(self, ahead, gap, laps, now):
+        """The lap time that catches the car ahead by the flag, now and then; None when
+        it is out of reach."""
+        lap, to_go, _ = laps
         if (
             to_go is None
             or to_go < 1
@@ -595,7 +631,7 @@ class RaceEngineer:
         target_min, target_sec = lap_time_parts(target)
         self.last_said_lap["PACE_TARGET"] = lap
         facts = {
-            "driver": driver,
+            "driver": ahead.driver,
             "gap_s": gap,
             "laps_to_go": to_go,
             "their_minutes": their_min,
@@ -616,35 +652,43 @@ class RaceEngineer:
         gap growing."""
         if gap < FIGHT_GAP_S or gap > WATCH_GAP_S or his_gain is None:
             return None
-        lap, _, final_lap = laps
-        driver = behind.driver
         gap = round(gap, 1)
         if his_gain >= TREND_S_PER_LAP:
-            reach_lap = lap + math.ceil(round(gap / his_gain, 3)) - 1
-            if final_lap is not None and reach_lap > final_lap:
-                return None  # the race runs out before he gets there
-            facts = {
-                "driver": driver,
-                "gap_s": gap,
-                "gain_per_lap_s": his_gain,
-                "reach_lap": reach_lap,
-            }
-            conclusion = f"The car behind is {gap} s back and closing {his_gain} s a lap: on your gearbox by lap {reach_lap}."
-            template = f"Car behind, {gap}. Closing {tenths_words(his_gain)} a lap. On you by lap {reach_lap}."
-            if behind.last_lap > 0:
-                his_min, his_sec = lap_time_parts(behind.last_lap)
-                facts.update({"their_minutes": his_min, "their_seconds": his_sec})
-                conclusion += f" It is lapping {his_min}:{his_sec:04.1f}: match that and the gap holds."
-                template += f" Match {his_min}:{his_sec:04.1f}."
-            self.last_said_lap["THREAT_BEHIND"] = lap
-            return spoken("THREAT_BEHIND", conclusion, now, facts, template=template)
+            return self.threat_call(behind, gap, his_gain, laps, now)
+        return self.growing_call(behind, gap, his_gain, laps.lap, now)
+
+    def threat_call(self, behind, gap, his_gain, laps, now):
+        """ "On you by lap N" (and the lap time that holds it off); None when the race runs
+        out before the car gets there."""
+        lap, _, final_lap = laps
+        reach_lap = lap + math.ceil(round(gap / his_gain, 3)) - 1
+        if final_lap is not None and reach_lap > final_lap:
+            return None  # the race runs out before he gets there
+        facts = {
+            "driver": behind.driver,
+            "gap_s": gap,
+            "gain_per_lap_s": his_gain,
+            "reach_lap": reach_lap,
+        }
+        conclusion = f"The car behind is {gap} s back and closing {his_gain} s a lap: on your gearbox by lap {reach_lap}."
+        template = f"Car behind, {gap}. Closing {tenths_words(his_gain)} a lap. On you by lap {reach_lap}."
+        if behind.last_lap > 0:
+            his_min, his_sec = lap_time_parts(behind.last_lap)
+            facts.update({"their_minutes": his_min, "their_seconds": his_sec})
+            conclusion += f" It is lapping {his_min}:{his_sec:04.1f}: match that and the gap holds."
+            template += f" Match {his_min}:{his_sec:04.1f}."
+        self.last_said_lap["THREAT_BEHIND"] = lap
+        return spoken("THREAT_BEHIND", conclusion, now, facts, template=template)
+
+    def growing_call(self, behind, gap, his_gain, lap, now):
+        """The gap back to the car behind growing: keep doing that. Now and then."""
         if (
             -his_gain >= 2 * TREND_S_PER_LAP
             and gap <= 3.0
             and not self.said_recently("GAP_GROWING", lap, GROWING_EVERY_LAPS)
         ):
             self.last_said_lap["GAP_GROWING"] = lap
-            facts = {"driver": driver, "gap_s": gap}
+            facts = {"driver": behind.driver, "gap_s": gap}
             return spoken(
                 "GAP_GROWING",
                 f"The gap back to the car behind is growing, {gap} s now. Whatever you are doing, keep doing it.",

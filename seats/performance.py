@@ -74,13 +74,40 @@ def car_lengths(metres):
 
 
 def call_from_event(event, event_id):
+    """The radio call for an event he should hear about (a lock-up, an off, a spin, a caught
+    slide), or None."""
     if event.kind not in SPOKEN_KINDS:
         return None
-    if event.kind in INCIDENTS:
+    said = event_words(event)
+    priority = PERFORMANCE
+    if event.kind in INCIDENTS or event.kind == "SLIDE_CAUGHT":
         priority = ENGINEER
-    else:
-        priority = PERFORMANCE
-    # the event keeps v1's wording for the log; the radio gets it without the speed
+    ttl = STALE_AFTER_S
+    facts = {"corner": event.corner}
+    if event.kind == "SLIDE_CAUGHT":
+        ttl = SLIDE_TTL_S
+        facts["degrees"] = event.magnitude
+    if event.kind == "SPIN":
+        # live 25 Sep: two spins at Indianapolis expired unspoken while racecraft kept saying
+        # "mega defending". A spin is a safety call: said at once, and it lives long enough
+        ttl = SPIN_TTL_S
+    return Call(
+        seat="performance",
+        kind=event.kind,
+        sim_time=event.sim_time,
+        priority=priority,
+        ttl=ttl,
+        conclusion=said,
+        facts=facts,
+        template=said,
+        evidence={"event_id": event_id},
+        immediate=event.kind in ("SLIDE_CAUGHT", "SPIN"),
+    )
+
+
+def event_words(event):
+    """What the radio says for the event. The event keeps v1's wording for the log; the radio
+    gets it without the speed."""
     said = {
         "LOCKUP": f"Locked the fronts into {event.corner}.",
         "OFF_TRACK": f"Wide at {event.corner}.",
@@ -89,45 +116,7 @@ def call_from_event(event, event_id):
     }[event.kind]
     if event.kind == "SPIN" and "after contact" in (event.conclusion or ""):
         said = "You got hit and spun. Wait for the traffic, then rejoin. Cars coming."
-    if event.kind == "SLIDE_CAUGHT":
-        return Call(
-            seat="performance",
-            kind="SLIDE_CAUGHT",
-            sim_time=event.sim_time,
-            priority=ENGINEER,
-            ttl=SLIDE_TTL_S,
-            conclusion=said,
-            facts={"corner": event.corner, "degrees": event.magnitude},
-            template=said,
-            evidence={"event_id": event_id},
-            immediate=True,
-        )
-    if event.kind == "SPIN":
-        # live 25 Sep: two spins at Indianapolis expired unspoken while racecraft kept saying
-        # "mega defending". A spin is a safety call: said at once, and it lives long enough
-        return Call(
-            seat="performance",
-            kind="SPIN",
-            sim_time=event.sim_time,
-            priority=priority,
-            ttl=SPIN_TTL_S,
-            conclusion=said,
-            facts={"corner": event.corner},
-            template=said,
-            evidence={"event_id": event_id},
-            immediate=True,
-        )
-    return Call(
-        seat="performance",
-        kind=event.kind,
-        sim_time=event.sim_time,
-        priority=priority,
-        ttl=STALE_AFTER_S,
-        conclusion=said,
-        facts={"corner": event.corner},
-        template=said,
-        evidence={"event_id": event_id},
-    )
+    return said
 
 
 @dataclass

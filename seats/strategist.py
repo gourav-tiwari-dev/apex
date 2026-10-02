@@ -451,22 +451,35 @@ class Strategist:
         picture = self.live_picture(race, moment.frame.lap_dist)
         if picture is None:
             return []
+        self.note_saving(picture)
+        self.fuel_now = picture
+        if not self.fuel_worth_saying(picture["verdict"], moment.lap_count):
+            return []
+        return [self.fuel_call(picture, moment.lap_count, now)]
+
+    def note_saving(self, picture):
+        """Once told to save (or to box), the verdict reads "saving" until the spare is back
+        above PUSH_AGAIN_SPARE, not straight back to fine."""
         if picture["verdict"] in ("save", "box"):
             self.told_to_save = True
         elif self.told_to_save and picture["spare_laps"] < PUSH_AGAIN_SPARE:
             picture["verdict"] = "saving"
-        self.fuel_now = picture
-        verdict = picture["verdict"]
+
+    def fuel_worth_saying(self, verdict, lap):
+        """The first verdict, a worse one, or "box" again on a new lap."""
         before = self.last_live_verdict
         self.last_live_verdict = verdict
         first = before is None
         worse = before is not None and VERDICT_RANK[verdict] > VERDICT_RANK[before]
-        box_again = verdict == "box" and self.box_said_lap != moment.lap_count
-        if not (first or worse or box_again):
-            return []
+        box_again = verdict == "box" and self.box_said_lap != lap
+        return first or worse or box_again
+
+    def fuel_call(self, picture, lap, now):
+        """The fuel line for this picture. Save and box go out at once: they end races."""
+        verdict = picture["verdict"]
         bad = verdict in ("save", "box")
         if verdict == "box":
-            self.box_said_lap = moment.lap_count
+            self.box_said_lap = lap
         words = fuel_words(picture)
         fuel_call = call(
             "FUEL",
@@ -480,10 +493,8 @@ class Strategist:
             words,
         )
         fuel_call.priority = ENGINEER
-        fuel_call.immediate = (
-            bad  # save / box are not held for the talk budget: they end races
-        )
-        return [fuel_call]
+        fuel_call.immediate = bad  # not held for the talk budget
+        return fuel_call
 
     def lap_record(self, lap, lap_time, me, now):
         sectors = None
@@ -537,6 +548,8 @@ class Strategist:
         }
 
     def fuel_check(self, race, lap, now):
+        """At the line, every few laps: fuel (or energy) to the flag, said when the picture
+        changes: fine, tight or short."""
         if (
             lap < self.last_fuel_check_lap + RECHECK_EVERY_LAPS
             and self.last_fuel_state is not None
@@ -547,6 +560,17 @@ class Strategist:
         if per_lap is None or laps_left is None or per_lap <= 0:
             return None
         self.last_fuel_check_lap = lap
+        spare, facts = self.spare_at_line(race, per_lap, laps_left)
+        state, conclusion, template = fuel_verdict(spare, per_lap, laps_left, facts)
+        if state == self.last_fuel_state:
+            return None  # only speak when the picture changes
+        self.last_fuel_state = state
+        facts["verdict"] = state  # his "we push" order lets "short" through (orders.py)
+        return call("FUEL", conclusion, now, facts, template)
+
+    def spare_at_line(self, race, per_lap, laps_left):
+        """(laps spare at the flag, the facts): the fuel's, or the virtual energy's when the
+        car uses it and it is the tighter limit (E8)."""
         fuel = race.me.fuel
         spare = round(fuel / per_lap - laps_left, 1)
         facts = {
@@ -554,36 +578,13 @@ class Strategist:
             "per_lap_litres": round(per_lap, 2),
             "laps_left": laps_left,
         }
-
-        # virtual energy, when the car uses it, can be the tighter limit (E8)
         energy_per_lap = self.usage_per_lap(self.energy_at_line)
         if energy_per_lap is not None and energy_per_lap > 0:
             energy_spare = round(race.me.virtual_energy / energy_per_lap - laps_left, 1)
             if energy_spare < spare:
                 spare = energy_spare
                 facts = {"spare_laps": abs(spare), "laps_left": laps_left}
-
-        if spare >= fine_margin(laps_left):
-            state = "fine"
-            conclusion = (
-                f"Fuel lasts to the flag with {spare} laps spare. No saving. Push."
-            )
-            template = "Fuel's fine to the flag. Push."
-        elif spare >= 0:
-            state = "tight"
-            conclusion = f"Fuel is tight: only {spare} laps spare. Lift and coast before the big braking zones."
-            template = "Fuel's tight. Lift and coast into the big stops."
-        else:
-            state = "short"
-            save = round((-spare * per_lap) / max(laps_left, 1), 2)
-            facts["save_per_lap"] = save
-            conclusion = f"Fuel is short by {abs(spare)} laps. Save {save} litres a lap: lift and coast every braking zone."
-            template = "We're short on fuel. Lift and coast every braking zone."
-        if state == self.last_fuel_state:
-            return None  # only speak when the picture changes
-        self.last_fuel_state = state
-        facts["verdict"] = state  # his "we push" order lets "short" through (orders.py)
-        return call("FUEL", conclusion, now, facts, template)
+        return spare, facts
 
     def tyre_check(self, me, now):
         calls = []
@@ -608,3 +609,22 @@ class Strategist:
                     )
                 )
         return calls
+
+
+def fuel_verdict(spare, per_lap, laps_left, facts):
+    """(state, conclusion, template) for the laps spare: fine, tight or short. Short also
+    puts how much to save a lap in facts."""
+    if spare >= fine_margin(laps_left):
+        conclusion = f"Fuel lasts to the flag with {spare} laps spare. No saving. Push."
+        return "fine", conclusion, "Fuel's fine to the flag. Push."
+    if spare >= 0:
+        conclusion = f"Fuel is tight: only {spare} laps spare. Lift and coast before the big braking zones."
+        return "tight", conclusion, "Fuel's tight. Lift and coast into the big stops."
+    save = round((-spare * per_lap) / max(laps_left, 1), 2)
+    facts["save_per_lap"] = save
+    conclusion = f"Fuel is short by {abs(spare)} laps. Save {save} litres a lap: lift and coast every braking zone."
+    return (
+        "short",
+        conclusion,
+        "We're short on fuel. Lift and coast every braking zone.",
+    )

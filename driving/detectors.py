@@ -237,21 +237,10 @@ class ContactDetection:
         return nearest
 
     def update(self, frame, near, race):
-        if self.first_frame:
-            # whatever impact the game remembers on the first frame happened before this session
-            self.first_frame = False
-            self.last_seen = frame.last_impact_time
+        """An impact the game logged since the last frame: CONTACT with the nearest car, or
+        IMPACT when no car was near (a wall)."""
+        if not self.new_incident(frame):
             return None
-        # None = no impact yet (and old tapes carry no impact data at all)
-        if frame.last_impact_time is None or frame.last_impact_time == self.last_seen:
-            return None
-        previous = self.last_seen
-        self.last_seen = frame.last_impact_time
-        # one incident fires several hits within seconds (LMU logged 266, 266 and 271 s for one
-        # moment at Le Mans): hits that close together are the same incident
-        if previous is not None and frame.last_impact_time - previous < SAME_INCIDENT_S:
-            return None
-
         corner = self.corner_map.at(frame.lap_dist) or "the straight"
         magnitude = frame.last_impact_magnitude
         other = self.nearest_car(frame, near)
@@ -265,13 +254,7 @@ class ContactDetection:
                 magnitude=magnitude,
                 conclusion=f"hit something at {corner}, no car near",
             )
-        driver = "a car"
-        steam_id = str(other.id)
-        if race is not None:
-            for opponent in race.opponents:
-                if opponent.id == other.id:
-                    driver = opponent.driver
-                    steam_id = identity(opponent)
+        driver, steam_id = who_it_was(other, race)
         return Event(
             kind="CONTACT",
             sim_time=frame.elapsed_time,
@@ -282,6 +265,38 @@ class ContactDetection:
             other_car=steam_id,
             conclusion=f"contact with {driver} at {corner}",
         )
+
+    def new_incident(self, frame):
+        """The first hit of a new incident: not one the game remembered from before the
+        session, and not another hit of the same incident."""
+        if self.first_frame:
+            # whatever impact the game remembers on the first frame happened before this session
+            self.first_frame = False
+            self.last_seen = frame.last_impact_time
+            return False
+        # None = no impact yet (and old tapes carry no impact data at all)
+        if frame.last_impact_time is None or frame.last_impact_time == self.last_seen:
+            return False
+        previous = self.last_seen
+        self.last_seen = frame.last_impact_time
+        # one incident fires several hits within seconds (LMU logged 266, 266 and 271 s for one
+        # moment at Le Mans): hits that close together are the same incident
+        if previous is not None and frame.last_impact_time - previous < SAME_INCIDENT_S:
+            return False
+        return True
+
+
+def who_it_was(other, race):
+    """(driver, steam id) of the car he touched; "a car" and its game id when the race does
+    not list it."""
+    driver = "a car"
+    steam_id = str(other.id)
+    if race is not None:
+        for opponent in race.opponents:
+            if opponent.id == other.id:
+                driver = opponent.driver
+                steam_id = identity(opponent)
+    return driver, steam_id
 
 
 class OffTrackDetector(Detector):

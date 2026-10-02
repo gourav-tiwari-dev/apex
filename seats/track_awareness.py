@@ -512,31 +512,44 @@ class TrackAwareness:
         10 s on 24 Sep. The group must hold together for FIGHT_FOR_S, and it is named by the
         car directly ahead of him, so cars joining or leaving the front of a train do not make
         it "new" (the first version keyed on every car in it and called it 57 times)."""
-        rivals = self.rivals_ahead(race)
-        if not rivals or rivals[0].place != race.me.place - 1:
+        found = self.group_ahead(race)
+        if found is None:
             self.group_since = None
             return []
-        nearest = rivals[0]
-        reach = self.clock.gap_ahead(nearest.id)
-        if reach is None or not ALREADY_IN_IT_S < reach <= OPPORTUNITY_REACH_S:
-            self.group_since = None
-            return []
-        chain, gaps = self.chain_ahead(nearest, rivals)
-        is_battle = len(chain) == 2 and gaps[0] <= BATTLE_GAP_S
-        if len(chain) < 3 and not is_battle:
-            self.group_since = None
-            return []
+        nearest, reach, chain, is_battle = found
         if not self.group_worth_a_call(nearest, now):
             return []
         self.last_group_call = now
         if is_battle:
-            text = (
-                f"P{chain[1].place} and P{chain[0].place} are fighting, {tenths_words(reach)} up the road. "
-                f"They're slowing each other down. Close up and let them fight."
-            )
-            return [
-                self.opportunity("BATTLE_AHEAD", text, now, {"gap_s": round(reach, 1)})
-            ]
+            return [self.battle_call(chain, reach, now)]
+        return [self.train_call(chain, reach, now)]
+
+    def group_ahead(self, race):
+        """(the car just ahead, the gap to it, the group, a battle?) when the cars just ahead
+        are a battle or a train and he is close enough to join; else None."""
+        rivals = self.rivals_ahead(race)
+        if not rivals or rivals[0].place != race.me.place - 1:
+            return None
+        nearest = rivals[0]
+        reach = self.clock.gap_ahead(nearest.id)
+        if reach is None or not ALREADY_IN_IT_S < reach <= OPPORTUNITY_REACH_S:
+            return None
+        chain, gaps = self.chain_ahead(nearest, rivals)
+        is_battle = len(chain) == 2 and gaps[0] <= BATTLE_GAP_S
+        if len(chain) < 3 and not is_battle:
+            return None
+        return nearest, reach, chain, is_battle
+
+    def battle_call(self, chain, reach, now):
+        """Two cars fighting up the road: close up and let them fight."""
+        text = (
+            f"P{chain[1].place} and P{chain[0].place} are fighting, {tenths_words(reach)} up the road. "
+            f"They're slowing each other down. Close up and let them fight."
+        )
+        return self.opportunity("BATTLE_AHEAD", text, now, {"gap_s": round(reach, 1)})
+
+    def train_call(self, chain, reach, now):
+        """A train up the road: close in and pick them off."""
         if len(chain) == TRAIN_MAX_CARS:  # it may go on further up: no end position
             who = f"at least {len(chain)} cars from P{chain[0].place} up"
         else:
@@ -545,11 +558,8 @@ class TrackAwareness:
             f"Train ahead, {who}, {tenths_words(reach)} up the road. "
             f"They're holding each other up. Close in and pick them off."
         )
-        return [
-            self.opportunity(
-                "TRAIN_AHEAD", text, now, {"cars": len(chain), "gap_s": round(reach, 1)}
-            )
-        ]
+        facts = {"cars": len(chain), "gap_s": round(reach, 1)}
+        return self.opportunity("TRAIN_AHEAD", text, now, facts)
 
     def rivals_ahead(self, race):
         """His class, on his lap, out of the pits, ahead of him: nearest first."""
