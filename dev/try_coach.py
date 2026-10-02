@@ -180,7 +180,7 @@ def frozen_race(tape, lap):
     that lap, plus the seats as they were then."""
     made = {}
 
-    # the replay builds its own seats inside run_session: these subclasses keep a hand on them
+    # the replay builds its own seats inside run_replay: these subclasses keep a hand on them
     def keep(name, seat_class):
         class Kept(seat_class):
             def __init__(self, *args, **kwargs):
@@ -244,7 +244,7 @@ def frozen_race(tape, lap):
     throwaway = os.path.join(tempfile.mkdtemp(), "try_coach.db")
     session.connect_db = lambda: memory.connect_db(throwaway)
     with contextlib.redirect_stdout(io.StringIO()):
-        session.run_session(True, None, tape, out_loud=False)
+        session.run_replay(tape, out_loud=False)
     if "snapshot" not in frozen:
         raise SystemExit(f"that tape never reached lap {lap}")
     return frozen, made

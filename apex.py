@@ -16,7 +16,7 @@ import os
 from driver_profile import load_profile
 from memory.db import connect_db
 from between_sessions.debrief import run_debrief
-from session import run_session
+from session import run_live, run_replay
 from game.tape import TAPE_PATH
 from memory.team_memory import build_profile
 from datetime import datetime
@@ -52,9 +52,7 @@ def race_sessions(conn, clean, voice, said, clips=None):
     while True:
         if clips is not None:
             clips.session_starting()
-        session_id = run_session(
-            False, None, clean=clean, launch_id=launch_id, voice=voice
-        )
+        session_id = run_live(clean, launch_id, voice)
         if first:
             log_brief(conn, session_id, said)
             first = False
@@ -79,7 +77,7 @@ def replay_night(tape, speed, clean):
     conn = connect_db("apex.db")
     said = brief(conn)
     conn.close()
-    session_id = run_session(True, speed, tape, clean=clean)
+    session_id = run_replay(tape, speed, clean=clean)
     conn = connect_db("apex.db")
     log_brief(conn, session_id, said)
     build_profile(conn)

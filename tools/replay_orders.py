@@ -101,7 +101,7 @@ def replay(tape, script, name):
     conn.close()
     session.connect_db = lambda db_path=None: memory.connect_db(out_db)
     with contextlib.redirect_stdout(io.StringIO()):
-        sid = session.run_session(True, None, tape, out_loud=False, script=script)
+        sid = session.run_replay(tape, out_loud=False, script=script)
     conn = sqlite3.connect(out_db)
     rows = conn.execute(
         "select sim_time, kind, status, reason, coalesce(line, ''), facts from radio_log "

@@ -30,11 +30,14 @@ class NoModel:
 
 import io, contextlib
 
-options = {"out_loud": False}
-if "persona" in inspect.signature(session.run_session).parameters:
-    options["persona"] = NoModel()
 with contextlib.redirect_stdout(io.StringIO()):
-    sid = session.run_session(True, None, tape, **options)
+    if hasattr(session, "run_replay"):  # since 2 Oct
+        sid = session.run_replay(tape, out_loud=False)
+    else:  # one run_session for both modes, and before 1 Oct a persona option
+        options = {"out_loud": False}
+        if "persona" in inspect.signature(session.run_session).parameters:
+            options["persona"] = NoModel()
+        sid = session.run_session(True, None, tape, **options)
 conn = sqlite3.connect(out_db)
 rows = conn.execute(
     "select seat, kind, status, reason from radio_log where session_id=?", (sid,)

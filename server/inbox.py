@@ -55,9 +55,9 @@ def main():
             print(f"   tape -> {tape_file}")
             if args.replay:
                 sys.path.insert(0, os.path.dirname(HERE))
-                from session import run_session
+                from session import run_replay
 
-                run_session(True, None, tape_file, clean=True, out_loud=False)
+                run_replay(tape_file, out_loud=False, clean=True)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """One session, start to finish: practice, qualifying or a race, live or from a tape.
 
-run_session reads his car frame by frame, feeds the detectors, the race model and the seats,
+run_live (or run_replay, for a tape) reads his car frame by frame, feeds the detectors, the race model and the seats,
 lets the governor decide what goes on air, answers him when he speaks, and writes everything to
 the database. When the session ends (his own flag, the session changing, or Ctrl+C) it saves the
 result, and the corner map it learned if the track was new.
@@ -131,31 +131,33 @@ def contacts_by_car(conn, session_id):
     return counts
 
 
-def run_session(
-    replay,
-    replay_speed,
-    tape_path=TAPE_PATH,
-    out_loud=None,
-    clean=False,
-    launch_id=None,
-    voice=None,
-    script=None,
-):
-    """One LMU session, start to finish. Returns the database id of the session.
+def run_live(clean=False, launch_id=None, voice=None):
+    """One LMU session read from the game, start to finish (a tape of it is written as it
+    goes). Returns the database id of the session.
 
-    script:   replays only: what he says and when (see ScriptedTalk), no microphone, no coach.
-    out_loud: speak through the speakers (default) or print lines (fast replays, tests).
-    clean:    no swearing, for recordings other people will hear."""
-    session = Session(
-        replay,
-        replay_speed,
-        tape_path,
-        out_loud,
-        clean,
-        launch_id,
-        voice,
-        script,
-    )
+    clean:     no swearing, for recordings other people will hear.
+    launch_id: the night this session belongs to (apex.py: one per launch).
+    voice:     the night's voice, so its banks load once a night; a new one, out loud,
+               when none is given."""
+    if voice is None:
+        voice = Voice(True)
+    session = Session(None, None, clean, voice, None)
+    return session.run(launch_id)
+
+
+def run_replay(
+    tape_path=TAPE_PATH, speed=None, out_loud=None, clean=False, script=None
+):
+    """One session played back from a tape. Returns the database id of the session.
+
+    speed:    None = as fast as it goes, 1.0 = real time.
+    out_loud: through the speakers; by default only at a replay speed (a replay as fast as
+              it goes prints its lines, like v1 did).
+    clean:    no swearing, for recordings other people will hear.
+    script:   what he says and when (see ScriptedTalk): no microphone, no coach."""
+    if out_loud is None:
+        out_loud = bool(speed)
+    session = Session(tape_path, speed, clean, Voice(out_loud), script)
     return session.run()
 
 
@@ -234,32 +236,21 @@ class SessionEnd:
 class Session:
     """Everything one session keeps from frame to frame, and one method per step of a frame."""
 
-    def __init__(  # the options of run_session, passed straight on
-        self,
-        replay,
-        replay_speed,
-        tape_path,
-        out_loud,
-        clean,
-        launch_id,
-        voice,
-        script,
-    ):
-        self.replay = replay
-        self.replay_speed = replay_speed
-        self.launch_id = launch_id
-        if out_loud is None:
-            # a replay at max speed prints its lines, like v1 did
-            out_loud = not (replay and not replay_speed)
+    def __init__(self, tape_path, speed, clean, voice, script):
+        """tape_path None: live, from the game; else a replay of that tape, at `speed` (None:
+        as fast as it goes). voice says every line; script is his voice on a replay."""
+        self.replay = tape_path is not None
+        self.replay_speed = speed
+        self.launch_id = None
         self.open_source(tape_path)
         self.build_driving()
         self.build_team(clean)
-        self.build_radio(clean, out_loud, voice, script)
+        self.build_radio(clean, voice, script)
         self.conn = None
         self.session_id = None
         self.result = SessionResult()
         self.end = SessionEnd()
-        self.end_reason = "tape_end" if replay else "stopped_by_driver"
+        self.end_reason = "tape_end" if self.replay else "stopped_by_driver"
 
     # ---- setting up -------------------------------------------------------------------------
     def open_source(self, tape_path):
@@ -344,7 +335,7 @@ class Session:
         self.reminders = []  # {"remind_lap", "what"}: set by the agent, said at the line
         self.heard_confidence = {}  # question -> Whisper's confidence, until the coach answers
 
-    def build_radio(self, clean, out_loud, voice, script):
+    def build_radio(self, clean, voice, script):
         """His push-to-talk (or a script), the coach, the voice and the desk that cooks lines."""
         self.talk = None
         self.agent = None
@@ -357,9 +348,6 @@ class Session:
             # after the budget: it spends from it (24 Sep crash)
             self.agent = RaceAgent(self.budget, clean)
             self.agent.orders = self.orders
-        # one voice for the whole launch when apex.py passes it in: its banks load once
-        if voice is None:
-            voice = Voice(out_loud)
         self.voice = voice
         self.desk = RadioDesk(
             voice,
@@ -390,8 +378,10 @@ class Session:
         self.voice.play_urgent("RADIO_CHECK", "Radio check. I'm with you.")
 
     # ---- the session ------------------------------------------------------------------------
-    def run(self):
-        """Every frame through every step, until the session ends. Returns the session's id."""
+    def run(self, launch_id=None):
+        """Every frame through every step, until the session ends. Returns the session's id.
+        launch_id: the night it belongs to, saved with the session."""
+        self.launch_id = launch_id
         try:
             self.start()
             for frame in self.source:

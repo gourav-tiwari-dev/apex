@@ -89,7 +89,7 @@ def test_a_session_already_over_at_startup_does_not_end_straight_away(
             out.write(json.dumps(asdict(frame)) + "\n")
     db = str(tmp_path / "t.db")
     monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db))
-    session_id = session.run_session(True, None, tape, out_loud=False)
+    session_id = session.run_replay(tape, out_loud=False)
     conn = memory.connect_db(db)
     reason = conn.execute(
         "SELECT end_reason FROM sessions WHERE id = ?", (session_id,)

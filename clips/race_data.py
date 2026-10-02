@@ -57,17 +57,11 @@ class RaceSampler:
 def sample(tape_path):
     """[sim time, gap ahead, gap behind, place, speed] every 0.1 s of the tape. Call
     from a scratch folder."""
+    from radio.voice import Voice
     from session import Session
 
     session = Session(
-        True,
-        None,
-        tape_path,
-        out_loud=False,
-        clean=True,
-        launch_id=None,
-        voice=None,
-        script=None,
+        tape_path, speed=None, clean=True, voice=Voice(False), script=None
     )
     sampler = RaceSampler(session)
     session.one_frame = sampler.frame

@@ -55,7 +55,7 @@ def test_a_new_track_is_learned_while_driving_and_saved(tmp_path, monkeypatch):
     monkeypatch.setattr(track_map, "MAPS_FOLDER", str(tmp_path / "maps"))
     monkeypatch.setattr(session, "connect_db", lambda: memory.connect_db(db_path))
 
-    session.run_session(True, None, tape, out_loud=False)
+    session.run_replay(tape, out_loud=False)
 
     saved = track_map.load_map("Test Ring")
     assert saved is not None

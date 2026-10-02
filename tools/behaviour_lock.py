@@ -137,13 +137,12 @@ def replay_one(tape, script=None):
     )
     shutil.copy(GOLDEN_DB, database)
     session.connect_db = lambda db_path=None: memory.connect_db(database)
-    options = {"out_loud": False, "script": script}
-    if "persona" in inspect.signature(session.run_session).parameters:
-        options["persona"] = NoModel()
+    tape_path = os.path.join(TAPES_FOLDER, tape)
     with contextlib.redirect_stdout(io.StringIO()):
-        session_id = session.run_session(
-            True, None, os.path.join(TAPES_FOLDER, tape), **options
-        )
+        if hasattr(session, "run_replay"):  # since 2 Oct
+            session_id = session.run_replay(tape_path, out_loud=False, script=script)
+        else:
+            session_id = old_replay(session, tape_path, script)
     connection = sqlite3.connect(database)
     rows = connection.execute(
         f"select {COLUMNS} from radio_log where session_id=? order by sim_time, id",
@@ -159,6 +158,15 @@ def replay_one(tape, script=None):
         "event_hash": event_hash,
         "tables": tables,
     }
+
+
+def old_replay(session, tape_path, script):
+    """The code before 2 Oct had one run_session(replay, speed, tape, ...) for both modes,
+    and before 1 Oct a persona option too."""
+    options = {"out_loud": False, "script": script}
+    if "persona" in inspect.signature(session.run_session).parameters:
+        options["persona"] = NoModel()
+    return session.run_session(True, None, tape_path, **options)
 
 
 def cases():
