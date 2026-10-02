@@ -285,45 +285,28 @@ def read_only(db_path):
     return sqlite3.connect(uri, uri=True, timeout=2)
 
 
+# the events the coach's race_events tool tells him about
+SHOWN_EVENTS = (
+    "OFF_TRACK",
+    "SPIN",
+    "CONTACT",
+    "IMPACT",
+    "REAR_SNAP",
+    "LOCKUP",
+    "WHEELSPIN",
+    "TRACK_LIMITS",
+    "PENALTY",
+)
+
+
 def race_events(db_path, session_id):
     """What happened to him this session: offs, spins, contacts, lock-ups, passes, and the last
     lines the radio said."""
     if not db_path or session_id is None:
         return {"error": "no race log available here"}
-    shown = (
-        "OFF_TRACK",
-        "SPIN",
-        "CONTACT",
-        "IMPACT",
-        "REAR_SNAP",
-        "LOCKUP",
-        "WHEELSPIN",
-        "TRACK_LIMITS",
-        "PENALTY",
-    )
     conn = read_only(db_path)
     try:
-        marks = ",".join("?" * len(shown))
-        rows = conn.execute(
-            f"SELECT kind, lap_count, corner, other_car FROM events WHERE session_id = ? AND kind IN ({marks}) "
-            "ORDER BY sim_time",
-            (session_id, *shown),
-        ).fetchall()
-        counts = {}
-        for kind, _, _, _ in rows:
-            counts[kind.lower()] = counts.get(kind.lower(), 0) + 1
-        # contacts get their own full list: 13 wheelspins pushed both contacts out of the last 12
-        # events on the 25 Sep bank run, and "who hit me?" got "can't see who"
-        contacts = [
-            {"lap": lap, "corner": corner, "other_car": other}
-            for kind, lap, corner, other in rows
-            if kind == "CONTACT"
-        ]
-        latest = [
-            {"what": kind.lower(), "lap": lap, "corner": corner}
-            for kind, lap, corner, other in rows
-            if kind not in ("WHEELSPIN", "CONTACT")
-        ][-10:]
+        rows = events_shown(conn, session_id)
         passes = conn.execute(
             "SELECT corner, lap_count, outcome FROM pass_attempts WHERE session_id = ? ORDER BY id",
             (session_id,),
@@ -336,14 +319,51 @@ def race_events(db_path, session_id):
     finally:
         conn.close()
     return {
-        "counts_this_session": counts,
-        "contacts": contacts,
-        "latest_other_events": latest,
+        "counts_this_session": event_counts(rows),
+        "contacts": contacts_in(rows),
+        "latest_other_events": latest_events(rows),
         "pass_attempts": [
             {"corner": c, "lap": lap, "outcome": o} for c, lap, o in passes
         ],
         "radio_said_last_newest_first": [line for _, line in said],
     }
+
+
+def events_shown(conn, session_id):
+    """(kind, lap, corner, other car) of every event worth telling him about, in order."""
+    marks = ",".join("?" * len(SHOWN_EVENTS))
+    return conn.execute(
+        f"SELECT kind, lap_count, corner, other_car FROM events WHERE session_id = ? AND kind IN ({marks}) "
+        "ORDER BY sim_time",
+        (session_id, *SHOWN_EVENTS),
+    ).fetchall()
+
+
+def event_counts(rows):
+    """How many of each kind, by lower-case kind."""
+    counts = {}
+    for kind, _, _, _ in rows:
+        counts[kind.lower()] = counts.get(kind.lower(), 0) + 1
+    return counts
+
+
+def contacts_in(rows):
+    """Every contact, in full: 13 wheelspins pushed both contacts out of the last 12 events
+    on the 25 Sep bank run, and "who hit me?" got "can't see who"."""
+    contacts = []
+    for kind, lap, corner, other in rows:
+        if kind == "CONTACT":
+            contacts.append({"lap": lap, "corner": corner, "other_car": other})
+    return contacts
+
+
+def latest_events(rows):
+    """The last 10 events that are not wheelspin or contact (contacts have their own list)."""
+    latest = []
+    for kind, lap, corner, other in rows:
+        if kind not in ("WHEELSPIN", "CONTACT"):
+            latest.append({"what": kind.lower(), "lap": lap, "corner": corner})
+    return latest[-10:]
 
 
 def setup_advice(db_path, session_id, race):

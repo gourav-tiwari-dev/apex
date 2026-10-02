@@ -178,6 +178,8 @@ class RaceAgent:
                 return done
 
     def work(self):
+        """The coach's thread: each question in turn, thought through, and the answer handed
+        back to the race loop (results)."""
         while True:
             question, snapshot, sim_time, asked_at = self.jobs.get()
             try:
@@ -188,32 +190,11 @@ class RaceAgent:
                     {"error": error.__class__.__name__, "costs": []},
                 )
             info["seconds"] = round(time.perf_counter() - asked_at, 2)
-            self.exchanges = (
-                self.exchanges
-                + [{"question": question, "answer": answer, "sim_time": sim_time}]
-            )[-FOLLOW_UP_EXCHANGES:]
-            call = Call(
-                seat="race_engineer",
-                kind="ANSWER_AGENT",
-                sim_time=sim_time,
-                priority=RACE_CONTROL,
-                ttl=ANSWER_TTL_S,
-                conclusion=answer,
-                template=answer,
-                facts={
-                    "heard": question,
-                    "tools": info.get("tools", []),
-                    "rounds": info.get("rounds"),
-                    "seconds": info["seconds"],
-                    "refused": info.get("refused"),
-                    "call": info.get("call"),
-                    "override": info.get("override"),
-                },
-                asked=True,
-            )
+            exchange = {"question": question, "answer": answer, "sim_time": sim_time}
+            self.exchanges = (self.exchanges + [exchange])[-FOLLOW_UP_EXCHANGES:]
             self.results.put(
                 {
-                    "call": call,
+                    "call": answer_call(question, answer, info, sim_time),
                     "costs": info.get("costs", []),
                     "actions": list(snapshot.actions),
                     "orders": info.get("orders", []),
@@ -248,67 +229,45 @@ class RaceAgent:
         # no budget check: push-to-talk never stops (his call, 25 Sep - the Rs 5 cap silenced the
         # coach after 7 answers in a live race). Every call is still charged and logged.
         asked = self.asked_with(question, snapshot)
-        messages = [
-            {"role": "system", "content": asked.system},
-            {
-                "role": "user",
-                "content": f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {asked.picture})"
-                f"\n(Already given, no need to call driver or my_habits for these: {asked.given})\n\n{asked.voice}",
-            },
-        ]
-        costs = []
-        tools_used = ["race_picture"]
-        tool_texts = [asked.picture, asked.given]
-        refused = None
+        talk = Talk(
+            first_messages(question, earlier, asked), [asked.picture, asked.given]
+        )
         # tool rounds, then the answer, then at most one rewrite
         for round_number in range(1, MAX_ROUNDS + 3):
             try:
-                message, spent = self.model_turn(messages, asked.timeout)
+                message, spent = self.model_turn(talk.messages, asked.timeout)
             except Exception as error:
                 # slow or down: the decision still gets through, from code
-                return fallback(snapshot, question), {
-                    "costs": costs,
-                    "tools": tools_used,
-                    "rounds": None,
-                    "refused": f"model {error.__class__.__name__}",
-                    "call": "TEAM",
-                }
-            costs.append(spent)
+                reason = f"model {error.__class__.__name__}"
+                return fallback(snapshot, question), talk.info(
+                    None, reason, call="TEAM"
+                )
+            talk.costs.append(spent)
             if message.tool_calls and round_number <= MAX_ROUNDS:
-                messages.append(message.model_dump(exclude_none=True))
-                self.run_tools(message, snapshot, messages, tools_used, tool_texts)
+                talk.messages.append(message.model_dump(exclude_none=True))
+                self.run_tools(
+                    message, snapshot, talk.messages, talk.tools_used, talk.tool_texts
+                )
                 continue
             raw = message.content or ""
-            given_orders, raw = split_orders(raw)
-            call, override, text = split_call(raw)  # the CALL line is never spoken
-            # a free fix instead of a paid rewrite round (25 Sep)
-            text = neutral_pronouns(text)
+            given_orders, call, override, text = read_answer(raw)
+            answer = (call, override, text)
             ok, reason = self.check_spoken(
-                question, snapshot, (call, override, text), tool_texts, asked
+                question, snapshot, answer, talk.tool_texts, asked
             )
             if ok:
-                return text, {
-                    "costs": costs,
-                    "tools": tools_used,
-                    "rounds": round_number,
-                    "refused": refused,
-                    "call": call,
-                    "override": override,
-                    "orders": given_orders,
-                }
-            if refused is not None:
+                info = talk.info(
+                    round_number, talk.refused, call=call, override=override
+                )
+                info["orders"] = given_orders
+                return text, info
+            if talk.refused is not None:
                 break  # one rewrite only
-            refused = reason
-            messages.append({"role": "assistant", "content": raw})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {asked.voice}",
-                }
-            )
+            talk.refused = reason
+            talk.messages.extend(rewrite_request(raw, reason, asked.voice))
         return (
             "No clean answer on that one, mate. Ask it another way.",
-            {"costs": costs, "tools": tools_used, "rounds": None, "refused": refused},
+            talk.info(None, talk.refused),
         )
 
     def asked_with(self, question, snapshot):
@@ -325,17 +284,24 @@ class RaceAgent:
                 snapshot.picture.get("laps_to_go"),
             )
         picture = json.dumps(without_empty(snapshot.picture))
-        # the voice goes right next to the question: in the system prompt alone it got lost
-        # (1 answer in 4 swore on 24 Sep), the same lesson as the persona's per-line flag
+        explain = asks_to_explain(question)
+        speeds_ok = asks_about_speed(question)
+        voice = self.voice_for(explain, speeds_ok, bool(snapshot.team_calls))
+        max_words = MAX_WORDS_EXPLAIN if explain else MAX_WORDS
+        timeout = HEAVY_TIMEOUT_S if explain else MODEL_TIMEOUT_S
+        given = self.given_with(snapshot)
+        return Asked(system, picture, given, voice, max_words, timeout, speeds_ok)
+
+    def voice_for(self, explain, speeds_ok, in_a_fight):
+        """The voice reminder that goes right next to the question: in the system prompt alone
+        it got lost (1 answer in 4 swore on 24 Sep), the same lesson as the old per-line flag.
+        Longer when he asks why, speeds only when he asks about speed, and nothing tacked on
+        about the cars around him when nobody is in a fight."""
         voice = (
             VOICE_REMINDER_CLEAN
             if self.clean
             else for_driver(VOICE_REMINDER, self.profile)
         )
-        explain = asks_to_explain(question)
-        max_words = MAX_WORDS_EXPLAIN if explain else MAX_WORDS
-        timeout = HEAVY_TIMEOUT_S if explain else MODEL_TIMEOUT_S
-        speeds_ok = asks_about_speed(question)
         if explain:
             voice = voice.replace(
                 "About 35 words.",
@@ -343,20 +309,23 @@ class RaceAgent:
             )
         if speeds_ok:
             voice += " He asked about speed: speeds in km/h are allowed in this answer."
-        if not snapshot.team_calls:
+        if not in_a_fight:
             voice += " " + NO_TACK_ON
-        # live 25 Sep: 25 model calls for 7 answers - nearly every answer first asked for the cars
-        # ahead/behind and his habits, a whole extra round (2-8 s, ~Rs 0.25). They go with the
-        # question now; the tools stay for everything else.
-        near = {
-            side: without_empty(snapshot.drivers[side])
-            for side in ("ahead", "behind")
-            if side in snapshot.drivers
-        }
+        return voice
+
+    def given_with(self, snapshot):
+        """The cars ahead and behind, his habits and his standing orders, as JSON. Live 25 Sep:
+        25 model calls for 7 answers - nearly every answer first asked for the cars
+        ahead/behind and his habits, a whole extra round (2-8 s, ~Rs 0.25). They go with the
+        question now; the tools stay for everything else."""
+        near = {}
+        for side in ("ahead", "behind"):
+            if side in snapshot.drivers:
+                near[side] = without_empty(snapshot.drivers[side])
         habits = (snapshot.habits or [])[:3]
         snapshot.orders = self.orders
         standing = self.orders.for_coach() if self.orders is not None else {}
-        given = json.dumps(
+        return json.dumps(
             {
                 "driver_ahead": near.get("ahead"),
                 "driver_behind": near.get("behind"),
@@ -364,7 +333,6 @@ class RaceAgent:
                 **standing,
             }
         )
-        return Asked(system, picture, given, voice, max_words, timeout, speeds_ok)
 
     def run_tools(self, message, snapshot, messages, tools_used, tool_texts):
         """Every tool the model called this round, run on the snapshot; the results go back
@@ -418,3 +386,84 @@ class RaceAgent:
         if ok:
             ok, reason = snapshot.check_orders(call, override)
         return ok, reason
+
+
+class Talk:
+    """One question's turns with the model: the messages so far, what each turn cost, which
+    tools ran and what they returned, and why an answer was refused."""
+
+    def __init__(self, messages, tool_texts):
+        self.messages = messages
+        self.costs = []
+        self.tools_used = ["race_picture"]
+        self.tool_texts = tool_texts
+        self.refused = None
+
+    def info(self, rounds, refused, **more):
+        """What is logged with the answer: costs, tools, rounds, why one was refused, and
+        more (the call, the override)."""
+        info = {
+            "costs": self.costs,
+            "tools": self.tools_used,
+            "rounds": rounds,
+            "refused": refused,
+        }
+        info.update(more)
+        return info
+
+
+def first_messages(question, earlier, asked):
+    """The system prompt, then the question with the race picture, the cars either side and
+    his habits, and the voice reminder."""
+    question_text = (
+        f"{earlier}\n\n{question}\n\n(Race picture right now, from race_picture: {asked.picture})"
+        f"\n(Already given, no need to call driver or my_habits for these: {asked.given})\n\n{asked.voice}"
+    )
+    return [
+        {"role": "system", "content": asked.system},
+        {"role": "user", "content": question_text},
+    ]
+
+
+def read_answer(raw):
+    """The model's answer taken apart: (the orders it gave, the call, the override, the words
+    to say). The ORDER and CALL lines are never spoken; he/she become neutral words, a free
+    fix instead of a paid rewrite round (25 Sep)."""
+    given_orders, raw = split_orders(raw)
+    call, override, text = split_call(raw)
+    return given_orders, call, override, neutral_pronouns(text)
+
+
+def rewrite_request(raw, reason, voice):
+    """The refused answer, and the ask to rewrite it."""
+    return [
+        {"role": "assistant", "content": raw},
+        {
+            "role": "user",
+            "content": f"That answer was refused: {reason}. Rewrite it, same call, following the spoken-answer rules. {voice}",
+        },
+    ]
+
+
+def answer_call(question, answer, info, sim_time):
+    """The coach's answer as a call: said by the race engineer at race control's priority,
+    with what it rests on in the facts."""
+    return Call(
+        seat="race_engineer",
+        kind="ANSWER_AGENT",
+        sim_time=sim_time,
+        priority=RACE_CONTROL,
+        ttl=ANSWER_TTL_S,
+        conclusion=answer,
+        template=answer,
+        facts={
+            "heard": question,
+            "tools": info.get("tools", []),
+            "rounds": info.get("rounds"),
+            "seconds": info["seconds"],
+            "refused": info.get("refused"),
+            "call": info.get("call"),
+            "override": info.get("override"),
+        },
+        asked=True,
+    )
