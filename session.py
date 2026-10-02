@@ -51,7 +51,7 @@ from seats.memory_recall import MemoryRecall
 from talk.answers import Answers
 from talk.hearing import needs_agent, intent_of, fix_mishearing, garbled, is_mark
 from coach.agent import RaceAgent
-from coach.snapshot import Snapshot
+from coach.snapshot import Records, Snapshot, Team, Where
 from race.race_model import RaceModel
 from talk import ptt as push_to_talk
 from memory.team_memory import facts as memory_facts
@@ -650,22 +650,20 @@ class Session:
 
     def ask_the_coach(self, heard, frame):
         """A real question: the agent looks at a still picture of the race."""
-        snapshot = Snapshot(
-            self.source.race,
-            self.lap_count,
-            self.real_lap_distance,
-            self.corner_map.corners,
+        where = Where(self.lap_count, self.real_lap_distance, self.corner_map.corners)
+        team = Team(
             self.engineer,
             self.strategist,
             self.performance,
             self.racecraft,
             self.governor,
-            self.team_habits,
-            contacts_by_car(self.conn, self.session_id),
-            db_path=database_file(self.conn),
-            session_id=self.session_id,
-            model=self.model,
+            self.model,
         )
+        contacts = contacts_by_car(self.conn, self.session_id)
+        records = Records(
+            self.team_habits, contacts, database_file(self.conn), self.session_id
+        )
+        snapshot = Snapshot(self.source.race, where, team, records)
         self.agent.ask(heard.text, snapshot, frame.elapsed_time)
         # logged with the answer: the "say again" threshold is tuned from these
         self.heard_confidence[heard.text] = getattr(heard, "confidence", None)

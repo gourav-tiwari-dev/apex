@@ -2,6 +2,8 @@
 before the flag, the odds of a pass, and the team call (DEFEND, LET BY, ATTACK, FOLLOW)
 that the coach states and may override with a reason."""
 
+from typing import NamedTuple
+
 import math
 
 from race.race_model import CATCH_UPPER
@@ -61,15 +63,30 @@ def catch_words(laps, to_go):
     return words
 
 
-def pace_pair(car, theirs, source, mine, engineer, racecraft, model=None):
-    """(their lap, my lap, measured?, how it was measured) for the pace comparison.
+class Pace(NamedTuple):
+    """Their lap against mine for the pace comparison, in seconds: measured (on the road,
+    or two clean laps) or not (a guess never decides a let-by), and how it was found."""
+
+    theirs: float | None
+    mine: float | None
+    measured: bool = True
+    how: str | None = None
+
+
+def pace_pair(car, recent, mine, team):
+    """Their lap and mine for the pace comparison, as a Pace. recent: their latest lap and
+    where it came from (recent_lap); mine: my lap (my_pace); team: the seats (the engineer
+    has my lap when mine is missing; racecraft's clock and the race model measure the road).
     First choice: the race model's road trend (same-point gaps, median of 8 stretches a lap, over
     two laps when it has them). The field study of his tapes: between fighting cars the gap moves
     ~1.2 s a lap for reasons that are not pace; with 2 laps of trend the direction was right ~80%.
     One lap = "not sure": it can inform, never decide a let-by. Then two posted laps. Else unknown."""
-    base = mine or engineer.my_lap or 240.0  # only the difference matters to the maths
-    if model is not None:
-        found = model.quicker(car.id, "me")
+    theirs, source = recent
+    base = (
+        mine or team.engineer.my_lap or 240.0
+    )  # only the difference matters to the maths
+    if team.model is not None:
+        found = team.model.quicker(car.id, "me")
         if found is not None:
             quicker, sure = found
             how = (
@@ -77,26 +94,20 @@ def pace_pair(car, theirs, source, mine, engineer, racecraft, model=None):
                 if sure
                 else "on the road over 1 lap only: NOT SURE yet, say so"
             )
-            return round(base - quicker, 2), base, sure, how
+            return Pace(round(base - quicker, 2), base, sure, how)
     quicker = None
-    if racecraft is not None:
-        quicker = racecraft.clock.pace_vs_me(car.id)
+    if team.racecraft is not None:
+        quicker = team.racecraft.clock.pace_vs_me(car.id)
     if quicker is not None:
-        return (
-            round(base - quicker, 2),
-            base,
-            True,
-            "measured on the road over the last lap",
-        )
+        how = "measured on the road over the last lap"
+        return Pace(round(base - quicker, 2), base, True, how)
     if theirs is not None and mine is not None:
         clean = source == "last lap"
-        return (
-            theirs,
-            mine,
-            clean,
-            "from lap times" if clean else "from their best lap, their last not posted",
-        )
-    return None, None, False, None
+        how = "from their best lap, their last not posted"
+        if clean:
+            how = "from lap times"
+        return Pace(theirs, mine, clean, how)
+    return Pace(None, None, False, None)
 
 
 def my_pace(me, engineer):
@@ -158,9 +169,11 @@ LET_BY_QUICKER_S = 2.0
 ATTACK_QUICKER_S = 0.2  # this much quicker than the car ahead, in a fight: go
 
 
-def team_call(side, gap, their_lap, my_lap, laps_to_go, measured=True):
+def team_call(side, gap, pace, laps_to_go):
     """DEFEND / LET BY / ATTACK / FOLLOW for a car within a second, or None outside a fight.
-    measured: the pace came from the road (or two clean laps); without it, never LET BY."""
+    pace: their lap against mine (Pace); one not measured on the road (or two clean laps)
+    never decides a LET BY."""
+    their_lap, my_lap, measured, _ = pace
     if gap >= NOT_A_FIGHT_S:
         return None
     last_lap = laps_to_go is not None and laps_to_go <= 1

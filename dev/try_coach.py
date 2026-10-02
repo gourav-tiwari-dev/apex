@@ -49,7 +49,7 @@ from game.race_snapshot import identity
 from race.facts import same_class_neighbours
 from talk import ptt as push_to_talk
 from coach.agent import RaceAgent
-from coach.snapshot import Snapshot
+from coach.snapshot import Records, Snapshot, Team, Where
 from talk.answers import Answers
 from talk.hearing import needs_agent
 from coach.llm import Budget
@@ -110,19 +110,16 @@ def set_situation(frozen, seats, situation):
     if situation.get("contacts", 0) and behind is not None:
         contacts_this_race[identity(behind)] = situation["contacts"]
     frozen["race"] = race
-    frozen["snapshot"] = Snapshot(
-        race,
-        frozen["lap"],
-        frozen["lap_dist"],
-        frozen["corners"],
+    where = Where(frozen["lap"], frozen["lap_dist"], frozen["corners"])
+    team = Team(
         engineer,
         seats["Strategist"],
         seats["PerformanceEngineer"],
         seats["Racecraft"],
         seats["Governor"],
-        frozen["habits"],
-        contacts_this_race,
     )
+    records = Records(frozen["habits"], contacts_this_race)
+    frozen["snapshot"] = Snapshot(race, where, team, records)
 
 
 def moved_cars(race, engineer, ahead, behind, situation):
@@ -215,19 +212,17 @@ def frozen_race(tape, lap):
             # 20 s into the lap: at the line itself the game has not posted the lap times yet
             settled = "at" in lap_started and moment.now - lap_started["at"] >= 20.0
             if "snapshot" not in frozen and ready and settled:
-                frozen["snapshot"] = Snapshot(
-                    moment.race,
-                    moment.lap_count,
-                    moment.frame.lap_dist,
-                    moment.corners,
+                where = Where(moment.lap_count, moment.frame.lap_dist, moment.corners)
+                team = Team(
                     self,
                     made["Strategist"],
                     made["PerformanceEngineer"],
                     made["Racecraft"],
                     made["Governor"],
-                    habits,
-                    {},
-                    model=moment.model,
+                    moment.model,
+                )
+                frozen["snapshot"] = Snapshot(
+                    moment.race, where, team, Records(habits, {})
                 )
                 frozen["model"] = moment.model
                 frozen["race"] = moment.race

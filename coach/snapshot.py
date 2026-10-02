@@ -6,12 +6,14 @@ listed in coach/prompt.py: the race picture, the cars around him, the fight math
 fuel, the car, his habits, the database."""
 
 import difflib
+from typing import NamedTuple
 
 from coach import race_tools
 from coach.answer_checks import about_the_fight
 from coach.fight_maths import (
     CONTACT_LET_BY_QUICKER_S,
     NOT_A_FIGHT_S,
+    Pace,
     catch_words,
     my_pace,
     pace_pair,
@@ -38,45 +40,63 @@ LET_BY_AFTER_CONTACTS = (
 )
 
 
+class Where(NamedTuple):
+    """Where he is when he asks: the lap he is on, how far into it, and the track's
+    corners."""
+
+    lap: int
+    lap_dist: float
+    corners: list
+
+
+class Team(NamedTuple):
+    """The race loop's seats and its race model, as they are when he asks. The snapshot
+    reads them once and keeps only what it read: the coach's thread never touches a live
+    seat."""
+
+    engineer: object
+    strategist: object
+    performance: object
+    racecraft: object
+    governor: object
+    model: object = None  # the race model: the one picture (25 Sep)
+
+
+class Records(NamedTuple):
+    """What the database knows for the coach: his habits from team memory, this race's
+    contacts by car, and the database itself (its file, this session) for the tools."""
+
+    habits: list
+    contacts_this_race: dict
+    db_path: str | None = None
+    session_id: int | None = None
+
+
 class Snapshot:
     """Built by the race loop the moment he asks. Plain dicts only, so the agent's thread
     reads a still picture while the race moves on."""
 
-    def __init__(
-        self,
-        race,
-        lap,
-        lap_dist,
-        corners,
-        engineer,
-        strategist,
-        performance,
-        racecraft,
-        governor,
-        habits,
-        contacts_this_race,
-        db_path=None,
-        session_id=None,
-        model=None,
-    ):
-        self.model = model  # the race model: the one picture (25 Sep)
+    def __init__(self, race, where, team, records):
+        lap, lap_dist, corners = where
+        self.model = team.model
         self.quicker_by = {}  # "ahead" / "behind" -> s a lap that car is quicker than me
         self.corners_map = corners or []
-        self.picture = self.race_picture(race, lap, engineer, governor, racecraft)
+        self.picture = self.race_picture(race, lap, team)
         self.lap = lap
         self.race = race
-        self.db_path = db_path
-        self.session_id = session_id
+        self.db_path = records.db_path
+        self.session_id = records.session_id
         self.actions = []  # reminders he asked for; the race loop carries them out
         self.standings = race_tools.standings(race)
         self.session = race_tools.session_info(race, self.picture.get("laps_to_go"))
-        self.laps = race_tools.lap_history(list(getattr(strategist, "lap_records", [])))
-        self.drivers = self.every_driver(race, racecraft, contacts_this_race, engineer)
-        self.habits = habits
-        self.corners = self.every_corner(performance)
-        self.car_state = self.car(race, strategist)
-        self.car_state.update(race_tools.full_car(race, strategist))
-        self.ahead_of_me = self.track_ahead(lap_dist, corners, race, racecraft)
+        lap_records = getattr(team.strategist, "lap_records", [])
+        self.laps = race_tools.lap_history(list(lap_records))
+        self.drivers = self.every_driver(race, team, records.contacts_this_race)
+        self.habits = records.habits
+        self.corners = self.every_corner(team.performance)
+        self.car_state = self.car(race, team.strategist)
+        self.car_state.update(race_tools.full_car(race, team.strategist))
+        self.ahead_of_me = self.track_ahead(lap_dist, corners, race, team.racecraft)
         self.picture["other_class_cars_near"] = self.other_class_near(
             race, lap_dist, corners
         )
@@ -212,7 +232,7 @@ class Snapshot:
             f"data supports, and it supports only: {', '.join(sorted(supported))}"
         )
 
-    def race_picture(self, race, lap, engineer, governor, racecraft=None):
+    def race_picture(self, race, lap, team):
         """The race as the coach first sees it: his place, laps to go, his laps, and the car
         ahead and behind (neighbour), then the field and the battles around him."""
         me = race.me
@@ -224,15 +244,15 @@ class Snapshot:
             ),
             "lap": lap,
             "place": me.place,
-            "laps_to_go": engineer.to_go_at_line
-            if engineer.to_go_at_line is not None
+            "laps_to_go": team.engineer.to_go_at_line
+            if team.engineer.to_go_at_line is not None
             else laps_to_go(race, me.last_lap if me.last_lap > 0 else None, self.model),
             "my_last_lap": lap_text(me.last_lap),
             "my_best_lap": lap_text(me.best_lap),
             "time_left_s": round(session.time_remaining)
             if session.time_remaining > 0
             else None,
-            "quiet_until_lap": governor.quiet_until_lap,
+            "quiet_until_lap": team.governor.quiet_until_lap,
         }
         for side, car, gap in (
             ("ahead", ahead, gap_ahead),
@@ -242,7 +262,7 @@ class Snapshot:
                 picture[side] = None
                 continue
             picture[side] = self.neighbour(
-                side, car, gap, me, engineer, racecraft, picture["laps_to_go"]
+                side, (car, gap), me, team, picture["laps_to_go"]
             )
         if self.model is not None:
             self.picture_laps_to_go = picture.get("laps_to_go")
@@ -257,11 +277,13 @@ class Snapshot:
                 picture["just_pitted_near_you"] = pitted
         return picture
 
-    def neighbour(self, side, car, gap, me, engineer, racecraft, to_go):
+    def neighbour(self, side, nearby, me, team, to_go):
         """The car ahead or behind: the gap and its trend, its lap and pace against his, the race
-        maths, the pass odds from his races, the team call, and whether it is a fight yet."""
+        maths, the pass odds from his races, the team call, and whether it is a fight yet.
+        nearby: (the car, its gap), as same_class_neighbours gives them."""
+        car, gap = nearby
         entry = {"driver": car.driver, "gap_s": round(gap, 1)}
-        before = engineer.gaps_at_line.get(side)
+        before = team.engineer.gaps_at_line.get(side)
         if self.model is not None:
             # one number for one thing (25 Sep): the race model's road trend, not the
             # line-to-line game gap, which said "steady" while the road said "growing 0.6"
@@ -269,13 +291,12 @@ class Snapshot:
             entry["gap_trend"] = self.trend_words(front, back)
         elif before is not None and before[1] is not None:
             entry["gap_trend"] = trend_words(side, before[1] - gap)
-        theirs, source = recent_lap(car)
-        mine = my_pace(me, engineer)
-        if theirs is not None:
-            entry["their_lap"] = f"{lap_text(theirs)} ({source})"
-        theirs, mine, measured, how = pace_pair(
-            car, theirs, source, mine, engineer, racecraft, self.model
-        )
+        recent = recent_lap(car)
+        mine = my_pace(me, team.engineer)
+        if recent[0] is not None:
+            entry["their_lap"] = f"{lap_text(recent[0])} ({recent[1]})"
+        pace = pace_pair(car, recent, mine, team)
+        theirs, mine, _, how = pace
         if theirs is not None and mine is not None:
             self.quicker_by[side] = round(
                 mine - theirs, 2
@@ -286,7 +307,7 @@ class Snapshot:
             entry["their_pace"] = (
                 "not known yet: no lap measured on the road or posted. Say so, never guess it."
             )
-        call = team_call(side, round(gap, 1), theirs, mine, to_go, measured)
+        call = team_call(side, round(gap, 1), pace, to_go)
         if side == "behind" and theirs is not None and mine is not None and gap < 1.5:
             words, share = pass_odds(mine - theirs)
             entry["pass_odds_from_his_races"] = (
@@ -299,7 +320,7 @@ class Snapshot:
             # 25 Sep bank run: a car 1.7 s back, 0.7 s a lap quicker, got "don't fight it,
             # let it go" five times. The team's rule for when it arrives is decided now.
             entry["team_call_when_it_reaches_you"] = team_call(
-                side, NOT_A_FIGHT_S / 2, theirs, mine, to_go
+                side, NOT_A_FIGHT_S / 2, Pace(theirs, mine), to_go
             )
         if gap >= NOT_A_FIGHT_S:
             entry["fight"] = (
@@ -381,7 +402,7 @@ class Snapshot:
                 out.append(f"{who[0]} and {who[1]}, {gap} s apart")
         return out[:5]
 
-    def every_driver(self, race, racecraft, contacts_this_race, engineer):
+    def every_driver(self, race, team, contacts_this_race):
         """Every driver of his class, by lower-case name, with "ahead" and "behind" too: what
         the coach's driver tool returns."""
         me = race.me
@@ -390,9 +411,7 @@ class Snapshot:
         for opponent in race.opponents:
             if opponent.car_class != me.car_class:
                 continue
-            entry = self.driver_entry(
-                opponent, me, racecraft, contacts_this_race, engineer
-            )
+            entry = self.driver_entry(opponent, me, team, contacts_this_race)
             drivers[opponent.driver.lower()] = entry
             if opponent is ahead:
                 drivers["ahead"] = entry
@@ -400,7 +419,7 @@ class Snapshot:
                 drivers["behind"] = entry
         return drivers
 
-    def driver_entry(self, opponent, me, racecraft, contacts_this_race, engineer):
+    def driver_entry(self, opponent, me, team, contacts_this_race):
         """One driver as the coach sees them: place, car, laps, where on the road, pace against
         his, where each of them is quicker, contacts, pass attempts, history."""
         entry = {
@@ -412,23 +431,21 @@ class Snapshot:
             "in_pits": opponent.in_pits,
             "where": road_words(me, opponent),
         }
-        theirs, source = recent_lap(opponent)
-        mine = my_pace(me, engineer)
-        theirs, mine, _, how = pace_pair(
-            opponent, theirs, source, mine, engineer, racecraft, self.model
-        )
+        recent = recent_lap(opponent)
+        mine = my_pace(me, team.engineer)
+        theirs, mine, _, how = pace_pair(opponent, recent, mine, team)
         if theirs is not None and mine is not None:
             entry["their_pace"] = f"{pace_words(theirs, mine)} ({how})"
         else:
             entry["their_pace"] = "not known: no lap time posted yet"
         key = identity(opponent)
         if self.model is None or not self.corners_map:
-            add_speed_edges(entry, racecraft.edges_against(key))
+            add_speed_edges(entry, team.racecraft.edges_against(key))
         entry["contacts_with_you_this_race"] = contacts_this_race.get(key, 0)
         entry["pass_attempts_this_race"] = [
-            a[4] for a in racecraft.attempts if a[0] == key
+            a[4] for a in team.racecraft.attempts if a[0] == key
         ]
-        entry["history"] = racecraft.rivals.get(key)
+        entry["history"] = team.racecraft.rivals.get(key)
         if self.model is not None and self.corners_map:
             self.add_road_gains(entry, opponent)
         return entry

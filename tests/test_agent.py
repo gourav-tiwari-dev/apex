@@ -5,7 +5,7 @@ import time
 from dataclasses import replace
 
 from coach.agent import RaceAgent
-from coach.snapshot import Snapshot
+from coach.snapshot import Records, Snapshot, Team, Where
 from coach.answer_checks import check_answer, numbers_seen
 from coach.fight_maths import pace_words, trend_words
 from talk.hearing import needs_agent
@@ -107,16 +107,15 @@ def snapshot_at_lap_4():
     performance = PerformanceEngineer()
     return Snapshot(
         now,
-        5,
-        9000.0,
-        [],
-        RaceEngineer(),
-        Strategist(),
-        performance,
-        Racecraft(performance),
-        Governor(),
-        ["lap 1 contact in 3 of 5 races"],
-        {},
+        Where(5, 9000.0, []),
+        Team(
+            RaceEngineer(),
+            Strategist(),
+            performance,
+            Racecraft(performance),
+            Governor(),
+        ),
+        Records(["lap 1 contact in 3 of 5 races"], {}),
     )
 
 
@@ -319,32 +318,30 @@ def test_a_lap_the_game_did_not_post_falls_back_to_the_best_lap_and_says_so():
     performance = PerformanceEngineer()
     picture = Snapshot(
         now,
-        5,
-        9000.0,
-        [],
-        RaceEngineer(),
-        Strategist(),
-        performance,
-        Racecraft(performance),
-        Governor(),
-        [],
-        {},
+        Where(5, 9000.0, []),
+        Team(
+            RaceEngineer(),
+            Strategist(),
+            performance,
+            Racecraft(performance),
+            Governor(),
+        ),
+        Records([], {}),
     ).picture
     assert picture["ahead"]["their_lap"] == "4:00.5 (best lap, last lap not posted)"
     nobody = replace(kossman, best_lap=-1.0)
     now = replace(now, opponents=[nobody])
     picture = Snapshot(
         now,
-        5,
-        9000.0,
-        [],
-        RaceEngineer(),
-        Strategist(),
-        performance,
-        Racecraft(performance),
-        Governor(),
-        [],
-        {},
+        Where(5, 9000.0, []),
+        Team(
+            RaceEngineer(),
+            Strategist(),
+            performance,
+            Racecraft(performance),
+            Governor(),
+        ),
+        Records([], {}),
     ).picture
     assert picture["ahead"]["their_pace"].startswith("not known")
 
@@ -358,20 +355,24 @@ def test_a_judgment_anywhere_in_the_question_goes_to_the_agent():
 
 
 def test_the_fight_call_is_made_by_code():
-    from coach.fight_maths import team_call
+    from coach.fight_maths import Pace, team_call
 
     # 24 Sep: last lap, 0.2 s behind, only 0.3 s a lap quicker - the model said "let it go"
-    assert team_call("behind", 0.2, 239.7, 240.0, 1).startswith("DEFEND: last lap")
-    assert team_call("behind", 0.3, 239.8, 240.0, 3).startswith("DEFEND: similar pace")
-    assert team_call("behind", 0.5, 238.0, 240.0, 3).startswith(
+    assert team_call("behind", 0.2, Pace(239.7, 240.0), 1).startswith(
+        "DEFEND: last lap"
+    )
+    assert team_call("behind", 0.3, Pace(239.8, 240.0), 3).startswith(
+        "DEFEND: similar pace"
+    )
+    assert team_call("behind", 0.5, Pace(238.0, 240.0), 3).startswith(
         "LET BY: 2.0 s a lap quicker"
     )
-    assert team_call("behind", 0.5, 238.0, 240.0, 1).startswith(
+    assert team_call("behind", 0.5, Pace(238.0, 240.0), 1).startswith(
         "DEFEND"
     )  # even quicker cars, last lap
-    assert team_call("ahead", 0.4, 240.6, 240.0, 3).startswith("ATTACK")
-    assert team_call("ahead", 0.4, 240.1, 240.0, 3).startswith("FOLLOW")
-    assert team_call("behind", 1.7, 239.0, 240.0, 3) is None  # not a fight yet
+    assert team_call("ahead", 0.4, Pace(240.6, 240.0), 3).startswith("ATTACK")
+    assert team_call("ahead", 0.4, Pace(240.1, 240.0), 3).startswith("FOLLOW")
+    assert team_call("behind", 1.7, Pace(239.0, 240.0), 3) is None  # not a fight yet
 
 
 def test_an_override_needs_a_reason_the_data_backs():
@@ -628,15 +629,15 @@ def test_pace_is_measured_on_the_road_a_lap_apart():
 
 
 def test_let_by_only_for_a_car_genuinely_fast_and_measured():
-    from coach.fight_maths import team_call
+    from coach.fight_maths import Pace, team_call
 
-    assert team_call("behind", 0.4, 240.0, 241.5, 5).startswith(
+    assert team_call("behind", 0.4, Pace(240.0, 241.5), 5).startswith(
         "DEFEND"
     )  # 1.5 s: fight it
-    assert team_call("behind", 0.4, 238.0, 240.5, 5).startswith(
+    assert team_call("behind", 0.4, Pace(238.0, 240.5), 5).startswith(
         "LET BY"
     )  # 2.5 s, measured
-    assert team_call("behind", 0.4, 238.0, 240.5, 5, measured=False).startswith(
+    assert team_call("behind", 0.4, Pace(238.0, 240.5, measured=False), 5).startswith(
         "DEFEND"
     )
 
@@ -720,16 +721,15 @@ def test_no_fight_calls_in_qualifying():
     performance = PerformanceEngineer()
     snapshot = Snapshot(
         quali,
-        2,
-        9000.0,
-        [],
-        RaceEngineer(),
-        Strategist(),
-        performance,
-        Racecraft(performance),
-        Governor(),
-        [],
-        {},
+        Where(2, 9000.0, []),
+        Team(
+            RaceEngineer(),
+            Strategist(),
+            performance,
+            Racecraft(performance),
+            Governor(),
+        ),
+        Records([], {}),
     )
     assert snapshot.team_calls == {}
     assert snapshot.check_call(None, None, "qualifying is fucked up")[0]
