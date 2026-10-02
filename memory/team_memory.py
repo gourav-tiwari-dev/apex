@@ -126,18 +126,8 @@ def events_in(conn, session_ids, kinds):
 
 def corner_habits(conn, drive_ids):
     """Incidents that keep happening at the same corner."""
-    groups = {}
-    for event_id, session_id, kind, corner, lap, other in events_in(
-        conn, drive_ids, INCIDENT_KINDS + ("CONTACT",)
-    ):
-        if corner is None or corner == "the straight":
-            continue
-        key = (track_of(conn, session_id), corner, kind)
-        if key not in groups:
-            groups[key] = []
-        groups[key].append((event_id, session_id))
     made = 0
-    for (track, corner, kind), found in groups.items():
+    for (track, corner, kind), found in incidents_by_corner(conn, drive_ids).items():
         sessions = {session_id for _, session_id in found}
         if len(found) < HABIT_MIN or len(sessions) < HABIT_MIN_DRIVES:
             continue
@@ -150,6 +140,22 @@ def corner_habits(conn, drive_ids):
         save_fact(conn, fact)
         made += 1
     return made
+
+
+def incidents_by_corner(conn, drive_ids):
+    """(track, corner, kind) -> [(event id, session id)]: every incident at a corner (not on
+    a straight), in the order they happened."""
+    groups = {}
+    for event_id, session_id, kind, corner, lap, other in events_in(
+        conn, drive_ids, INCIDENT_KINDS + ("CONTACT",)
+    ):
+        if corner is None or corner == "the straight":
+            continue
+        key = (track_of(conn, session_id), corner, kind)
+        if key not in groups:
+            groups[key] = []
+        groups[key].append((event_id, session_id))
+    return groups
 
 
 def race_ids(conn, drive_ids):

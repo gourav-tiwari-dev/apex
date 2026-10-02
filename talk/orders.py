@@ -239,6 +239,19 @@ class Order:
     for_good: bool = False
 
 
+def orders_said(heard):
+    """(topic, stance) of every order phrase in what he said, the first one for each topic."""
+    said = []
+    topics = set()
+    for topic, stance, phrases in PHRASES:
+        if topic in topics:
+            continue
+        if any(" " + phrase + " " in heard for phrase in phrases):
+            topics.add(topic)
+            said.append((topic, stance))
+    return said
+
+
 class StandingOrders:
     def __init__(self):
         self.orders = {}  # topic -> Order
@@ -255,16 +268,11 @@ class StandingOrders:
         if any(" " + words + " " in heard for words in BACK_TO_NORMAL):
             self.clear(text, lap, now)
             return "Copy. Back to normal, my calls again.", []
+        for_good = any(" " + w + " " in heard for w in FOR_GOOD)
         found = []
-        topics = set()
-        for topic, stance, phrases in PHRASES:
-            if topic in topics:
-                continue
-            if any(" " + phrase + " " in heard for phrase in phrases):
-                topics.add(topic)
-                for_good = any(" " + w + " " in heard for w in FOR_GOOD)
-                order = Order(topic, stance, text, lap, now, "him", for_good)
-                found.append(self.set(order))
+        for topic, stance in orders_said(heard):
+            order = Order(topic, stance, text, lap, now, "him", for_good)
+            found.append(self.set(order))
         if not found:
             return None
         return " ".join(STANCES[o.topic][o.stance] for o in found), found
