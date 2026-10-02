@@ -172,77 +172,116 @@ def ask_after_race(conn, session_id, path=SERVER_FILE):
     """The window after a race. Closing it sends nothing."""
     if read_door(path) is None:
         return None
-    import tkinter as tk
-    from setup_wizard import sharp_on_scaled_screens
-
-    sharp_on_scaled_screens()
-    answer = {}
-    root = tk.Tk()
-    root.title("Apex beta: how was the radio?")
-    root.configure(bg="#0b0e12", padx=24, pady=20)
-    root.attributes("-topmost", True)
-    style = {"bg": "#0b0e12", "fg": "#eef1f4", "font": ("Bahnschrift", 12)}
-    tk.Label(
-        root,
-        text="How was the radio this race?",
-        **{**style, "font": ("Bahnschrift", 16, "bold")},
-    ).pack(anchor="w")
-    rating = tk.IntVar(value=0)
-    row = tk.Frame(root, bg="#0b0e12")
-    row.pack(anchor="w", pady=10)
-    for score in range(1, 6):
-        tk.Radiobutton(
-            row,
-            text=str(score),
-            value=score,
-            variable=rating,
-            indicatoron=0,
-            width=4,
-            font=("Bahnschrift", 13, "bold"),
-            bg="#141920",
-            fg="#eef1f4",
-            selectcolor="#ff5b1f",
-            bd=0,
-            relief="flat",
-        ).pack(side="left", padx=3)
-    tk.Label(root, text="What was wrong, or what do you want it to do?", **style).pack(
-        anchor="w"
-    )
-    comment = tk.Text(root, width=48, height=4, font=("Bahnschrift", 11))
-    comment.pack(anchor="w", pady=(2, 10))
-    send_tape = tk.BooleanVar(value=True)
-    tk.Checkbutton(
-        root,
-        text="Send this race's tape so the bug can be replayed\n"
-        "(other drivers' names are removed first)",
-        variable=send_tape,
-        justify="left",
-        bg="#0b0e12",
-        fg="#eef1f4",
-        selectcolor="#141920",
-        activebackground="#0b0e12",
-        activeforeground="#eef1f4",
-        font=("Bahnschrift", 11),
-    ).pack(anchor="w")
-
-    def done():
-        answer.update(
-            rating=rating.get(), comment=comment.get("1.0", "end"), tape=send_tape.get()
-        )
-        root.destroy()
-
-    tk.Button(
-        root,
-        text="Send",
-        command=done,
-        font=("Bahnschrift", 12, "bold"),
-        bg="#ff5b1f",
-        fg="#07090c",
-        bd=0,
-        padx=18,
-        pady=6,
-    ).pack(anchor="e", pady=(14, 0))
-    root.mainloop()
+    answer = FeedbackWindow().ask()
     if not answer or (answer["rating"] == 0 and not answer["comment"].strip()):
         return None
     return send_feedback(conn, session_id, answer, path)
+
+
+class FeedbackWindow:
+    """The window after a race: a 1-5 rating of the radio, what was wrong, and whether to
+    send the tape."""
+
+    def __init__(self):
+        import tkinter as tk
+        from setup_wizard import sharp_on_scaled_screens
+
+        sharp_on_scaled_screens()
+        self.tk = tk
+        self.answer = {}
+        self.root = tk.Tk()
+        self.root.title("Apex beta: how was the radio?")
+        self.root.configure(bg="#0b0e12", padx=24, pady=20)
+        self.root.attributes("-topmost", True)
+        self.style = {"bg": "#0b0e12", "fg": "#eef1f4", "font": ("Bahnschrift", 12)}
+        tk.Label(
+            self.root,
+            text="How was the radio this race?",
+            **{**self.style, "font": ("Bahnschrift", 16, "bold")},
+        ).pack(anchor="w")
+        self.rating = self.rating_row()
+        self.comment = self.comment_box()
+        self.send_tape = self.tape_box()
+        self.send_button()
+
+    def rating_row(self):
+        """Five buttons, 1 to 5; nothing chosen at first."""
+        tk = self.tk
+        rating = tk.IntVar(value=0)
+        row = tk.Frame(self.root, bg="#0b0e12")
+        row.pack(anchor="w", pady=10)
+        for score in range(1, 6):
+            tk.Radiobutton(
+                row,
+                text=str(score),
+                value=score,
+                variable=rating,
+                indicatoron=0,
+                width=4,
+                font=("Bahnschrift", 13, "bold"),
+                bg="#141920",
+                fg="#eef1f4",
+                selectcolor="#ff5b1f",
+                bd=0,
+                relief="flat",
+            ).pack(side="left", padx=3)
+        return rating
+
+    def comment_box(self):
+        """What was wrong, in his words."""
+        tk = self.tk
+        tk.Label(
+            self.root,
+            text="What was wrong, or what do you want it to do?",
+            **self.style,
+        ).pack(anchor="w")
+        comment = tk.Text(self.root, width=48, height=4, font=("Bahnschrift", 11))
+        comment.pack(anchor="w", pady=(2, 10))
+        return comment
+
+    def tape_box(self):
+        """Send the race's tape too (ticked at first): other drivers' names are removed."""
+        tk = self.tk
+        send_tape = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            self.root,
+            text="Send this race's tape so the bug can be replayed\n"
+            "(other drivers' names are removed first)",
+            variable=send_tape,
+            justify="left",
+            bg="#0b0e12",
+            fg="#eef1f4",
+            selectcolor="#141920",
+            activebackground="#0b0e12",
+            activeforeground="#eef1f4",
+            font=("Bahnschrift", 11),
+        ).pack(anchor="w")
+        return send_tape
+
+    def send_button(self):
+        """Send: keeps his answer and closes the window."""
+        self.tk.Button(
+            self.root,
+            text="Send",
+            command=self.done,
+            font=("Bahnschrift", 12, "bold"),
+            bg="#ff5b1f",
+            fg="#07090c",
+            bd=0,
+            padx=18,
+            pady=6,
+        ).pack(anchor="e", pady=(14, 0))
+
+    def done(self):
+        """His answer kept, the window closed."""
+        self.answer.update(
+            rating=self.rating.get(),
+            comment=self.comment.get("1.0", "end"),
+            tape=self.send_tape.get(),
+        )
+        self.root.destroy()
+
+    def ask(self):
+        """Shows the window until he sends or closes it: his answer, or {} when closed."""
+        self.root.mainloop()
+        return self.answer

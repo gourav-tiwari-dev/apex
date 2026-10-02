@@ -176,30 +176,54 @@ def frozen_race(tape, lap):
     """Replay the tape silently and keep a still picture of the race just after the line of
     that lap, plus the seats as they were then."""
     made = {}
+    keep_seats(made)
+    habits = his_habits()
+    frozen = {}
+    session.RaceEngineer = freezing_engineer(lap, made, frozen, habits)
+    throwaway = os.path.join(tempfile.mkdtemp(), "try_coach.db")
+    session.connect_db = lambda: memory.connect_db(throwaway)
+    with contextlib.redirect_stdout(io.StringIO()):
+        session.run_replay(tape, out_loud=False)
+    if "snapshot" not in frozen:
+        raise SystemExit(f"that tape never reached lap {lap}")
+    return frozen, made
 
-    # the replay builds its own seats inside run_replay: these subclasses keep a hand on them
-    def keep(name, seat_class):
-        class Kept(seat_class):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                made[name] = self
 
-        return Kept
-
+def keep_seats(made):
+    """The replay builds its own seats inside run_replay: these subclasses keep a hand on
+    them, in made, by name."""
     for name in ("Strategist", "PerformanceEngineer", "Racecraft", "Governor"):
-        setattr(session, name, keep(name, getattr(session, name)))
+        setattr(session, name, kept_seat(name, getattr(session, name), made))
 
+
+def kept_seat(name, seat_class, made):
+    """seat_class, which puts each one it builds in made[name]."""
+
+    class Kept(seat_class):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            made[name] = self
+
+    return Kept
+
+
+def his_habits():
+    """Every habit team memory knows about him, from his real apex.db."""
     real = memory.connect_db("apex.db")
     habits = []
     for kind in ("lap_one", "corner_habit", "pass_attempts", "clean_race", "rival"):
-        habits += [fact["summary"] for fact in memory_facts(real, kind)]
+        for fact in memory_facts(real, kind):
+            habits.append(fact["summary"])
     real.close()
+    return habits
 
-    frozen = {}
+
+def freezing_engineer(lap, made, frozen, habits):
+    """The race engineer, which takes the still picture into frozen 20 s into the lap (at
+    the line itself the game has not posted the lap times yet)."""
     lap_started = {}
-    engineer_class = session.RaceEngineer
 
-    class FreezingEngineer(engineer_class):
+    class FreezingEngineer(session.RaceEngineer):
         def __init__(self):
             super().__init__()
             made["RaceEngineer"] = self
@@ -209,40 +233,35 @@ def frozen_race(tape, lap):
             ready = moment.race is not None and moment.race.me is not None
             if moment.lap_count >= lap and "at" not in lap_started:
                 lap_started["at"] = moment.now
-            # 20 s into the lap: at the line itself the game has not posted the lap times yet
             settled = "at" in lap_started and moment.now - lap_started["at"] >= 20.0
             if "snapshot" not in frozen and ready and settled:
-                where = Where(moment.lap_count, moment.frame.lap_dist, moment.corners)
-                team = Team(
-                    self,
-                    made["Strategist"],
-                    made["PerformanceEngineer"],
-                    made["Racecraft"],
-                    made["Governor"],
-                    moment.model,
-                )
-                frozen["snapshot"] = Snapshot(
-                    moment.race, where, team, Records(habits, {})
-                )
-                frozen["model"] = moment.model
-                frozen["race"] = moment.race
-                frozen["lap"] = moment.lap_count
-                frozen["lap_dist"] = moment.frame.lap_dist
-                frozen["corners"] = moment.corners
-                frozen["habits"] = habits
-                frozen["base_race"] = moment.race
-                frozen["base_gaps"] = dict(self.gaps_at_line)
-                frozen["base_to_go"] = self.to_go_at_line
+                freeze(self, moment, made, frozen, habits)
             return calls
 
-    session.RaceEngineer = FreezingEngineer
-    throwaway = os.path.join(tempfile.mkdtemp(), "try_coach.db")
-    session.connect_db = lambda: memory.connect_db(throwaway)
-    with contextlib.redirect_stdout(io.StringIO()):
-        session.run_replay(tape, out_loud=False)
-    if "snapshot" not in frozen:
-        raise SystemExit(f"that tape never reached lap {lap}")
-    return frozen, made
+    return FreezingEngineer
+
+
+def freeze(engineer, moment, made, frozen, habits):
+    """The coach's snapshot at this moment, and everything a situation is built from."""
+    where = Where(moment.lap_count, moment.frame.lap_dist, moment.corners)
+    team = Team(
+        engineer,
+        made["Strategist"],
+        made["PerformanceEngineer"],
+        made["Racecraft"],
+        made["Governor"],
+        moment.model,
+    )
+    frozen["snapshot"] = Snapshot(moment.race, where, team, Records(habits, {}))
+    frozen["model"] = moment.model
+    frozen["race"] = moment.race
+    frozen["lap"] = moment.lap_count
+    frozen["lap_dist"] = moment.frame.lap_dist
+    frozen["corners"] = moment.corners
+    frozen["habits"] = habits
+    frozen["base_race"] = moment.race
+    frozen["base_gaps"] = dict(engineer.gaps_at_line)
+    frozen["base_to_go"] = engineer.to_go_at_line
 
 
 def parse_args():

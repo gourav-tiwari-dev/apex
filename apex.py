@@ -86,6 +86,24 @@ def replay_night(tape, speed, clean):
 
 
 def main(argv=None):
+    """The command: a race night from the game, or a replay of a tape (--replay)."""
+    args = parse_args(argv)
+    # the setup wizard's choices (profile.json); a flag on the command line switches one on
+    profile = load_profile()
+    clean = not (args.spicy or profile.spicy)
+    if args.replay:
+        replay_night(args.replay, args.speed, clean)
+    else:
+        clips = None
+        if args.clips or profile.clips:
+            from clips.auto import AutoClips
+
+            clips = AutoClips(os.path.abspath("apex.db"))
+        race_night(clean, args.record, clips)
+
+
+def parse_args(argv):
+    """The command line's options."""
     parser = argparse.ArgumentParser(description="Apex race engineer")
     parser.add_argument(
         "--replay",
@@ -117,19 +135,7 @@ def main(argv=None):
         action="store_true",
         help="record the game window and make a short of every race (Videos/Apex)",
     )
-    args = parser.parse_args(argv)
-    # the setup wizard's choices (profile.json); a flag on the command line switches one on
-    profile = load_profile()
-    clean = not (args.spicy or profile.spicy)
-    if args.replay:
-        replay_night(args.replay, args.speed, clean)
-    else:
-        clips = None
-        if args.clips or profile.clips:
-            from clips.auto import AutoClips
-
-            clips = AutoClips(os.path.abspath("apex.db"))
-        race_night(clean, args.record, clips)
+    return parser.parse_args(argv)
 
 
 if __name__ == "__main__":

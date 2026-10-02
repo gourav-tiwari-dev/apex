@@ -299,23 +299,8 @@ class RaceRecorder:
     def join(self, pieces):
         """The picture's pieces and the sound files as one race.mp4, the sound lined up
         with the picture; the pieces are deleted."""
-        listing = os.path.join(self.piece_dir, "pieces.txt")
-        with open(listing, "w") as f:
-            for piece in pieces:
-                f.write(f"file '{piece}'\n")
-        inputs = ["-f", "concat", "-safe", "0", "-i", listing]
-        maps = ["-map", "0:v"]
-        number = 0
-        for sound in self.sounds:
-            if sound.first_sample_at is None:
-                print(f"[clips] {os.path.basename(sound.path)} got no sound - left out")
-                continue
-            number += 1
-            # a positive offset: the sound started after the picture, so it is delayed
-            # to match
-            offset = sound.first_sample_at - self.video_started_at
-            inputs += ["-itsoffset", f"{offset:.3f}", "-i", sound.path]
-            maps += ["-map", f"{number}:a"]
+        listing = self.write_listing(pieces)
+        inputs, maps = self.sound_inputs(listing)
         race = os.path.join(self.piece_dir, "race.mp4")
         subprocess.run(
             [
@@ -340,3 +325,29 @@ class RaceRecorder:
             os.remove(os.path.join(self.piece_dir, piece))
         os.remove(listing)
         return race
+
+    def write_listing(self, pieces):
+        """The pieces' list for ffmpeg's concat, written next to them; returns its path."""
+        listing = os.path.join(self.piece_dir, "pieces.txt")
+        with open(listing, "w") as f:
+            for piece in pieces:
+                f.write(f"file '{piece}'\n")
+        return listing
+
+    def sound_inputs(self, listing):
+        """ffmpeg's inputs and maps: the pieces, then each sound file that got sound, lined
+        up with the picture."""
+        inputs = ["-f", "concat", "-safe", "0", "-i", listing]
+        maps = ["-map", "0:v"]
+        number = 0
+        for sound in self.sounds:
+            if sound.first_sample_at is None:
+                print(f"[clips] {os.path.basename(sound.path)} got no sound - left out")
+                continue
+            number += 1
+            # a positive offset: the sound started after the picture, so it is delayed
+            # to match
+            offset = sound.first_sample_at - self.video_started_at
+            inputs += ["-itsoffset", f"{offset:.3f}", "-i", sound.path]
+            maps += ["-map", f"{number}:a"]
+        return inputs, maps

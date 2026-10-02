@@ -67,46 +67,43 @@ def reference_of(reference):
 
 
 def compare_to_reference(conn, reference_path, session_id):
+    """His corners this session against the reference lap's, corner by corner."""
     report = corner_report(conn, session_id)
-    reference_report = reference_of(reference_path)
-    reference = reference_report["corners"]
+    reference = reference_of(reference_path)["corners"]
     comparison = []
-
     for current_row in report:
-        zone = current_row["zone_median"]
-        coast = current_row["coast_median"]
-        brake = current_row["onset_median"]
-        current_corner = current_row["corner"]
-        if current_corner not in reference:
-            continue
-        technique = reference[current_corner]["technique"]
-        your_min_speed = current_row["speed_median"]
-        ref_brake = reference[current_corner]["brake_point"]
-        ref_min_speed = reference[current_corner]["min_speed"]
-
-        time_lost = zone / (your_min_speed / 3.6) - zone / (ref_min_speed / 3.6)
-        gap = your_min_speed - ref_min_speed
-        # no reference brake point on tracks referenced by another car: not measured, never guessed
-        braking_gap = None
-        if ref_brake is not None and brake is not None:
-            braking_gap = ref_brake - brake
-        comparison.append(
-            {
-                "corner": current_corner,
-                "yours": your_min_speed,
-                "ref": ref_min_speed,
-                "gap": gap,
-                "confidence": reference[current_corner]["confidence"],
-                "time_lost": time_lost,
-                "slow_zone": zone,
-                "coast": coast,
-                "brake_point": brake,
-                "technique": technique,
-                "braking_difference": braking_gap,
-            }
-        )
-
+        if current_row["corner"] in reference:
+            comparison.append(
+                corner_comparison(current_row, reference[current_row["corner"]])
+            )
     return comparison
+
+
+def corner_comparison(current_row, reference_row):
+    """One corner against the reference: speeds, the gap, the time it costs, the braking."""
+    zone = current_row["zone_median"]
+    brake = current_row["onset_median"]
+    your_min_speed = current_row["speed_median"]
+    ref_brake = reference_row["brake_point"]
+    ref_min_speed = reference_row["min_speed"]
+    time_lost = zone / (your_min_speed / 3.6) - zone / (ref_min_speed / 3.6)
+    # no reference brake point on tracks referenced by another car: not measured, never guessed
+    braking_gap = None
+    if ref_brake is not None and brake is not None:
+        braking_gap = ref_brake - brake
+    return {
+        "corner": current_row["corner"],
+        "yours": your_min_speed,
+        "ref": ref_min_speed,
+        "gap": your_min_speed - ref_min_speed,
+        "confidence": reference_row["confidence"],
+        "time_lost": time_lost,
+        "slow_zone": zone,
+        "coast": current_row["coast_median"],
+        "brake_point": brake,
+        "technique": reference_row["technique"],
+        "braking_difference": braking_gap,
+    }
 
 
 def time_lost_of(row):

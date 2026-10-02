@@ -220,6 +220,32 @@ def reference_for(conn, session_id):
 
 def incident_review(conn, session_id):
     """E13: every contact of the race, where and with whom, and the pass attempts."""
+    contacts, attempts, offs, strikes, impacts = incident_numbers(conn, session_id)
+    parts = []
+    if contacts:
+        where = ", ".join(f"lap {lap} {corner}" for corner, lap, _ in contacts[:3])
+        parts.append(
+            f"{len(contacts)} contact{'s' if len(contacts) > 1 else ''}: {where}."
+        )
+    else:
+        parts.append("No contact with a known car.")
+    if attempts:
+        passes = sum(1 for (o,) in attempts if o == "pass")
+        touched = sum(1 for (o,) in attempts if o == "contact")
+        parts.append(
+            f"{len(attempts)} passing attempts, {passes} made it, {touched} ended in contact."
+        )
+    if impacts:
+        parts.append(
+            f"{impacts} other impact{'s' if impacts > 1 else ''}: a wall, or a car Apex could not see."
+        )
+    parts.append(f"{offs} offs, {strikes} track limit steps.")
+    return " ".join(parts)
+
+
+def incident_numbers(conn, session_id):
+    """(contacts, pass attempts, offs and spins, track-limit strikes, other impacts) of the
+    session, from its events."""
     contacts = conn.execute(
         "SELECT corner, lap_count, conclusion FROM events WHERE session_id = ? AND kind = 'CONTACT' ORDER BY sim_time",
         (session_id,),
@@ -237,34 +263,16 @@ def incident_review(conn, session_id):
         ).fetchone()[0]
         or 0
     )
-    parts = []
-    if contacts:
-        where = ", ".join(f"lap {lap} {corner}" for corner, lap, _ in contacts[:3])
-        parts.append(
-            f"{len(contacts)} contact{'s' if len(contacts) > 1 else ''}: {where}."
-        )
-    else:
-        parts.append("No contact with a known car.")
-    if attempts:
-        passes = sum(1 for (o,) in attempts if o == "pass")
-        touched = sum(1 for (o,) in attempts if o == "contact")
-        parts.append(
-            f"{len(attempts)} passing attempts, {passes} made it, {touched} ended in contact."
-        )
     impacts = conn.execute(
         "SELECT COUNT(*) FROM events WHERE session_id = ? AND kind = 'IMPACT'",
         (session_id,),
     ).fetchone()[0]
-    if impacts:
-        parts.append(
-            f"{impacts} other impact{'s' if impacts > 1 else ''}: a wall, or a car Apex could not see."
-        )
-    parts.append(f"{offs} offs, {strikes} track limit steps.")
-    return " ".join(parts)
+    return contacts, attempts, offs, strikes, impacts
 
 
 def run_debrief(session_id=None):
-
+    """After a session: the last job graded, the coach's debrief and the next job, then the
+    setup engineer and the incident review, each said and logged."""
     conn = connect_db("apex.db")
 
     # Grade the latest session unless one is named, for example: python -m between_sessions.debrief 11
@@ -273,53 +281,9 @@ def run_debrief(session_id=None):
     print(f"session {session_id}")
 
     previous = load_latest_contract(conn, session_id, track_of(conn, session_id))
-    last_contract = None
-    job_still_open = False
-    if previous is not None:
-        grade = evaluate_contract(conn, previous, session_id)
-        line = verdict_line(previous, grade)
-        print(f"verdict: {grade['verdict']} - {line}")
-        say_and_log(conn, session_id, "performance", "VERDICT", line)
-        # a job keeps collecting laps across races until it can be graded: replacing it
-        # every race meant it could never be judged
-        job_still_open = grade["verdict"] == "insufficient"
-
-        last_contract = {
-            "corner": previous["corner"],
-            "baseline": previous["baseline"],
-            "target": previous["target"],
-            "result": grade.get("result"),
-            "gain": grade.get("gain"),
-            "verdict": grade["verdict"],
-            "laps": grade["laps"],
-        }
-
-    reference = reference_for(conn, session_id)
-    answer = None
-    pack = None
-    if reference is None:
-        print("[no reference on this track yet: nobody in your class did 2 clean laps]")
-    else:
-        pack = build_evidence_pack(conn, reference, session_id)
-        pack["last_contract"] = last_contract
-        answer = debrief(pack)
-    if answer is None:
-        print("[no debrief]")
-    else:
-        print(answer["analysis"])
-        say_and_log(conn, session_id, "performance", "DEBRIEF", answer["spoken"])
-        contract = None
-        if not job_still_open:
-            contract = make_contract(pack, answer["spoken"])
-        if job_still_open:
-            print(f"[job at {previous['corner']} still open: it keeps collecting laps]")
-        elif contract is None:
-            print("[no contract: the gap is too small to coach]")
-        else:
-            save_contract(conn, session_id, contract)
-            print(
-                f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps"
-            )
+    last_contract, job_still_open = grade_last_job(conn, session_id, previous)
+    open_job = previous if job_still_open else None
+    coach_debrief(conn, session_id, last_contract, open_job)
     # the setup engineer (M8) and the incident review (E13), after the coach
     for advice in advice_for(conn, session_id):
         say_and_log(
@@ -333,6 +297,63 @@ def run_debrief(session_id=None):
         incident_review(conn, session_id),
     )
     conn.close()
+
+
+def grade_last_job(conn, session_id, previous):
+    """The last race's job graded and said: (what the coach is told about it, still open?).
+    A job keeps collecting laps across races until it can be graded: replacing it every
+    race meant it could never be judged."""
+    if previous is None:
+        return None, False
+    grade = evaluate_contract(conn, previous, session_id)
+    line = verdict_line(previous, grade)
+    print(f"verdict: {grade['verdict']} - {line}")
+    say_and_log(conn, session_id, "performance", "VERDICT", line)
+    job_still_open = grade["verdict"] == "insufficient"
+    last_contract = {
+        "corner": previous["corner"],
+        "baseline": previous["baseline"],
+        "target": previous["target"],
+        "result": grade.get("result"),
+        "gain": grade.get("gain"),
+        "verdict": grade["verdict"],
+        "laps": grade["laps"],
+    }
+    return last_contract, job_still_open
+
+
+def coach_debrief(conn, session_id, last_contract, open_job):
+    """The coach's debrief against a reference lap, said and logged, and the next job from
+    it. open_job: the last job, when it is still collecting laps (then no new one)."""
+    reference = reference_for(conn, session_id)
+    if reference is None:
+        print("[no reference on this track yet: nobody in your class did 2 clean laps]")
+        print("[no debrief]")
+        return
+    pack = build_evidence_pack(conn, reference, session_id)
+    pack["last_contract"] = last_contract
+    answer = debrief(pack)
+    if answer is None:
+        print("[no debrief]")
+        return
+    print(answer["analysis"])
+    say_and_log(conn, session_id, "performance", "DEBRIEF", answer["spoken"])
+    next_job(conn, session_id, pack, answer["spoken"], open_job)
+
+
+def next_job(conn, session_id, pack, spoken, open_job):
+    """The next job from the debrief, saved; none while the last one is still open."""
+    if open_job is not None:
+        print(f"[job at {open_job['corner']} still open: it keeps collecting laps]")
+        return
+    contract = make_contract(pack, spoken)
+    if contract is None:
+        print("[no contract: the gap is too small to coach]")
+        return
+    save_contract(conn, session_id, contract)
+    print(
+        f"contract: {contract['corner']} {contract['metric']} {contract['baseline']} -> {contract['target']} over {contract['min_laps']} laps"
+    )
 
 
 if __name__ == "__main__":

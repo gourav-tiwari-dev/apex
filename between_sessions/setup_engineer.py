@@ -94,38 +94,11 @@ def advice_for(conn, session_id):
     spins = events_of(conn, session_id, "WHEELSPIN")
     tc_now, abs_now = settings_of(conn, session_id)
     advice = []
-
-    if len(snaps) >= ENOUGH_TO_ACT:
-        advice.append(
-            {
-                "kind": "BIAS_FORWARD",
-                "conclusion": f"The rear snapped under braking {len(snaps)} times, mostly at {corners_named(snaps)}. "
-                f"Move the brake bias 1 click forward, and trail off the brake a little earlier there.",
-                "facts": {"snaps": len(snaps), "clicks": 1},
-                "evidence": [row[0] for row in snaps],
-            }
-        )
-    elif len(lockups) >= ENOUGH_TO_ACT:
-        advice.append(
-            {
-                "kind": "ABS_UP",
-                "conclusion": f"Front lock-ups {len(lockups)} times, mostly at {corners_named(lockups)}. "
-                f"Go 1 step up on ABS{step_words(abs_now)}, or bias 1 click rearward.",
-                "facts": {"lockups": len(lockups), "steps": 1, "abs_now": abs_now},
-                "evidence": [row[0] for row in lockups],
-            }
-        )
+    braking = braking_advice(snaps, lockups, abs_now)
+    if braking is not None:
+        advice.append(braking)
     if len(spins) >= ENOUGH_TO_ACT:
-        advice.append(
-            {
-                "kind": "TC_UP",
-                "conclusion": f"Wheelspin on exit {len(spins)} times, mostly at {corners_named(spins)}. "
-                f"Go 1 step up on TC{step_words(tc_now)}.",
-                "facts": {"wheelspin": len(spins), "steps": 1, "tc_now": tc_now},
-                "evidence": [row[0] for row in spins],
-            }
-        )
-
+        advice.append(traction_advice(spins, tc_now))
     if not advice and laps >= MIN_LAPS_FOR_ALL_CLEAR:
         advice.append(
             {
@@ -137,3 +110,36 @@ def advice_for(conn, session_id):
             }
         )
     return advice
+
+
+def braking_advice(snaps, lockups, abs_now):
+    """The rear snapping under braking: bias forward. Else front lock-ups: ABS up (or bias
+    rearward). None when neither happened often enough."""
+    if len(snaps) >= ENOUGH_TO_ACT:
+        return {
+            "kind": "BIAS_FORWARD",
+            "conclusion": f"The rear snapped under braking {len(snaps)} times, mostly at {corners_named(snaps)}. "
+            f"Move the brake bias 1 click forward, and trail off the brake a little earlier there.",
+            "facts": {"snaps": len(snaps), "clicks": 1},
+            "evidence": [row[0] for row in snaps],
+        }
+    if len(lockups) >= ENOUGH_TO_ACT:
+        return {
+            "kind": "ABS_UP",
+            "conclusion": f"Front lock-ups {len(lockups)} times, mostly at {corners_named(lockups)}. "
+            f"Go 1 step up on ABS{step_words(abs_now)}, or bias 1 click rearward.",
+            "facts": {"lockups": len(lockups), "steps": 1, "abs_now": abs_now},
+            "evidence": [row[0] for row in lockups],
+        }
+    return None
+
+
+def traction_advice(spins, tc_now):
+    """Wheelspin on exit, often: one step up on TC."""
+    return {
+        "kind": "TC_UP",
+        "conclusion": f"Wheelspin on exit {len(spins)} times, mostly at {corners_named(spins)}. "
+        f"Go 1 step up on TC{step_words(tc_now)}.",
+        "facts": {"wheelspin": len(spins), "steps": 1, "tc_now": tc_now},
+        "evidence": [row[0] for row in spins],
+    }
