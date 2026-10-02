@@ -229,9 +229,8 @@ class RaceAgent:
         # no budget check: push-to-talk never stops (his call, 25 Sep - the Rs 5 cap silenced the
         # coach after 7 answers in a live race). Every call is still charged and logged.
         asked = self.asked_with(question, snapshot)
-        talk = Talk(
-            first_messages(question, earlier, asked), [asked.picture, asked.given]
-        )
+        messages = first_messages(question, earlier, asked)
+        talk = Talk(messages, [asked.picture, asked.given])
         # tool rounds, then the answer, then at most one rewrite
         for round_number in range(1, MAX_ROUNDS + 3):
             try:
@@ -239,36 +238,38 @@ class RaceAgent:
             except Exception as error:
                 # slow or down: the decision still gets through, from code
                 reason = f"model {error.__class__.__name__}"
-                return fallback(snapshot, question), talk.info(
-                    None, reason, call="TEAM"
-                )
+                info = talk.info(None, reason, call="TEAM")
+                return fallback(snapshot, question), info
             talk.costs.append(spent)
             if message.tool_calls and round_number <= MAX_ROUNDS:
                 talk.messages.append(message.model_dump(exclude_none=True))
-                self.run_tools(
-                    message, snapshot, talk.messages, talk.tools_used, talk.tool_texts
-                )
+                self.run_tools(message, snapshot, talk)
                 continue
             raw = message.content or ""
-            given_orders, call, override, text = read_answer(raw)
-            answer = (call, override, text)
-            ok, reason = self.check_spoken(
-                question, snapshot, answer, talk.tool_texts, asked
-            )
-            if ok:
-                info = talk.info(
-                    round_number, talk.refused, call=call, override=override
-                )
-                info["orders"] = given_orders
-                return text, info
+            talk.round = round_number
+            answer, reason = self.checked_answer(question, snapshot, raw, talk, asked)
+            if answer is not None:
+                return answer
             if talk.refused is not None:
                 break  # one rewrite only
             talk.refused = reason
             talk.messages.extend(rewrite_request(raw, reason, asked.voice))
-        return (
-            "No clean answer on that one, mate. Ask it another way.",
-            talk.info(None, talk.refused),
+        no_answer = "No clean answer on that one, mate. Ask it another way."
+        return no_answer, talk.info(None, talk.refused)
+
+    def checked_answer(self, question, snapshot, raw, talk, asked):
+        """((the words, info), None) when the answer passes every check; else (None, why
+        it was refused)."""
+        given_orders, call, override, text = read_answer(raw)
+        answer = (call, override, text)
+        ok, reason = self.check_spoken(
+            question, snapshot, answer, talk.tool_texts, asked
         )
+        if not ok:
+            return None, reason
+        info = talk.info(talk.round, talk.refused, call=call, override=override)
+        info["orders"] = given_orders
+        return (text, info), None
 
     def asked_with(self, question, snapshot):
         """What goes with this question: the system prompt, the race picture, the cars either
@@ -334,7 +335,7 @@ class RaceAgent:
             }
         )
 
-    def run_tools(self, message, snapshot, messages, tools_used, tool_texts):
+    def run_tools(self, message, snapshot, talk):
         """Every tool the model called this round, run on the snapshot; the results go back
         into the conversation (and every number in them may be said)."""
         for tool_call in message.tool_calls:
@@ -345,9 +346,9 @@ class RaceAgent:
             result = json.dumps(
                 without_empty(snapshot.run_tool(tool_call.function.name, arguments))
             )
-            tools_used.append(tool_call.function.name)
-            tool_texts.append(result)
-            messages.append(
+            talk.tools_used.append(tool_call.function.name)
+            talk.tool_texts.append(result)
+            talk.messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -398,6 +399,7 @@ class Talk:
         self.tools_used = ["race_picture"]
         self.tool_texts = tool_texts
         self.refused = None
+        self.round = None  # the round the answer came in
 
     def info(self, rounds, refused, **more):
         """What is logged with the answer: costs, tools, rounds, why one was refused, and
