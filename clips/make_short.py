@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import subprocess
+from typing import NamedTuple
 
 from clips.beats import (
     VideoClock,
@@ -36,6 +37,15 @@ from clips.recorder import SHORT_ENCODERS, working_encoder
 
 FRAMES_PER_SECOND = 30
 HOOK_BEATS = ("hook", "pass")
+
+
+class Cut(NamedTuple):
+    """How a short is cut: its ending ("launch" = our marketing cards, "driver" = one
+    "radio by Apex" card on his own clip) and its longest length in seconds."""
+
+    ending: str = "launch"
+    max_s: float = 30.0
+
 
 # the titles on the beats
 HOOK_TITLE_S = 3.0
@@ -398,10 +408,13 @@ class Short:
         )
 
 
-def make(video, moments_path, out=None, max_s=30.0, ending="launch", race_data=None):
+def make(video, moments_path, out=None, race_data=None, cut=None):
     """Builds the short and returns its path, or None when the race gave nothing to
     show. race_data (clips/race_data.py) turns on the measured hook: the real pass, the
-    gap ticking down to it, the place changing."""
+    gap ticking down to it, the place changing. cut: the ending and length (Cut())."""
+    if cut is None:
+        cut = Cut()
+    ending, max_s = cut
     video = os.path.abspath(video)
     moments = read_json(moments_path)
     radio = timed_radio(moments)
@@ -451,7 +464,7 @@ def main():
     moments = args.moments
     if not moments:
         moments = os.path.splitext(os.path.abspath(args.video))[0] + ".moments.json"
-    make(args.video, moments, args.out, args.max, args.ending, args.race_data)
+    make(args.video, moments, args.out, args.race_data, Cut(args.ending, args.max))
 
 
 if __name__ == "__main__":

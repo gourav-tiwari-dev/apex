@@ -56,4 +56,4 @@ def log_brief(conn, session_id, said):
             ttl=0.0,
             conclusion=text,
         )
-        save_radio(conn, session_id, call, "spoken", text)
+        save_radio(conn, session_id, call, "spoken", {"line": text})

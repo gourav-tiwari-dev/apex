@@ -6,6 +6,7 @@ words, no invented numbers, no speeds, short enough); fuel_honest, trend_honest 
 catch the mistakes his races showed. fallback is the line when the model is down."""
 
 import re
+from typing import NamedTuple
 
 from radio.words import words_to_digits
 
@@ -453,11 +454,21 @@ def neutral_pronouns(text):
     return text
 
 
-def check_answer(
-    text, known_numbers, clean=False, names=(), max_words=MAX_WORDS, speeds_ok=False
-):
+class Allowed(NamedTuple):
+    """What his question allows the answer: how many words, and whether a speed may be said
+    (only when he asked about one)."""
+
+    max_words: int = MAX_WORDS
+    speeds_ok: bool = False
+
+
+def check_answer(text, known_numbers, clean=False, names=(), allowed=None):
     """(ok, reason). known_numbers: every number the tools returned or he said.
-    names: the other drivers in this race; none may be said (v3, 24 Sep)."""
+    names: the other drivers in this race; none may be said (v3, 24 Sep).
+    allowed: what his question allows (Allowed(): the usual length, no speeds)."""
+    if allowed is None:
+        allowed = Allowed()
+    max_words, speeds_ok = allowed
     if not text or not text.strip():
         return False, "empty"
     lowered = text.lower()

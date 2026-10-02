@@ -552,7 +552,12 @@ def test_the_database_tool_reads_only(tmp_path):
 
 
 def test_explain_mode_allows_a_longer_answer_and_speeds_only_when_asked():
-    from coach.answer_checks import asks_to_explain, asks_about_speed, check_answer
+    from coach.answer_checks import (
+        Allowed,
+        asks_about_speed,
+        asks_to_explain,
+        check_answer,
+    )
 
     assert asks_to_explain("What's the plan for the rest of the race?")
     assert asks_to_explain("why am I slow at Arnage") and not asks_to_explain(
@@ -560,10 +565,12 @@ def test_explain_mode_allows_a_longer_answer_and_speeds_only_when_asked():
     )
     long = " ".join(["word"] * 80)
     assert not check_answer(long, [])[0]
-    assert check_answer(long, [], max_words=110)[0]
+    assert check_answer(long, [], allowed=Allowed(max_words=110))[0]
     assert not check_answer("You did 120 km/h there, mate.", [120])[0]
     assert asks_about_speed("what speed do I carry through Arnage")
-    assert check_answer("You did 120 km/h there, mate.", [120], speeds_ok=True)[0]
+    assert check_answer(
+        "You did 120 km/h there, mate.", [120], allowed=Allowed(speeds_ok=True)
+    )[0]
 
 
 def test_an_answer_about_something_else_may_not_tack_on_the_car_behind():

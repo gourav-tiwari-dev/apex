@@ -457,8 +457,20 @@ def test_praise_and_the_alarm_go_out_in_the_start_chaos():
     governor.settled = False
     seat = seat_with_gaps()
     praise = seat.praise("late_brake", 10.0)
-    alarm = seat.instant(
-        "CLOSING_ALARM", "Car behind.", 10.0, seat="spotter", voice="spotter"
+    # the closing alarm as closing_alarm.py builds it: the spotter's call, in its voice
+    from radio.calls import Call, SPOTTER
+    from seats.closing_alarm import ALARM_TTL_S
+
+    alarm = Call(
+        seat="spotter",
+        kind="CLOSING_ALARM",
+        sim_time=10.0,
+        priority=SPOTTER,
+        ttl=ALARM_TTL_S,
+        conclusion="Car behind.",
+        template="Car behind.",
+        immediate=True,
+        voice="spotter",
     )
     assert governor.offer(praise)
     assert governor.offer(alarm)

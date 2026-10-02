@@ -13,7 +13,7 @@ import os
 import shutil
 
 from clips.find_moments import find
-from clips.make_short import make
+from clips.make_short import Cut, make
 from clips.recorder import RaceRecorder
 
 CLIPS_DIR = os.path.join(os.path.expanduser("~"), "Videos", "Apex")
@@ -74,8 +74,8 @@ class AutoClips:
             race,
             moments,
             os.path.join(folder, "short.mp4"),
-            ending="driver",
             race_data=race_data,
+            cut=Cut(ending="driver"),
         )
         if short:
             print(f"[clips] your short is ready: {short}")

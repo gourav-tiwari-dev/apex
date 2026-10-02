@@ -38,7 +38,7 @@ from coach.llm import Budget
 from seats.settle import RaceSettle
 from seats.track_awareness import TrackAwareness
 from seats.qualifying import QualifyingEngineer
-from talk.orders import StandingOrders
+from talk.orders import Order, StandingOrders
 from radio.voice import Voice
 from radio.desk import RadioDesk
 from seats.performance import PerformanceEngineer
@@ -192,7 +192,7 @@ class SessionResult:
             save_session_result(conn, session_id, self.grid, self.final_place, strikes)
             save_rivals(conn, session_id, self.last_opponents)
         if self.car_settings is not None:
-            save_car_settings(conn, session_id, *self.car_settings)
+            save_car_settings(conn, session_id, self.car_settings)
 
 
 class SessionEnd:
@@ -465,16 +465,7 @@ class Session:
         loaded (or learning starts), and push-to-talk and team memory learn the corner names."""
         self.track = race.session.track
         self.session_type = race.session.session
-        me = race.me
-        set_session_track(
-            self.conn,
-            self.session_id,
-            self.track,
-            self.session_type,
-            race.session.game_phase,
-            me.car_class if me else None,
-            me.car_model if me else None,
-        )
+        set_session_track(self.conn, self.session_id, race)
         self.corner_map.corners = corners_for_track(self.track)
         if self.talk is not None and self.corner_map.corners:
             self.talk.set_track_words([c["name"] for c in self.corner_map.corners])
@@ -711,7 +702,8 @@ class Session:
             self.reminders.append(action)  # "remind me to box on lap 12"
         for topic, stance in result.get("orders", []):
             try:
-                self.orders.set(topic, stance, heard_text, self.lap_count, now, "coach")
+                order = Order(topic, stance, heard_text, self.lap_count, now, "coach")
+                self.orders.set(order)
                 print(f"[order from the coach: {topic}={stance}]")
             except ValueError:
                 print(f"[coach gave an order that does not exist: {topic}={stance}]")
@@ -729,14 +721,9 @@ class Session:
         if on_air is not None:
             if on_air.urgent:
                 played = self.voice.play_urgent(on_air.kind, on_air.template)
-                save_radio(
-                    self.conn,
-                    self.session_id,
-                    on_air,
-                    "spoken" if played else "no_bank_line",
-                    on_air.template,
-                    latency_ms=0,
-                )
+                status = "spoken" if played else "no_bank_line"
+                details = {"line": on_air.template, "latency_ms": 0}
+                save_radio(self.conn, self.session_id, on_air, status, details)
             elif not self.desk.submit(on_air):
                 save_radio(self.conn, self.session_id, on_air, "queue_full")
         self.desk.latest_sim_time = frame.elapsed_time
@@ -746,15 +733,7 @@ class Session:
     def log_finished_lines(self):
         for result in self.desk.drain():
             call = result["call"]
-            save_radio(
-                self.conn,
-                self.session_id,
-                call,
-                result["status"],
-                result["line"],
-                result["reason"],
-                result["latency_ms"],
-            )
+            save_radio(self.conn, self.session_id, call, result["status"], result)
             if (
                 result["status"] == "spoken"
                 and call.seat != "spotter"

@@ -268,28 +268,20 @@ class Racecraft(PassLifecycle, ClosingAlarm):
             template=template,
         )
 
-    def instant(
-        self,
-        kind,
-        text,
-        now,
-        facts=None,
-        seat="racecraft",
-        priority=RACECRAFT,
-        ttl=PRAISE_TTL_S,
-        voice="engineer",
-    ):
+    def instant(self, kind, text, now, facts=None):
+        """A racecraft line that goes out the moment the radio is free, even mid-corner, and
+        is never counted in the talk budget: the words are the line."""
         return Call(
-            seat=seat,
+            seat="racecraft",
             kind=kind,
             sim_time=now,
-            priority=priority,
-            ttl=ttl,
+            priority=RACECRAFT,
+            ttl=PRAISE_TTL_S,
             conclusion=text,
             template=text,
             facts=facts or {},
             immediate=True,
-            voice=voice,
+            voice="engineer",
         )
 
     # ---- gaps ------------------------------------------------------------------------------

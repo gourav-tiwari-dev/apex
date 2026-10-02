@@ -10,6 +10,8 @@ Everything here is rebuilt from the database by build_profile(). Like corner_sta
 cache: safe to delete, and the next build puts it back.
 """
 
+from dataclasses import dataclass
+
 from game.constants import RACE_SESSIONS
 
 HABIT_MIN = 3
@@ -63,32 +65,46 @@ def track_of(conn, session_id):
     return row[0]
 
 
-def save_fact(
-    conn,
-    kind,
-    track,
-    subject,
-    value,
-    occurrences,
-    drive_count,
-    summary,
-    event_ids=(),
-    session_ids=(),
-):
-    if not event_ids and not session_ids:
-        raise ValueError(f"a fact needs evidence: {summary}")
+@dataclass
+class Fact:
+    """One thing team memory knows about him, and the evidence it rests on: event ids,
+    session ids, or both. A fact with no evidence is refused."""
+
+    kind: str  # "corner_habit", "lap_one", "rival", "clean_race", "pass_attempts"...
+    track: str | None  # None: true at every track
+    subject: str  # the corner, "me", a rival's steam id, "race N"
+    value: float
+    occurrences: int
+    drive_count: int
+    summary: str
+    event_ids: tuple = ()
+    session_ids: tuple = ()
+
+
+def save_fact(conn, fact):
+    """The fact and its evidence, in profile_facts and profile_evidence."""
+    if not fact.event_ids and not fact.session_ids:
+        raise ValueError(f"a fact needs evidence: {fact.summary}")
     cur = conn.execute(
         "INSERT INTO profile_facts (kind, track, subject, value, occurrences, drives, summary) "
         "VALUES (?,?,?,?,?,?,?)",
-        (kind, track, subject, value, occurrences, drive_count, summary),
+        (
+            fact.kind,
+            fact.track,
+            fact.subject,
+            fact.value,
+            fact.occurrences,
+            fact.drive_count,
+            fact.summary,
+        ),
     )
     fact_id = cur.lastrowid
-    for event_id in event_ids:
+    for event_id in fact.event_ids:
         conn.execute(
             "INSERT INTO profile_evidence (fact_id, event_id) VALUES (?,?)",
             (fact_id, event_id),
         )
-    for session_id in session_ids:
+    for session_id in fact.session_ids:
         conn.execute(
             "INSERT INTO profile_evidence (fact_id, session_id) VALUES (?,?)",
             (fact_id, session_id),
@@ -127,17 +143,11 @@ def corner_habits(conn, drive_ids):
             continue
         summary = f"{KIND_WORDS[kind]} at {corner}: {len(found)} times in {len(sessions)} drives"
         fact_kind = "contact_corner" if kind == "CONTACT" else "corner_habit"
-        save_fact(
-            conn,
-            fact_kind,
-            track,
-            corner,
-            len(found),
-            len(found),
-            len(sessions),
-            summary,
-            event_ids=[event_id for event_id, _ in found],
-        )
+        event_ids = [event_id for event_id, _ in found]
+        count = len(found)
+        fact = Fact(fact_kind, track, corner, count, count, len(sessions), summary)
+        fact.event_ids = event_ids
+        save_fact(conn, fact)
         made += 1
     return made
 
@@ -170,17 +180,10 @@ def lap_one(conn, drive_ids):
         return 0
     summary = f"lap 1 trouble (contact, off or spin) in {len(trouble)} of your last {len(races)} races"
     event_ids = [event_id for ids in trouble.values() for event_id in ids]
-    save_fact(
-        conn,
-        "lap_one",
-        None,
-        "me",
-        len(trouble) / len(races),
-        len(event_ids),
-        len(trouble),
-        summary,
-        event_ids=event_ids,
-    )
+    rate = len(trouble) / len(races)
+    fact = Fact("lap_one", None, "me", rate, len(event_ids), len(trouble), summary)
+    fact.event_ids = event_ids
+    save_fact(conn, fact)
     return 1
 
 
@@ -216,18 +219,10 @@ def rivals(conn, drive_ids):
         summary = f"{rival['driver']}: raced {races} times, you finished ahead {rival['ahead']}"
         if contact_ids:
             summary += f", contact {len(contact_ids)} times"
-        save_fact(
-            conn,
-            "rival",
-            None,
-            steam_id,
-            rival["ahead"],
-            races,
-            races,
-            summary,
-            event_ids=contact_ids,
-            session_ids=rival["sessions"],
-        )
+        fact = Fact("rival", None, steam_id, rival["ahead"], races, races, summary)
+        fact.event_ids = contact_ids
+        fact.session_ids = rival["sessions"]
+        save_fact(conn, fact)
         made += 1
     return made
 
@@ -260,17 +255,10 @@ def clean_races(conn, drive_ids):
             f"{counts['IMPACT']} other impacts (a wall, or a car Apex could not see), "
             f"{counts['OFF_TRACK']} offs, {counts['SPIN']} spins, {strikes} track-limit steps"
         )
-        save_fact(
-            conn,
-            "clean_race",
-            track_of(conn, session_id),
-            f"race {session_id}",
-            marks,
-            marks,
-            1,
-            summary,
-            session_ids=[session_id],
-        )
+        track = track_of(conn, session_id)
+        fact = Fact("clean_race", track, f"race {session_id}", marks, marks, 1, summary)
+        fact.session_ids = [session_id]
+        save_fact(conn, fact)
         made += 1
     return made
 
@@ -292,17 +280,10 @@ def pass_attempts(conn, drive_ids):
     summary = (
         f"pass attempts: {len(rows)}, {passes} passes, {contacts} ended in contact"
     )
-    save_fact(
-        conn,
-        "pass_attempts",
-        None,
-        "me",
-        contacts / len(rows),
-        len(rows),
-        len(sessions),
-        summary,
-        session_ids=sessions,
-    )
+    rate = contacts / len(rows)
+    fact = Fact("pass_attempts", None, "me", rate, len(rows), len(sessions), summary)
+    fact.session_ids = sessions
+    save_fact(conn, fact)
     return 1
 
 

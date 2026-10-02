@@ -37,9 +37,14 @@ def test_answers_become_a_profile_and_keep_an_old_habit_note():
     old = Profile(
         name="Gourav", habit="in close racing he gets hasty", voice="standard"
     )
-    profile = profile_from_answers(
-        "  Sam ", "a Hypercar", "a controller", True, True, old
-    )
+    answers = {
+        "name": "  Sam ",
+        "car": "a Hypercar",
+        "input": "a controller",
+        "spicy": True,
+        "clips": True,
+    }
+    profile = profile_from_answers(answers, old)
     assert profile == Profile(
         name="Sam",
         car="a Hypercar",
@@ -52,7 +57,14 @@ def test_answers_become_a_profile_and_keep_an_old_habit_note():
 
 
 def test_blank_or_odd_answers_fall_back_to_safe_defaults():
-    profile = profile_from_answers("", "a spaceship", "a keyboard", False, False)
+    answers = {
+        "name": "",
+        "car": "a spaceship",
+        "input": "a keyboard",
+        "spicy": False,
+        "clips": False,
+    }
+    profile = profile_from_answers(answers)
     assert (profile.name, profile.car, profile.input) == (
         "the driver",
         "a GT3",

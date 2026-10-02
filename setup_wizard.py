@@ -46,12 +46,18 @@ def find_lmu(vdf_path=STEAM_LIBRARIES):
     return None
 
 
-def profile_from_answers(name, car, input_device, spicy, clips, old=None):
-    """The profile the answers describe. A habit note from an older profile is kept."""
-    old = old or Profile()
-    name = name.strip() or "the driver"
+def profile_from_answers(answers, old=None):
+    """The profile the wizard's answers describe: {"name", "car", "input", "spicy",
+    "clips"}. A habit note and the voice of an older profile are kept."""
+    if old is None:
+        old = Profile()
+    name = answers["name"].strip()
+    if not name:
+        name = "the driver"
+    car = answers["car"]
     if car not in CARS:
         car = "a GT3"
+    input_device = answers["input"]
     if input_device not in INPUTS:
         input_device = "a wheel"
     return Profile(
@@ -59,9 +65,9 @@ def profile_from_answers(name, car, input_device, spicy, clips, old=None):
         car=car,
         input=input_device,
         habit=old.habit,
-        spicy=bool(spicy),
+        spicy=bool(answers["spicy"]),
         voice=old.voice,
-        clips=bool(clips),
+        clips=bool(answers["clips"]),
     )
 
 
@@ -312,14 +318,14 @@ class Wizard:
         ).pack(anchor="w")
 
     def finish(self):
-        profile = profile_from_answers(
-            self.name.get(),
-            self.car.get(),
-            self.input.get(),
-            self.talk.get() == "spicy",
-            self.clips.get(),
-            self.old,
-        )
+        answers = {
+            "name": self.name.get(),
+            "car": self.car.get(),
+            "input": self.input.get(),
+            "spicy": self.talk.get() == "spicy",
+            "clips": self.clips.get(),
+        }
+        profile = profile_from_answers(answers, self.old)
         save_profile(profile)
         if self.button is not None:
             from talk.ptt import save_button

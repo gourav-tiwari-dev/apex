@@ -265,9 +265,10 @@ def finish_session(conn, session_id, hash, end_reason=None, ended_at=None):
     conn.commit()
 
 
-def save_car_settings(
-    conn, session_id, traction_control, abs_level, brake_bias_rear, motor_map
-):
+def save_car_settings(conn, session_id, settings):
+    """His car's settings for the session: (traction control, ABS, rear brake bias, motor
+    map), as the car had them."""
+    traction_control, abs_level, brake_bias_rear, motor_map = settings
     conn.execute(
         "UPDATE sessions SET traction_control = ?, abs = ?, brake_bias_rear = ?, motor_map = ? WHERE id = ?",
         (traction_control, abs_level, brake_bias_rear, motor_map, session_id),
@@ -322,18 +323,24 @@ def save_pass_attempts(conn, session_id, attempts):
     conn.commit()
 
 
-def set_session_track(
-    conn,
-    session_id,
-    track,
-    session_type,
-    first_phase=None,
-    car_class=None,
-    car_model=None,
-):
+def set_session_track(conn, session_id, race):
+    """What the session is, from its first race snapshot: the track, the session type, the
+    phase it started in, and his car (class and model)."""
+    car_class = None
+    car_model = None
+    if race.me:
+        car_class = race.me.car_class
+        car_model = race.me.car_model
     conn.execute(
         "UPDATE sessions SET track = ?, session_type = ?, first_phase = ?, car_class = ?, car_model = ? WHERE id = ?",
-        (track, session_type, first_phase, car_class, car_model, session_id),
+        (
+            race.session.track,
+            race.session.session,
+            race.session.game_phase,
+            car_class,
+            car_model,
+            session_id,
+        ),
     )
     conn.commit()
 
@@ -354,7 +361,15 @@ def track_of(conn, session_id):
     return track_key(row[0])
 
 
-def save_radio(conn, session_id, call, status, line=None, reason=None, latency_ms=None):
+def save_radio(conn, session_id, call, status, details=None):
+    """One row of the radio log: the call and what became of it (status). details, for a
+    line that was cooked: its words (line), why it failed (reason) and how long it took to
+    start (latency_ms), as the desk reports them; any of them may be missing."""
+    if details is None:
+        details = {}
+    line = details.get("line")
+    reason = details.get("reason")
+    latency_ms = details.get("latency_ms")
     cur = conn.execute(
         "INSERT INTO radio_log (session_id,sim_time,seat,kind,priority,urgent,status,line,reason,conclusion,facts,evidence,latency_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (

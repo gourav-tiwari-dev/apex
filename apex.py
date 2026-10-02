@@ -38,14 +38,16 @@ def race_night(clean, record=False, clips=None):
     # edge-tts otherwise
     voice = Voice(out_loud=True)
     said = brief(conn)
-    launch_id = datetime.now().isoformat(timespec="seconds")
     try:
-        race_sessions(conn, clean, launch_id, voice, said, clips)
+        race_sessions(conn, clean, voice, said, clips)
     finally:
         conn.close()
 
 
-def race_sessions(conn, clean, launch_id, voice, said, clips=None):
+def race_sessions(conn, clean, voice, said, clips=None):
+    """Every session of one night, one after another, until he stops Apex. The night's
+    sessions share one launch id, so the debrief can find them all."""
+    launch_id = datetime.now().isoformat(timespec="seconds")
     first = True
     while True:
         if clips is not None:

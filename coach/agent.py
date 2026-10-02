@@ -49,6 +49,7 @@ from coach.prompt import (
 from driver_profile import load_profile
 from coach.answer_checks import (
     MAX_WORDS,
+    Allowed,
     asks_about_speed,
     asks_to_explain,
     check_answer,
@@ -392,13 +393,13 @@ class RaceAgent:
         call, override, text = answer
         ok, reason = snapshot.check_call(call, override, question)
         if ok:
+            allowed = Allowed(asked.max_words, asked.speeds_ok)
             ok, reason = check_answer(
                 text,
                 numbers_seen(question, *tool_texts),
                 self.clean,
                 snapshot.driver_names(),
-                asked.max_words,
-                asked.speeds_ok,
+                allowed,
             )
         if ok:
             ok, reason = fuel_honest(

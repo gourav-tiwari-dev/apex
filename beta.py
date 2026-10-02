@@ -129,8 +129,9 @@ def race_summary(conn, session_id):
     return summary
 
 
-def send_feedback(conn, session_id, rating, comment, send_tape, path=SERVER_FILE):
-    """Sends it; returns the feedback id, or None when the door can't be reached."""
+def send_feedback(conn, session_id, answer, path=SERVER_FILE):
+    """Sends the tester's answer ({"rating", "comment", "tape": send the tape?}); returns the
+    feedback id, or None when the door can't be reached."""
     door = read_door(path)
     if door is None or not door.get("token"):
         return None
@@ -138,8 +139,8 @@ def send_feedback(conn, session_id, rating, comment, send_tape, path=SERVER_FILE
     summary = race_summary(conn, session_id)
     body = {
         "version": APP_VERSION,
-        "rating": rating,
-        "comment": comment.strip(),
+        "rating": answer["rating"],
+        "comment": answer["comment"].strip(),
         "race": summary,
     }
     try:
@@ -148,7 +149,7 @@ def send_feedback(conn, session_id, rating, comment, send_tape, path=SERVER_FILE
         print(f"[beta: feedback not sent ({error.__class__.__name__})]")
         return None
     tape = summary.get("tape")
-    if send_tape and tape and os.path.exists(tape):
+    if answer["tape"] and tape and os.path.exists(tape):
         data = anonymised_tape(tape)
         if len(data) <= TAPE_LIMIT:
             try:
@@ -244,6 +245,4 @@ def ask_after_race(conn, session_id, path=SERVER_FILE):
     root.mainloop()
     if not answer or (answer["rating"] == 0 and not answer["comment"].strip()):
         return None
-    return send_feedback(
-        conn, session_id, answer["rating"], answer["comment"], answer["tape"], path
-    )
+    return send_feedback(conn, session_id, answer, path)

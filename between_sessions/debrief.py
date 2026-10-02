@@ -191,7 +191,7 @@ def say_and_log(conn, session_id, seat, kind, line):
     call = Call(
         seat=seat, kind=kind, sim_time=0.0, priority=MEMORY, ttl=0.0, conclusion=line
     )
-    save_radio(conn, session_id, call, "spoken", line)
+    save_radio(conn, session_id, call, "spoken", {"line": line})
 
 
 MONZA_REFERENCE = "reference_hymo.json"

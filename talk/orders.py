@@ -262,25 +262,20 @@ class StandingOrders:
                 continue
             if any(" " + phrase + " " in heard for phrase in phrases):
                 topics.add(topic)
-                found.append(
-                    self.set(
-                        topic,
-                        stance,
-                        text,
-                        lap,
-                        now,
-                        "him",
-                        for_good=any(" " + w + " " in heard for w in FOR_GOOD),
-                    )
-                )
+                for_good = any(" " + w + " " in heard for w in FOR_GOOD)
+                order = Order(topic, stance, text, lap, now, "him", for_good)
+                found.append(self.set(order))
         if not found:
             return None
         return " ".join(STANCES[o.topic][o.stance] for o in found), found
 
-    def set(self, topic, stance, said, lap, now, source, for_good=False):
+    def set(self, order):
+        """Keeps an order (he said it, or the coach heard one); returns it. An order that
+        does not exist raises ValueError."""
+        topic = order.topic
+        stance = order.stance
         if stance not in STANCES.get(topic, {}):
             raise ValueError(f"no such order: {topic}={stance}")
-        order = Order(topic, stance, said, lap, now, source, for_good)
         # "coaching on" and "gaps normal" are the defaults: they clear the order
         if (topic, stance) in (("coaching", "on"), ("gaps", "normal")):
             self.orders.pop(topic, None)

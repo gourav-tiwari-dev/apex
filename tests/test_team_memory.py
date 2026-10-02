@@ -4,6 +4,7 @@ import pytest
 
 import memory
 from memory.team_memory import (
+    Fact,
     build_profile,
     drives,
     save_fact,
@@ -96,23 +97,17 @@ def test_replays_do_not_inflate_a_habit(tmp_path):
 def test_a_fact_without_evidence_is_refused(tmp_path):
     conn = new_db(tmp_path)
     with pytest.raises(ValueError):
-        save_fact(conn, "corner_habit", "Monza", "T1 Rettifilo", 1, 1, 1, "made up")
+        save_fact(
+            conn, Fact("corner_habit", "Monza", "T1 Rettifilo", 1, 1, 1, "made up")
+        )
 
 
 def test_evidence_must_point_at_a_real_event(tmp_path):
     conn = new_db(tmp_path)
     with pytest.raises(sqlite3.IntegrityError):
-        save_fact(
-            conn,
-            "corner_habit",
-            "Monza",
-            "T1 Rettifilo",
-            1,
-            1,
-            1,
-            "ghost",
-            event_ids=[999],
-        )
+        ghost = Fact("corner_habit", "Monza", "T1 Rettifilo", 1, 1, 1, "ghost")
+        ghost.event_ids = [999]
+        save_fact(conn, ghost)
 
 
 def test_lap_one_trouble_across_races(tmp_path):

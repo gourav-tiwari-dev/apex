@@ -84,7 +84,10 @@ def test_feedback_carries_the_race_and_its_radio_and_the_tape_only_when_ticked(
 
     assert (
         beta.send_feedback(
-            conn, session, 2, " spotter was late ", send_tape=False, path=path
+            conn,
+            session,
+            {"rating": 2, "comment": " spotter was late ", "tape": False},
+            path=path,
         )
         == "f1"
     )
@@ -97,7 +100,9 @@ def test_feedback_carries_the_race_and_its_radio_and_the_tape_only_when_ticked(
     ]
     assert len(sent) == 1  # no tape when not ticked
 
-    beta.send_feedback(conn, session, 2, "again", send_tape=True, path=path)
+    beta.send_feedback(
+        conn, session, {"rating": 2, "comment": "again", "tape": True}, path=path
+    )
     assert (
         sent[-1][0] == "https://door.example/v1/feedback/f1/tape"
         and sent[-1][2] is True

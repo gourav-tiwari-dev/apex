@@ -107,12 +107,14 @@ def fuel_words(picture):
     )
 
 
-def call(kind, conclusion, now, facts, template, priority=STRATEGY):
+def call(kind, conclusion, now, facts, template):
+    """A strategy line. The end of the race (the last lap, an extra lap) and fuel that will
+    not last outrank strategy: their callers raise the priority to the engineer's."""
     return Call(
         seat="strategist",
         kind=kind,
         sim_time=now,
-        priority=priority,
+        priority=STRATEGY,
         ttl=CALL_TTL_S,
         conclusion=conclusion,
         facts=facts,
@@ -273,14 +275,9 @@ class Strategist:
         words = "Last lap. Bring it home."
         if margin is not None and 0 <= margin < CLOSE_CALL_S:
             words = "Last lap, unless the leader beats the clock. I'll tell you."
-        return call(
-            "LAST_LAP",
-            words,
-            now,
-            {"leader_margin_s": margin},
-            words,
-            priority=ENGINEER,
-        )
+        last_lap = call("LAST_LAP", words, now, {"leader_margin_s": margin}, words)
+        last_lap.priority = ENGINEER
+        return last_lap
 
     def rain(self, race, now):
         if race.session.raining < 0.1 or self.rain_called:
@@ -308,14 +305,9 @@ class Strategist:
             return []
         self.last_lap_called = False  # the real last lap is called at the line
         words = "One more lap after this one. The leader beat the clock."
-        extra = call(
-            "EXTRA_LAP",
-            words,
-            now,
-            {"time_left_s": round(race.session.time_remaining)},
-            words,
-            priority=ENGINEER,
-        )
+        time_left = round(race.session.time_remaining)
+        extra = call("EXTRA_LAP", words, now, {"time_left_s": time_left}, words)
+        extra.priority = ENGINEER
         extra.immediate = True
         return [extra]
 
@@ -486,8 +478,8 @@ class Strategist:
                 "verdict": verdict,
             },
             words,
-            priority=ENGINEER,
         )
+        fuel_call.priority = ENGINEER
         fuel_call.immediate = (
             bad  # save / box are not held for the talk budget: they end races
         )

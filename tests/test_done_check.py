@@ -28,15 +28,14 @@ def a_race(
             race,
             Call(seat, "SOMETHING", 1.0, 5, 5.0, "line"),
             "spoken",
-            f"{seat} said it",
-            latency_ms=1500,
+            {"line": f"{seat} said it", "latency_ms": 1500},
         )
     memory.save_radio(
         conn,
         race,
         Call("race_engineer", "RADIO_CHECK", 0.0, 1, 1.0, "check"),
         "spoken",
-        "Radio check",
+        {"line": "Radio check"},
     )
     conn.execute(
         "INSERT INTO llm_calls (session_id, seat, tokens_in, tokens_out, seconds, cost_rs) VALUES (?, 'x', 1, 1, 1.0, ?)",

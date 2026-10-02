@@ -142,16 +142,12 @@ class PassLifecycle:
         ):
             gift = "Car ahead's in trouble."
         if gift is not None:
-            return [
-                self.instant(
-                    "PLACE_GIFT",
-                    f"{said_place(race)}. {gift}",
-                    now,
-                    {"place": race.me.place},
-                    seat="race_engineer",
-                    priority=ENGINEER,
-                )
-            ]
+            words = f"{said_place(race)}. {gift}"
+            gift_line = self.instant("PLACE_GIFT", words, now, {"place": race.me.place})
+            # a gift is news, not a racecraft call: the race engineer says it
+            gift_line.seat = "race_engineer"
+            gift_line.priority = ENGINEER
+            return [gift_line]
         self.last_earned_pass_at = now
         self.open_passes[car.id] = {
             "move": move,

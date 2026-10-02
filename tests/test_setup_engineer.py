@@ -68,7 +68,7 @@ def test_the_advice_names_the_setting_he_is_on(tmp_path):
     conn, session, _ = db_with(
         tmp_path, [("WHEELSPIN", "Mulsanne Corner")] * 3 + [("LOCKUP", "Arnage")] * 3
     )
-    memory.save_car_settings(conn, session, 4, 9, 0.525, 1)
+    memory.save_car_settings(conn, session, (4, 9, 0.525, 1))
     advice = {}
     for item in advice_for(conn, session):
         advice[item["kind"]] = item

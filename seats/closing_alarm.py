@@ -7,7 +7,7 @@ every alarm, never said yet: on the 24 Sep tapes the alarm came true 5 times in 
 the corner only 2."""
 
 from race.gaps import ON_YOU_S
-from radio.calls import SPOTTER
+from radio.calls import SPOTTER, Call
 from radio.words import tenths_words
 
 # the closing alarm, scored on the 24 Sep tapes (see closing_calls): 10 s rate windows beat 20
@@ -63,9 +63,8 @@ class ClosingAlarm:
         closing = self.closing_speed(car, side, now)
         if closing is None:
             return None
-        rate, per_lap = closing
         said.add(car.id)
-        facts = self.closing_facts(car, gap, point, rate, per_lap, corners)
+        facts = self.closing_facts(car, gap, point, closing, corners)
         if side == "ahead":
             words = f"Closing fast on the car ahead. {tenths_words(gap).capitalize()}."
             return self.instant("CLOSING_ON", words, now, facts)
@@ -73,14 +72,17 @@ class ClosingAlarm:
         reputation = self.reputation.words(car)
         if reputation is not None:
             words += f" {reputation}"
-        return self.instant(
-            "CLOSING_ALARM",
-            words,
-            now,
-            facts,
+        # the car behind closing fast cannot wait: the spotter says it, in the spotter's voice
+        return Call(
             seat="spotter",
+            kind="CLOSING_ALARM",
+            sim_time=now,
             priority=SPOTTER,
             ttl=ALARM_TTL_S,
+            conclusion=words,
+            template=words,
+            facts=facts,
+            immediate=True,
             voice="spotter",
         )
 
@@ -113,9 +115,11 @@ class ClosingAlarm:
             return None
         return rate, per_lap
 
-    def closing_facts(self, car, gap, point, rate, per_lap, corners):
+    def closing_facts(self, car, gap, point, closing, corners):
         """What a closing call rests on, logged with it: the lap pace, the live rate, and both
-        predictions of where it catches (scored later, never said yet)."""
+        predictions of where it catches (scored later, never said yet). closing is the
+        (rate, per_lap) closing_speed found."""
+        rate, per_lap = closing
         facts = {"gap_s": gap}
         if per_lap is not None:
             facts["pace_closing_s_per_lap"] = round(per_lap, 2)
