@@ -69,11 +69,13 @@ class Budget:
         self.spent_rs = 0.0
 
     def cost_of(self, tokens_in, tokens_out):
+        """Rupees for this many tokens in and out, at the guessed prices above."""
         return (
             tokens_in * self.RS_PER_MILLION_IN + tokens_out * self.RS_PER_MILLION_OUT
         ) / 1_000_000
 
     def charge(self, tokens_in, tokens_out):
+        """Adds one call's cost to what the session has spent; returns the cost."""
         cost = self.cost_of(tokens_in, tokens_out)
         self.spent_rs += cost
         return cost

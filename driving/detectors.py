@@ -49,6 +49,8 @@ radii = [FRONT_RADIUS, FRONT_RADIUS, REAR_RADIUS, REAR_RADIUS]
 
 @dataclass
 class Event:
+    """Something that happened to his car on one frame: what, when, how fast, where, and
+    in plain words (the conclusion)."""
     kind: str
     sim_time: float
     speed_kmh: float
@@ -61,6 +63,9 @@ class Event:
 
 
 class Detector:
+    """The base of the threshold detectors: a condition that has to hold for
+    debounce_frames frames fires one event, then waits until it stops (armed) and for
+    the cooldown before it can fire again."""
     def __init__(self, corner_map=None):
         self.corner_map = CornerMap() if corner_map is None else corner_map
         self.armed = False
@@ -70,9 +75,11 @@ class Detector:
         self.debounce_frames = 2
 
     def current_corner(self, frame):
+        """The corner he is in, or "the straight"."""
         return self.corner_map.at(frame.lap_dist) or "the straight"
 
     def build_event(self, frame):
+        """The event for this frame: its kind, time, speed and place."""
         return Event(
             kind=self.kind,
             sim_time=frame.elapsed_time,
@@ -82,9 +89,12 @@ class Detector:
         )
 
     def is_triggered(self, frame) -> bool:
+        """Each detector's own condition, true on a frame where it holds."""
         raise NotImplementedError
 
     def update(self, frame):
+        """The event, on the frame the condition has held long enough and the cooldown
+        is over; None on every other frame."""
         triggered = self.is_triggered(frame)
         event = None
         if not triggered:
@@ -111,27 +121,33 @@ class Detector:
 
 
 class HardBrakingDetector(Detector):
+    """Hard on the brakes: the pedal past 80% above 30 km/h."""
     def __init__(self, corner_map=None):
         super().__init__(corner_map)
         self.kind = "HARD_BRAKING"
 
     def build_event(self, frame):
+        """The event, with the corner he braked for."""
         e = super().build_event(frame)
         corner = e.corner or "the straight"
         e.conclusion = f"hard on the brakes into {corner}"
         return e
 
     def is_triggered(self, frame):
+        """The brake past 0.8 above 30 km/h."""
         return frame.brake > 0.8 and frame.speed_kmh > 30
 
 
 class LockUpDetector(Detector):
+    """A front lock-up: a front wheel turning much slower than the car moves, under
+    braking."""
     def __init__(self, corner_map=None, threshold=-0.3):
         self.threshold = threshold
         super().__init__(corner_map)
         self.kind = "LOCKUP"
 
     def build_event(self, frame):
+        """The event, with the corner and the speed."""
         e = super().build_event(frame)
         corner = e.corner or "the straight"
         e.conclusion = (
@@ -140,6 +156,8 @@ class LockUpDetector(Detector):
         return e
 
     def is_triggered(self, frame):
+        """A front wheel's slip ratio below the threshold, on the brakes, above 30
+        km/h."""
         slips = [
             slip_ratio(frame.wheel_rot[i], radii[i], frame.speed_kmh / 3.6)
             for i in range(4)
@@ -153,6 +171,8 @@ class LockUpDetector(Detector):
 
 
 class ThrottleLift(Detector):
+    """Coasting: off the throttle and off the brake for over a second (logged, never
+    said: coasting before a corner is often right)."""
     def __init__(self, corner_map=None):
         super().__init__(corner_map)
         self.kind = "THROTTLE_LIFT"
@@ -160,12 +180,15 @@ class ThrottleLift(Detector):
         self.lifting = False
 
     def build_event(self, frame):
+        """The event, with where he coasted."""
         e = super().build_event(frame)
         corner = e.corner or "the straight"
         e.conclusion = f"off throttle and coasting at {corner}, no braking"
         return e
 
     def is_triggered(self, frame):
+        """Off the throttle without braking for more than a second; a lift that ends in
+        braking is a braking zone, not coasting."""
         braking = frame.brake > 0.2
         off_throttle = frame.throttle < 0.5 and frame.speed_kmh > 30
 
@@ -186,11 +209,14 @@ class ThrottleLift(Detector):
 
 
 class CornerEntryDetection:
+    """Which corner he just entered: a segmenter that marks each change of corner (not a
+    threshold detector, so it does not use the Detector base)."""
     def __init__(self, corner_map=None):
         self.corner_map = CornerMap() if corner_map is None else corner_map
         self.previous_corner = None
 
     def update(self, frame):
+        """CORNER_ENTRY on the frame he enters a new corner, else None."""
         event = None
         current_corner = self.corner_map.at(frame.lap_dist)
 
@@ -222,6 +248,7 @@ class ContactDetection:
         self.first_frame = True
 
     def nearest_car(self, frame, near):
+        """The car nearest to him within CONTACT_NEAR_M, or None."""
         if near is None or frame.pos is None:
             return None
         nearest = None
@@ -300,11 +327,13 @@ def who_it_was(other, race):
 
 
 class OffTrackDetector(Detector):
+    """Off the track: two wheels or more on grass or gravel."""
     def __init__(self, corner_map=None):
         super().__init__(corner_map)
         self.kind = "OFF_TRACK"
 
     def build_event(self, frame):
+        """The event, with what he ran onto (grass or gravel), where and how fast."""
         e = super().build_event(frame)
         surface = "Road"
         for s in frame.surface:
@@ -316,6 +345,7 @@ class OffTrackDetector(Detector):
         return e
 
     def is_triggered(self, frame):
+        """Two or more wheels on grass (2) or gravel (4)."""
         off_wheels = 0
         for s in frame.surface:
             if s in (2, 4):
@@ -335,16 +365,21 @@ SNAP_MARGIN = 0.1  # rad/s, so tiny wobbles on a straight never count
 
 
 class RearSnapDetector(Detector):
+    """The rear snapping under braking: the car turning faster than the steering and the
+    cornering force explain."""
     def __init__(self, corner_map=None):
         super().__init__(corner_map)
         self.kind = "REAR_SNAP"
 
     def build_event(self, frame):
+        """The event, with where the rear went."""
         e = super().build_event(frame)
         e.conclusion = f"rear snapped under braking at {e.corner}"
         return e
 
     def is_triggered(self, frame):
+        """On the brakes with steering lock, and the yaw rate well past what the lateral
+        force explains."""
         if frame.steering is None:
             return False  # old tapes have no steering channel
         speed_ms = frame.speed_kmh / 3.6
@@ -365,16 +400,20 @@ SPIN_THROTTLE = 0.5
 
 
 class WheelspinDetector(Detector):
+    """Wheelspin on a corner exit: a rear wheel spinning faster than the car moves, on
+    the throttle."""
     def __init__(self, corner_map=None):
         super().__init__(corner_map)
         self.kind = "WHEELSPIN"
 
     def build_event(self, frame):
+        """The event, with the corner he spun the wheels out of."""
         e = super().build_event(frame)
         e.conclusion = f"wheelspin on the exit of {e.corner}"
         return e
 
     def is_triggered(self, frame):
+        """On the throttle above 30 km/h with a rear slip ratio past SPIN_SLIP."""
         if (
             frame.steering is None
             or frame.throttle < SPIN_THROTTLE
@@ -429,6 +468,7 @@ class SpinDetector(Detector):
         )
 
     def build_event(self, frame):
+        """The event: "spun", or "spun after contact" when a car hit him just before."""
         e = super().build_event(frame)
         corner = e.corner or "the straight"
         # "you got hit" only when the contact detector saw a car there: a wall is an impact too
@@ -440,6 +480,8 @@ class SpinDetector(Detector):
         return e
 
     def is_triggered(self, frame):
+        """The car sliding past SPUN_DEGREES (from its position and heading over the
+        last 0.1 s); old tapes without them go on the yaw rate."""
         self.recent.append(frame)
         while (
             len(self.recent) > 1
@@ -468,6 +510,8 @@ class SlideCaughtDetector:
         self.last_fire_time = -100.0
 
     def update(self, frame):
+        """SLIDE_CAUGHT on the frame a big slide is caught (it went past SLIDE_DEGREES,
+        never past a spin, and is back under SLIDE_OVER_DEGREES); None otherwise."""
         self.recent.append(frame)
         while (
             len(self.recent) > 1

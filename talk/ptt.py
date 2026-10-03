@@ -45,6 +45,7 @@ RADIO_WORDS = (
 
 
 def load_button():
+    """The button he learned ({"controller", "button"}), or None before --learn."""
     if not os.path.exists(BUTTON_FILE):
         return None
     with open(BUTTON_FILE) as f:
@@ -52,11 +53,14 @@ def load_button():
 
 
 def save_button(controller_name, button):
+    """Remembers his talk button, and the controller it is on, in BUTTON_FILE."""
     with open(BUTTON_FILE, "w") as f:
         json.dump({"controller": controller_name, "button": button}, f)
 
 
 def start_sdl():
+    """pygame with SDL's events and joysticks started and no window, set to read the
+    controller while another window has focus."""
     # must be set before SDL starts: without it the controller goes silent the moment the
     # game window has focus, which is always
     os.environ["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"] = "1"
@@ -68,6 +72,8 @@ def start_sdl():
 
 
 class Controller:
+    """His talk button, read through SDL: whether it went down or came up since the last
+    poll."""
     def __init__(self, button):
         self.pygame = start_sdl()
         self.name = button.get("controller")
@@ -138,12 +144,16 @@ class Controller:
         return "released"
 
     def mine(self, instance_id):
+        """That pad is the controller he learned the button on (any pad, when that one
+        is not known)."""
         pad = self.pads.get(instance_id)
         # the controller he learned the button on; any controller if that one is not known
         return pad is None or self.name is None or pad.get_name() == self.name
 
 
 class Mic:
+    """The microphone, always open: it keeps the last 0.3 s before the press, then
+    everything until the button comes up."""
     def __init__(self):
         import sounddevice
 
@@ -160,6 +170,8 @@ class Mic:
         self.stream.start()
 
     def heard(self, indata, frames, when, status):
+        """The audio callback: each 50 ms chunk joins the question being recorded, or
+        the pre-roll while no button is held."""
         chunk = indata[:, 0].copy()
         with self.lock:
             if self.chunks is not None:
@@ -168,10 +180,14 @@ class Mic:
                 self.pre_roll.append(chunk)
 
     def start(self):
+        """The button went down: the recording starts with the pre-roll, so the first
+        word is whole."""
         with self.lock:
             self.chunks = list(self.pre_roll)
 
     def stop(self):
+        """The button came up: the recorded audio as one array (empty when nothing came
+        in)."""
         import numpy
 
         with self.lock:
@@ -183,12 +199,15 @@ class Mic:
         return numpy.concatenate(chunks)
 
     def close(self):
+        """Stops and closes the input stream."""
         self.stream.stop()
         self.stream.close()
 
 
 @dataclass
 class Heard:
+    """What Whisper heard from one press: the words, the seconds of audio, the time to
+    the words, and how sure it was."""
     text: str
     seconds_of_speech: float
     transcribe_ms: int  # from letting go of the button to having the words
@@ -198,6 +217,8 @@ class Heard:
 
 
 class Ears:
+    """Whisper in its own thread: a recording goes in with listen, the words come out of
+    finished, and the 60 Hz loop never waits for it."""
     def __init__(self):
         self.model = None
         self.device = None
@@ -207,6 +228,7 @@ class Ears:
         threading.Thread(target=self.work, daemon=True).start()
 
     def load(self):
+        """Whisper on the GPU in float16, or on the CPU in int8 when the GPU fails."""
         from faster_whisper import WhisperModel
 
         try:
@@ -220,6 +242,8 @@ class Ears:
             self.device = "CPU"
 
     def work(self):
+        """The thread: loads Whisper, then turns each recording into Heard, prompted
+        with his radio words and the track's corner names."""
         self.load()
         print(f"[push-to-talk ready on the {self.device}]")
         while True:
@@ -246,9 +270,11 @@ class Ears:
             )
 
     def listen(self, audio):
+        """Queues a recording for Whisper, timed from now (the button just came up)."""
         self.jobs.put((audio, time.perf_counter()))
 
     def finished(self):
+        """Every Heard that Whisper has finished since the last call."""
         done = []
         while True:
             try:
@@ -270,9 +296,13 @@ class PushToTalk:
         )
 
     def set_track_words(self, corner_names):
+        """This track's corner names, for Whisper's prompt."""
         self.ears.track_words = ", ".join(corner_names) + "." if corner_names else ""
 
     def poll(self):
+        """Once per frame: the button starts and stops the recording, a press between
+        SHORTEST_PRESS_S and LONGEST_PRESS_S goes to Whisper (every press is logged),
+        and what Whisper has finished comes back (empty ones only when verbose)."""
         change = self.controller.poll()
         if change == "pressed":
             self.pressed_at = time.perf_counter()
@@ -301,6 +331,7 @@ class PushToTalk:
         return [h for h in heard if h.text]
 
     def close(self):
+        """Closes the microphone."""
         self.mic.close()
 
 
@@ -321,6 +352,8 @@ def start_if_set_up(verbose=False):
 
 
 def learn():
+    """--learn: waits for a button press on any controller and saves it as his talk
+    button."""
     pygame = start_sdl()
     print("Plug in the controller, then press R1 (the button you will hold to talk)...")
     pads = {}
@@ -345,6 +378,8 @@ def learn():
 
 
 def test():
+    """--test: prints what each press heard, how fast the words came and the intent they
+    match, until Ctrl+C."""
     from talk.hearing import intent_of
     import sounddevice
 

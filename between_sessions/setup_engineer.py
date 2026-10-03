@@ -23,6 +23,8 @@ AFTER_SPIN_S = 10.0  # rejoining from a stop spins the wheels whatever the setup
 
 
 def incident_windows(conn, session_id):
+    """[(start, end)] of the seconds after every hit and every spin: wheelspin and
+    lock-ups in them come from the incident, not from the setup."""
     windows = []
     for (sim_time,) in conn.execute(
         "SELECT sim_time FROM events WHERE session_id = ? AND kind IN ('CONTACT', 'IMPACT')",
@@ -63,6 +65,8 @@ def step_words(now):
 
 
 def corners_named(rows):
+    """The two corners where these events happened most, with their counts: "Arnage (4),
+    Indianapolis (2)"."""
     counts = {}
     for _, corner in rows:
         counts[corner] = counts.get(corner, 0) + 1

@@ -175,6 +175,8 @@ class SessionResult:
         self.last_opponents = []
 
     def see(self, race):
+        """Takes in one race snapshot: the grid slot (from the first), the track limit
+        steps, the place, the other cars, and his settings under green."""
         me = race.me
         if self.grid is None:
             self.grid = me.grid
@@ -187,6 +189,8 @@ class SessionResult:
             self.car_settings = (me.tc, me.abs, me.brake_bias_rear, me.motor_map)
 
     def save(self, conn, session_id):
+        """Saves the result and the rivals (once there was a place), and his car
+        settings."""
         if self.final_place is not None:
             strikes = None
             if self.first_limit_steps is not None:
@@ -435,6 +439,8 @@ class Session:
 
     # ---- his car ----------------------------------------------------------------------------
     def count_laps(self, frame):
+        """The lap: his own line crossings, or in a race the game's lap count (the lap
+        counter's race_lap); and the real lap distance."""
         # his own line crossings: where laps begin and end
         self.own_laps = self.lap_counter.update(frame)
         self.lap_count = self.own_laps
@@ -473,6 +479,8 @@ class Session:
             print(f"[track: {self.track} - corner map loaded]")
 
     def learn_corners(self, frame):
+        """Feeds the track learner; on a track it is still learning, the corners it
+        found replace the map at each new lap."""
         self.track_learner.add(
             self.own_laps, self.real_lap_distance, frame.brake, frame.accel_lat
         )
@@ -482,6 +490,8 @@ class Session:
                 self.corner_map.corners = learned
 
     def corner_stat(self, frame):
+        """The stat of a corner he just finished, printed and saved; None until he
+        finishes one."""
         stat = self.corner_stats.update(frame, self.lap_count, self.real_lap_distance)
         if stat:
             print(stat)
@@ -550,6 +560,8 @@ class Session:
         )
 
     def seats_speak(self, moment):
+        """Every seat's calls for this moment, offered to the governor: the start-settle
+        check first, then the seats."""
         # first: is the start still chaos? Then nothing but the spotter, flags and answers
         for call in self.settle.update(moment):
             self.governor.settled = self.settle.settled
@@ -612,6 +624,8 @@ class Session:
         self.offer(answer)
 
     def say_again(self, heard, frame):
+        """Whisper was not sure of his words: "Didn't catch that, mate. Say again.", as
+        an answer."""
         say_again = Call(
             seat="race_engineer",
             kind="ANSWER_UNHEARD",
@@ -705,6 +719,9 @@ class Session:
 
     # ---- on air -----------------------------------------------------------------------------
     def put_on_air(self, frame, in_corner):
+        """The governor's call for this frame: an urgent one played at once from the
+        voice bank, the rest sent to the radio desk to render; then the radio log
+        catches up."""
         on_air = self.governor.step(frame.elapsed_time, in_corner)
         if on_air is not None:
             if on_air.urgent:
@@ -719,6 +736,8 @@ class Session:
         self.log_finished_lines()
 
     def log_finished_lines(self):
+        """Logs every line the desk has finished, and keeps the last engineer line
+        spoken for "say again"."""
         for result in self.desk.drain():
             call = result["call"]
             save_radio(self.conn, self.session_id, call, result["status"], result)
@@ -731,6 +750,7 @@ class Session:
                 self.answers.last_line = result["line"]
 
     def log_dropped_calls(self):
+        """Logs every call the governor dropped, and tells the desk to forget it."""
         for call, reason in self.governor.dropped:
             self.desk.forget(call)
             save_radio(self.conn, self.session_id, call, reason)
@@ -773,6 +793,8 @@ class Session:
         print(decision_hash)
 
     def save_session(self, decision_hash):
+        """The end of the session: the radio log caught up, the session row closed, then
+        the result, the other cars' corners, the pass attempts and the corner report."""
         self.log_dropped_calls()
         self.log_finished_lines()
         ended_at = datetime.now().isoformat(timespec="seconds")

@@ -26,6 +26,7 @@ from between_sessions.brief import brief, log_brief
 
 
 def how_it_ended(conn, session_id):
+    """(end reason, session type) of a session, as it was saved."""
     row = conn.execute(
         "SELECT end_reason, session_type FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -33,6 +34,8 @@ def how_it_ended(conn, session_id):
 
 
 def race_night(clean, record=False, clips=None):
+    """One night of racing: the brief, then every session one after another, with one
+    voice for the whole launch."""
     conn = connect_db("apex.db")
     # one voice for the whole launch: Azure's voices with emotion when .env has a key,
     # edge-tts otherwise
@@ -74,6 +77,8 @@ def race_sessions(conn, clean, voice, said, clips=None):
 
 
 def replay_night(tape, speed, clean):
+    """A night played back from a tape: the brief, the replay, the brief logged with it,
+    team memory rebuilt, then the debrief."""
     conn = connect_db("apex.db")
     said = brief(conn)
     conn.close()

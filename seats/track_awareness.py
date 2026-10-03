@@ -87,6 +87,8 @@ CLASS_SPEED = {
 
 
 def class_rank(car_class):
+    """How fast a class is, by CLASS_SPEED (hypercars 3, GT3 0); 0 for a class it does
+    not know."""
     lowered = (car_class or "").lower().replace(" ", "")
     for name, rank in CLASS_SPEED.items():
         if name in lowered:
@@ -95,6 +97,7 @@ def class_rank(car_class):
 
 
 def spoken_class(car_class):
+    """A class as the spotter says it: Hypercar, LMP2, else "Faster car"."""
     lowered = (car_class or "").lower()
     if "hyper" in lowered or "lmh" in lowered or "lmdh" in lowered:
         return "Hypercar"
@@ -114,6 +117,8 @@ class NormalSpeed:
         self.last_bin = {}  # car id -> the bin its last sample went into
 
     def see(self, car_id, lap_dist, speed_kmh):
+        """One sample from a car as it enters a new 50 m bin: one per pass, so a parked
+        car cannot become the normal."""
         # one sample per car per pass, so a car parked in a bin cannot become its "normal"
         where = int(lap_dist // NORMAL_BIN_M)
         if self.last_bin.get(car_id) == where:
@@ -124,6 +129,8 @@ class NormalSpeed:
         )
 
     def at(self, lap_dist):
+        """The normal speed at this point of the lap; None until NORMAL_MIN_SAMPLES
+        passes are in."""
         speeds = self.passes.get(int(lap_dist // NORMAL_BIN_M))
         if speeds is None or len(speeds) < NORMAL_MIN_SAMPLES:
             return None
@@ -131,6 +138,8 @@ class NormalSpeed:
 
 
 class TrackAwareness:
+    """Hazards up the road and in the mirrors (the spotter, said at once), and battles
+    and trains ahead (opportunities, in the talk budget)."""
     def __init__(self):
         self.lap_length = None
         self.said_at = {}  # hazard / opportunity key -> when it was last called
@@ -149,6 +158,8 @@ class TrackAwareness:
         )  # cars that jumped to where they stand: in the garage, not on track
 
     def fresh(self, key, now, rearm):
+        """This key has not been called in the last rearm seconds; it is marked called
+        now."""
         last = self.said_at.get(key)
         if last is not None and now - last < rearm:
             return False
@@ -163,6 +174,7 @@ class TrackAwareness:
         return distance
 
     def hazard(self, kind, text, now, facts):
+        """A hazard call: the spotter's voice, said at once."""
         return Call(
             seat="spotter",
             kind=kind,
@@ -177,6 +189,7 @@ class TrackAwareness:
         )
 
     def opportunity(self, kind, text, now, facts):
+        """An opportunity call: racecraft's, waiting its turn in the talk budget."""
         # not immediate: a group up the road is coaching, so it waits its turn in the talk
         # budget. As immediate it skipped the budget and TRAIN_AHEAD went out 57 times.
         return Call(
@@ -275,6 +288,8 @@ class TrackAwareness:
 
     # ---- hazards ---------------------------------------------------------------------------
     def slow_or_stopped_ahead(self, race, moment, corners, now):
+        """SLOW_CAR_AHEAD or CAR_STOPPED_AHEAD for the slowest car just ahead (while he
+        is doing 60 km/h or more), once per car and once per place in HAZARD_REARM_S."""
         my_speed = moment.frame.speed_kmh
         if my_speed < 60:
             return []
@@ -338,6 +353,8 @@ class TrackAwareness:
         return f"before {following[0]}"
 
     def three_wide_ahead(self, race, moment, now):
+        """THREE_WIDE_AHEAD when three cars just ahead are alongside each other and
+        spread across the track; once in HAZARD_REARM_S."""
         before = self.remember_positions(race)
         cars = self.cars_just_ahead(race, moment.frame.lap_dist)
         for i in range(len(cars) - 2):
@@ -402,6 +419,8 @@ class TrackAwareness:
         return max(offsets) - min(offsets)
 
     def faster_class_behind(self, race, my_lap_dist, now):
+        """A faster class closing from behind: FASTER_FIGHT_BEHIND when two of them are
+        fighting, else FASTER_CLASS_BEHIND with when it will be on him."""
         coming, watched = self.faster_cars_behind(race, my_lap_dist, now)
         if not coming:
             return []

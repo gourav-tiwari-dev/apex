@@ -71,6 +71,8 @@ def fine_margin(laps_left):
 
 
 def verdict_of(spare, laps_left):
+    """The fuel verdict from the laps spare: fine, tight, save (lift and coast can make
+    it up) or box."""
     if spare >= fine_margin(laps_left):
         return "fine"
     if spare >= 0:
@@ -101,6 +103,8 @@ def picture_of(me, litres, energy, remaining):
 
 
 def fuel_words(picture):
+    """The fuel picture in the radio's words, as fuel or energy (whichever runs out
+    first)."""
     what = "Fuel" if picture["limit"] == "fuel" else "Energy"
     return VERDICT_WORDS[picture["verdict"]].format(
         what=what, spare=picture["spare_laps"], short=abs(picture["spare_laps"])
@@ -141,6 +145,8 @@ def measured_lap(game_lap, line_time, now):
 
 
 class Strategist:
+    """The strategist seat: fuel or virtual energy to the flag, tyres over their window,
+    rain, the last lap, and every lap's record."""
     def __init__(self):
         self.model = None  # the race model: the leader's rolling lap
         self.fuel_at_line = []  # fuel in the tank each time I crossed the line
@@ -179,6 +185,8 @@ class Strategist:
         self.last_sector = None
 
     def laps_left(self, race):
+        """Laps to go, from the median of my last three timed laps (the game's own lap
+        time when Apex started mid-race)."""
         lap_time = None
         if self.lap_times:
             lap_time = statistics.median(self.lap_times[-3:])
@@ -188,6 +196,8 @@ class Strategist:
         return laps_to_go(race, lap_time, self.model)
 
     def usage_per_lap(self, readings):
+        """The median used a lap over the last three laps, from the readings at the line
+        (a refuel skipped); None before FIRST_CALL_AFTER_LAPS laps."""
         used = []
         for before, after in zip(readings, readings[1:]):
             if before > after:  # a refuel makes the difference negative: skip it
@@ -280,6 +290,7 @@ class Strategist:
         return last_lap
 
     def rain(self, race, now):
+        """RAIN, once, when the rain starts (over 0.1)."""
         if race.session.raining < 0.1 or self.rain_called:
             return []
         self.rain_called = True
@@ -340,6 +351,7 @@ class Strategist:
             self.burn.pop(0)
 
     def learn_track_length(self, race):
+        """The lap length: the session's, else the farthest any car has gone so far."""
         length = getattr(race.session, "lap_length", None)
         if length and length > 1000:
             self.track_m = length  # the session's lap, not the farthest car so far
@@ -419,6 +431,9 @@ class Strategist:
         return max(to_go - done_this_lap, 0.0)
 
     def live_picture(self, race, lap_dist):
+        """The fuel picture from the usage measured so far: over whole laps as it is;
+        over part of a lap only a box, and only when it is box even at PART_LAP_ERROR
+        less burn."""
         usage = self.live_usage()
         remaining = self.laps_remaining(race, lap_dist)
         if usage is None or remaining is None:
@@ -497,6 +512,8 @@ class Strategist:
         return fuel_call
 
     def lap_record(self, lap, lap_time, me, now):
+        """The record of the lap just finished: its time, its three sectors (when all
+        were timed), the fuel it used, and whether it counted."""
         sectors = None
         one, two = self.sector_marks.get(1), self.sector_marks.get(2)
         if (
@@ -587,6 +604,7 @@ class Strategist:
         return spare, facts
 
     def tyre_check(self, me, now):
+        """TYRE_HOT for a tyre over HOT_TYRE_C at two lines in a row, once per tyre."""
         calls = []
         for index, zones in enumerate(me.tyre_temps):
             if not zones or min(zones) <= NO_TYRE_READING_C:

@@ -45,10 +45,13 @@ SEAT_COOLDOWN_S = {
 
 
 def words_in(text):
+    """How many words are in this text."""
     return len(text.split())
 
 
 def estimated_duration(call):
+    """How long a call takes to say: a radio click and a breath, then SECONDS_PER_WORD a
+    word (UNKNOWN_LINE_WORDS when it has no template)."""
     if call.template:
         words = words_in(call.template)
     else:
@@ -57,6 +60,7 @@ def estimated_duration(call):
 
 
 class Governor:
+    """Decides which call goes on air and when, on sim time only, by the rules above."""
     def __init__(self):
         self.pending = []
         self.busy_until = 0.0
@@ -85,6 +89,8 @@ class Governor:
         )
 
     def hold_reason(self, call):
+        """Why this call is held back now ("chequered", "quiet" or "start_chaos"), or
+        None; the spotter, flags and his answers are never held."""
         # only the spotter, flags and his answers speak in the chaos or on quiet; an immediate
         # line (praise, "stick it") is still coaching
         if call.urgent or call.asked or call.seat in NEVER_COUNTED_SEATS:
@@ -133,21 +139,26 @@ class Governor:
         return True
 
     def within_talk_budget(self, call, now):
+        """The engineer has said fewer than ENGINEER_LINES_PER_WINDOW counted lines in
+        the last ENGINEER_WINDOW_S; an exempt call always fits."""
         if self.exempt(call):
             return True
         recent = [t for t in self.engineer_air_times if now - t < ENGINEER_WINDOW_S]
         return len(recent) < ENGINEER_LINES_PER_WINDOW
 
     def cooldown_of(self, seat):
+        """That seat's cooldown, in seconds."""
         return SEAT_COOLDOWN_S.get(seat, DEFAULT_COOLDOWN_S)
 
     def cooled_down(self, call, now):
+        """That seat's cooldown has passed since it last spoke."""
         last = self.last_spoken_by_seat.get(call.seat)
         if last is None:
             return True
         return now - last >= self.cooldown_of(call.seat)
 
     def drop_stale(self, now):
+        """Drops every waiting call older than its ttl: stale advice is wrong advice."""
         still_fresh = []
         for call in self.pending:
             if now - call.sim_time > call.ttl:
@@ -157,6 +168,8 @@ class Governor:
         self.pending = still_fresh
 
     def best(self, calls):
+        """The most important call (the lowest priority number); among equals, the one
+        raised first."""
         # most important first; among equals, whoever asked first
         best_call = None
         for call in calls:
@@ -172,6 +185,9 @@ class Governor:
         return best_call
 
     def put_on_air(self, call, now):
+        """Takes the call off the queue and onto the air: the radio is busy for about
+        its length, the seat's cooldown starts, it counts against the talk budget unless
+        exempt, and it goes into the decision hash."""
         self.pending.remove(call)
         self.busy_until = now + estimated_duration(call)
         self.last_spoken_by_seat[call.seat] = now
@@ -183,9 +199,12 @@ class Governor:
         return call
 
     def quiet(self):
+        """He asked for quiet, and those laps are not over."""
         return self.quiet_until_lap is not None and self.lap < self.quiet_until_lap
 
     def drop_held(self):
+        """Drops every waiting call that is held now (hold_reason) or that an order he
+        gave since forbids."""
         kept = []
         for call in self.pending:
             reason = self.hold_reason(call)
@@ -228,4 +247,6 @@ class Governor:
         return self.put_on_air(self.best(ready), now)
 
     def decision_hash(self):
+        """SHA-256 of every call put on air (seat, kind, sim time): the same race
+        replayed gives the same hash."""
         return hashlib.sha256(json.dumps(self.admitted).encode()).hexdigest()

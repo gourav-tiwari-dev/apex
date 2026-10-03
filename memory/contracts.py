@@ -12,6 +12,7 @@ from memory.db import track_key, track_of
 
 
 def save_contract(conn, session_id, contract):
+    """Saves the job for the next race (one per session); returns its row id."""
     cur = conn.execute(
         "INSERT OR REPLACE INTO focus_contracts (session_id,corner,focus,metric,baseline,target,min_laps) VALUES (?,?,?,?,?,?,?)",
         (
@@ -54,12 +55,15 @@ def load_latest_contract(conn, before_session_id, track=None):
 
 
 def load_reference(path):
+    """A reference lap from its JSON file."""
     with open(path, "r") as f:
         data = json.load(f)
         return data
 
 
 def reference_of(reference):
+    """The reference lap, from a file (the Monza hand-checked lap) or as built from a
+    race."""
     # a reference is a file (the Monza hand-checked lap) or a dict built from a race
     if isinstance(reference, str):
         return load_reference(reference)
@@ -107,15 +111,19 @@ def corner_comparison(current_row, reference_row):
 
 
 def time_lost_of(row):
+    """A comparison row's time lost: what the corners are ranked by."""
     return row["time_lost"]
 
 
 def rank_by_time_lost(comparison):
+    """The comparison sorted in place by time lost, the worst corner first."""
     comparison.sort(key=time_lost_of, reverse=True)
     return comparison
 
 
 def build_evidence_pack(conn, reference, session_id):
+    """The debrief's evidence: every corner against the reference, the costliest first
+    (the focus), with where the reference came from."""
     reference_report = reference_of(reference)
     ranked = rank_by_time_lost(compare_to_reference(conn, reference, session_id))
     corners = []
@@ -251,6 +259,8 @@ CONTRACT_MIN_LAPS = 8
 
 
 def make_contract(pack, spoken):
+    """The job for the next race at the costliest corner: its minimum speed half-way to
+    the reference's; None when that step is under MIN_TARGET_STEP_KMH."""
     focus_corner = pack["corners"][0]
     baseline = focus_corner["your_min_kmh"]
     reference = focus_corner["hymo_min_kmh"]
@@ -271,6 +281,8 @@ def make_contract(pack, spoken):
 
 
 def load_contract_laps(conn, session_id, corner):
+    """His minimum speeds at that corner on the session's valid laps (lap 0 left
+    out)."""
     cur = conn.execute(
         "SELECT cs.min_speed FROM corner_stats cs JOIN laps l ON l.session_id = cs.session_id AND l.lap_count = cs.lap_count WHERE cs.session_id = ? AND cs.corner = ? AND cs.lap_count > 0 AND l.validity = 1",
         (session_id, corner),
@@ -295,6 +307,8 @@ def contract_laps_so_far(conn, contract, session_id):
 
 
 def evaluate_contract(conn, contract, session_id):
+    """How the job went so far: insufficient (fewer than its minimum laps), hit (the
+    median reached the target), moved (up MIN_TARGET_STEP_KMH or more) or flat."""
     speeds = contract_laps_so_far(conn, contract, session_id)
 
     if len(speeds) < contract["min_laps"]:

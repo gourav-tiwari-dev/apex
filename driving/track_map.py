@@ -46,6 +46,8 @@ BRAKE_HELD_M = 15  # a braking zone: the brake held at least this far (shorter i
 
 
 def corner_at(corners, distance):
+    """The name of the corner at this distance into the lap, or None (a straight, or no
+    map)."""
     if corners is None:
         return None
     for corner in corners:
@@ -69,6 +71,7 @@ class CornerMap:
 
 
 def is_busy(brake, accel_lat):
+    """Braking at all, or turning at 0.6 g or more: this slice is part of a corner."""
     return brake > BRAKING or abs(accel_lat) >= TURNING
 
 
@@ -81,6 +84,8 @@ class TrackMapLearner:
         self.track_length = 0.0
 
     def add(self, lap_count, distance, brake, accel_lat):
+        """Marks this slice busy (and braking) on this lap; lap 0, the out-lap, is
+        skipped."""
         # lap 0 is the out-lap fragment, at pit-limiter speed: it would teach wrong corners
         if lap_count < 1 or distance < 0:
             return
@@ -95,6 +100,7 @@ class TrackMapLearner:
             self.braking_by_lap[lap_count].add(int(distance // SLICE_M))
 
     def complete_laps(self, current_lap):
+        """The laps already finished; the one being driven is not."""
         # the lap being driven right now is not complete yet
         return [lap for lap in self.busy_by_lap if lap < current_lap]
 
@@ -200,6 +206,7 @@ def split_at_braking(windows, brake_share):
 
 
 def overlap(a, b):
+    """Metres two corners share."""
     return max(0, min(a["end"], b["end"]) - max(a["start"], b["start"]))
 
 
@@ -217,11 +224,13 @@ def borrow_names(learned, named):
 
 
 def map_path(track):
+    """Where a track's learned map is saved: track_maps/<the track as a slug>.json."""
     slug = re.sub(r"[^a-z0-9]+", "_", track.lower()).strip("_") or "unknown_track"
     return os.path.join(MAPS_FOLDER, slug + ".json")
 
 
 def save_map(track, corners, laps_used):
+    """Saves a learned corner map for that track, with the laps it was learned from."""
     os.makedirs(MAPS_FOLDER, exist_ok=True)
     with open(map_path(track), "w") as f:
         json.dump(
@@ -232,6 +241,7 @@ def save_map(track, corners, laps_used):
 
 
 def load_map(track):
+    """The saved corner map for that track, or None."""
     path = map_path(track)
     if not os.path.exists(path):
         return None

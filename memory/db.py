@@ -196,6 +196,8 @@ NEW_COLUMNS = {
 
 
 def connect_db(db_path="apex.db"):
+    """The database, opened with foreign keys on, every table made and every new column
+    added (so an old apex.db opens too)."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
@@ -204,6 +206,7 @@ def connect_db(db_path="apex.db"):
 
 
 def add_new_columns(conn):
+    """Adds the NEW_COLUMNS an older apex.db is missing."""
     # CREATE TABLE IF NOT EXISTS never changes a table that is already there,
     # so an old apex.db needs its new columns added by hand
     for table, columns in NEW_COLUMNS.items():
@@ -215,11 +218,14 @@ def add_new_columns(conn):
 
 
 def latest_session_id(conn):
+    """The id of the newest session, or None in an empty database."""
     row = conn.execute("SELECT MAX(id) FROM sessions").fetchone()
     return row[0]
 
 
 def start_session(conn, started_at, tape_path, replay_speed, launch_id=None):
+    """A new session row: when it started, its tape and replay speed, and the launch it
+    belongs to; returns its id."""
     cur = conn.execute(
         "INSERT INTO sessions (started_at,tape_path,replay_speed,launch_id) VALUES (?,?,?,?)",
         (started_at, tape_path, replay_speed, launch_id),
@@ -229,6 +235,7 @@ def start_session(conn, started_at, tape_path, replay_speed, launch_id=None):
 
 
 def save_event(conn, session_id, event):
+    """One driving event of the session; returns its row id."""
     cur = conn.execute(
         "INSERT INTO events (session_id,kind,sim_time,speed_kmh,corner,conclusion,lap_dist,lap_count,other_car,magnitude) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
@@ -249,6 +256,8 @@ def save_event(conn, session_id, event):
 
 
 def save_lap(conn, session_id, lap_count, validity):
+    """One lap of his and whether it counted (1 valid, 0 invalidated); returns its row
+    id."""
     cur = conn.execute(
         "INSERT INTO laps (session_id, lap_count, validity) VALUES (?, ?, ?)",
         (session_id, lap_count, validity),
@@ -258,6 +267,7 @@ def save_lap(conn, session_id, lap_count, validity):
 
 
 def finish_session(conn, session_id, hash, end_reason=None, ended_at=None):
+    """Closes the session row: the hash of its decisions, why it ended and when."""
     conn.execute(
         "UPDATE sessions SET event_hash = ?, end_reason = ?, ended_at = ? WHERE id = ?",
         (hash, end_reason, ended_at, session_id),
@@ -277,6 +287,7 @@ def save_car_settings(conn, session_id, settings):
 
 
 def save_session_result(conn, session_id, grid, final_place, track_limit_strikes):
+    """His result: the grid slot, the final place and his track limit strikes."""
     conn.execute(
         "UPDATE sessions SET grid = ?, final_place = ?, track_limit_strikes = ? WHERE id = ?",
         (grid, final_place, track_limit_strikes, session_id),
@@ -285,6 +296,8 @@ def save_session_result(conn, session_id, grid, final_place, track_limit_strikes
 
 
 def save_rivals(conn, session_id, opponents):
+    """Every other car of the session, as a rival: who, the class, the best lap and the
+    final place."""
     for o in opponents:
         conn.execute(
             "INSERT OR REPLACE INTO rivals_seen (session_id,steam_id,driver,car_class,best_lap,final_place) VALUES (?,?,?,?,?,?)",
@@ -294,6 +307,8 @@ def save_rivals(conn, session_id, opponents):
 
 
 def save_opponent_corners(conn, session_id, rows):
+    """The other cars' corners, one row per car, corner and lap: minimum speed, time,
+    and where the braking and the throttle came."""
     for row in rows:
         conn.execute(
             "INSERT INTO opponent_corners (session_id,steam_id,driver,car_class,car_model,corner,lap_count,min_speed,time_s,brake_onset,throttle_on) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -315,6 +330,7 @@ def save_opponent_corners(conn, session_id, rows):
 
 
 def save_pass_attempts(conn, session_id, attempts):
+    """His pass attempts of the session, and how each ended (pass or no_pass)."""
     for steam_id, driver, corner, lap_count, outcome in attempts:
         conn.execute(
             "INSERT INTO pass_attempts (session_id,steam_id,driver,corner,lap_count,outcome) VALUES (?,?,?,?,?,?)",
@@ -346,6 +362,8 @@ def set_session_track(conn, session_id, race):
 
 
 def track_key(track):
+    """The key team memory files a track under: v1 sessions, with no track name, were
+    all Monza."""
     # v1 sessions have no track name: they were all Monza
     if track is None or "monza" in track.lower():
         return "monza"
@@ -353,6 +371,7 @@ def track_key(track):
 
 
 def track_of(conn, session_id):
+    """That session's track key."""
     row = conn.execute(
         "SELECT track FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()
@@ -393,6 +412,7 @@ def save_radio(conn, session_id, call, status, details=None):
 
 
 def save_llm_call(conn, session_id, seat, llm):
+    """One model call: the seat, the tokens in and out, the seconds and the cost."""
     conn.execute(
         "INSERT INTO llm_calls (session_id,seat,tokens_in,tokens_out,seconds,cost_rs) VALUES (?,?,?,?,?,?)",
         (
@@ -408,6 +428,8 @@ def save_llm_call(conn, session_id, seat, llm):
 
 
 def save_corner_stat(conn, session_id, stat):
+    """His stat for one corner on one lap (brake onset, minimum speed, slow zone,
+    coasting); returns its row id."""
     cur = conn.execute(
         "INSERT OR REPLACE INTO corner_stats (session_id,lap_count,corner,brake_onset,min_speed,slow_zone,coast) VALUES (?,?,?,?,?,?,?)",
         (

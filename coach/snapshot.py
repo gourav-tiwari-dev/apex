@@ -332,6 +332,8 @@ class Snapshot:
             )
 
     def trend_words(self, front, back):
+        """The road trend between two cars in words for the coach, with how sure it is;
+        "not measured yet" without one."""
         t = self.model.trend(front, back)
         if t is None:
             return "not measured yet"
@@ -384,6 +386,8 @@ class Snapshot:
         return row
 
     def battles_near(self, race):
+        """Battles within four places of him, said in places, never names; five at
+        most."""
         places = {o.id: o.place for o in race.opponents}
         places["me"] = race.me.place
         out = []
@@ -463,6 +467,8 @@ class Snapshot:
         entry["corners_where_you_gain_time_s"] = yours
 
     def every_corner(self, performance):
+        """Every corner he has driven, by lowercase name: his best and last time there,
+        its balance, what the fastest car gains there and the one thing to change."""
         corners = {}
         rival = {item[1]: item for item in performance.rival_gaps()}
         for corner, passes in performance.my_passes.items():
@@ -487,6 +493,8 @@ class Snapshot:
         return corners
 
     def car(self, race, strategist):
+        """The car tool: fuel, tyre temperatures, damage, overheating, track limit steps
+        and penalties."""
         me = race.me
         state = {
             "fuel": strategist.fuel_now,
@@ -523,6 +531,7 @@ class Snapshot:
         return result
 
     def driver_names(self):
+        """The driver keys the coach may name ("ahead" and "behind" left out)."""
         return [key for key in self.drivers if key not in ("ahead", "behind")]
 
     def strategy(self):
@@ -561,6 +570,8 @@ class Snapshot:
         return where
 
     def remind(self, arguments):
+        """The remind_me tool: a reminder for a later lap of this race (the words cut to
+        80 characters), or an error saying why not."""
         try:
             lap = int(arguments.get("lap"))
         except (TypeError, ValueError):
@@ -626,6 +637,8 @@ class Snapshot:
         return events
 
     def find_driver(self, arguments):
+        """The driver tool: that driver of his class, by key or part of a name; else an
+        error saying what to ask for."""
         who = str(arguments.get("who", "")).lower().strip()
         if who in self.drivers:
             return self.drivers[who]
@@ -637,6 +650,8 @@ class Snapshot:
         }
 
     def find_corner(self, arguments):
+        """The corner tool: that corner, by part of its name or a close spelling (a
+        misheard name); else an error listing the corners known."""
         wanted = str(arguments.get("name", "")).lower().strip()
         for key, entry in self.corners.items():
             if wanted and (wanted in key or key in wanted):

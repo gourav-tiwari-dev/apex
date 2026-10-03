@@ -78,12 +78,16 @@ FIGHT_MOST_OF_LAP = 0.9
 
 
 def median_or_none(values):
+    """The median of these values, or None when there are none."""
     if not values:
         return None
     return statistics.median(values)
 
 
 class Racecraft(PassLifecycle, ClosingAlarm):
+    """The racecraft seat: a plan for each fight, the closing alarm, passes made and
+    lost, defending that held, the price of a fight, and calming him down after contact
+    or two offs."""
     def __init__(self, performance, rivals=None, clean=False):
         self.performance = performance  # shares my corner speeds and theirs
         self.rivals = rivals or {}  # steam_id -> team-memory dossier line
@@ -140,6 +144,9 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         return edges
 
     def strong_corner_against(self, car):
+        """The corner where I am strongest against that car, or None: the race model's
+        road times first (a corner gaining GAIN_WORTH_USING_S), the corner speeds when
+        it has none (an edge of EDGE_WORTH_USING_KMH)."""
         # the race model's road times first: seconds I gain through each corner (25 Sep)
         if self.model is not None and self.corners:
             gains = self.model.corner_gains("me", car.id, self.corners)
@@ -156,6 +163,8 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         return best
 
     def corner_after(self, corner, corners):
+        """The corner after this one around the lap, or None when it is not one of these
+        corners."""
         names = [c["name"] for c in sorted(corners, key=lambda c: c["start"])]
         if corner not in names:
             return None
@@ -173,13 +182,19 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         return best
 
     def history_with(self, steam_id):
+        """Team memory's line on that rival from earlier races, or None."""
         return self.rivals.get(steam_id)
 
     def pick(self, pair):
+        """The swearing line of a (swearing, clean) pair, or the clean one in clean
+        mode."""
         return pair[1] if self.clean else pair[0]
 
     # ---- the plans ------------------------------------------------------------------------
     def attack_plan(self, opponent, corners, now):
+        """ATTACK_PLAN for the car ahead: the corner I am faster out of and the one
+        after it to pass into, else stay within a second and wait; with its reputation
+        and our history."""
         edges = self.edges_against(identity(opponent))
         # a plan is where, not how far: no gap in it
         facts = {"driver": opponent.driver}
@@ -221,6 +236,8 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         )
 
     def defend_plan(self, opponent, corners, now):
+        """DEFEND_PLAN for the car behind: the corner it is faster out of and the inside
+        to cover into the next one, else clean lines; with its reputation."""
         edges = self.edges_against(identity(opponent))
         facts = {"driver": opponent.driver}
         danger = None
@@ -254,9 +271,13 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         )
 
     def plan_allowed(self, now):
+        """PLAN_GAP_S has passed since the last plan: one a minute is as much as he can
+        use."""
         return self.last_plan_time is None or now - self.last_plan_time >= PLAN_GAP_S
 
     def reset(self, kind, conclusion, facts, template, now):
+        """A calm-down call at the race engineer's priority: after contact, two offs or
+        a lost place."""
         return Call(
             seat="racecraft",
             kind=kind,
@@ -308,6 +329,8 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         return round(gap, 2)
 
     def in_fight(self, car, gap, limit, now):
+        """That car has been within limit of him for FIGHT_CONFIRM_S (a car brushing
+        past is not a fight); out of range, its fight starts over."""
         if car is None or gap is None or gap > limit:
             if car is not None:
                 self.fight_since.pop(car.id, None)
@@ -419,6 +442,8 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         )
 
     def count_braking_zones(self, moment, now):
+        """On each change of corner: every open pass that has already left the corner it
+        was made in has held one more braking zone."""
         # a braking zone survived = a corner left after the one the pass was made in
         if self.last_corner is not None and moment.corner != self.last_corner:
             self.last_corner_exit = now
@@ -448,6 +473,9 @@ class Racecraft(PassLifecycle, ClosingAlarm):
         return calls
 
     def plans(self, corners, now):
+        """The fight plans due now: attack the car ahead, defend from the car behind,
+        once each fight is confirmed; one plan per rival, and one more once there is a
+        real corner to use."""
         calls = []
         # one plan per rival, plus one upgrade once there is a real corner to use: at the
         # start there is no data yet, and "stay close, no lunges" is the right call then
@@ -623,6 +651,8 @@ class Racecraft(PassLifecycle, ClosingAlarm):
                 ]
 
     def resolve_attempt(self, me, now):
+        """The open pass attempt ends as a pass when his place improved, or as no pass
+        after ATTEMPT_WINDOW_S."""
         if self.open_attempt is None:
             return
         place_then = self.open_attempt[5]
@@ -632,6 +662,7 @@ class Racecraft(PassLifecycle, ClosingAlarm):
             self.finish_attempt("no_pass")
 
     def finish_attempt(self, outcome):
+        """Files the open attempt with its outcome, for team memory."""
         steam_id, driver, corner, lap, started, place_then = self.open_attempt
         self.attempts.append((steam_id, driver, corner, lap, outcome))
         self.open_attempt = None

@@ -76,6 +76,8 @@ BG, CARD, INK, DIM, ORANGE = "#0b0e12", "#141920", "#eef1f4", "#8a94a0", "#ff5b1
 
 
 class Wizard:
+    """The setup window: five steps, one page at a time; Finish saves profile.json and
+    the radio button."""
     def __init__(self, root):
         self.root = root
         self.old = load_profile()
@@ -135,6 +137,8 @@ class Wizard:
         self.show()
 
     def show(self):
+        """Draws the current step: its number, its page, and Back and Next (Finish on
+        the last step)."""
         if self.page is not None:
             self.page.destroy()
         self.page = ttk.Frame(self.root, padding=32)
@@ -158,14 +162,17 @@ class Wizard:
         ).pack(side="right")
 
     def next(self):
+        """On to the next step."""
         self.at += 1
         self.show()
 
     def back(self):
+        """Back one step."""
         self.at -= 1
         self.show()
 
     def heading(self, text, under):
+        """A step's title, with a line under it."""
         ttk.Label(self.page, text=text, style="Head.TLabel").pack(
             anchor="w", pady=(8, 4)
         )
@@ -200,6 +207,7 @@ class Wizard:
         ).pack(anchor="w", pady=3)
 
     def step_you(self):
+        """Step 1: his name, what he races most, and wheel or controller."""
         self.heading(
             "Your engineer", "Apex talks to you by name and knows what you drive."
         )
@@ -220,6 +228,7 @@ class Wizard:
             self.choice(choice.split(" ", 1)[1].capitalize(), choice, self.input)
 
     def step_button(self):
+        """Step 2: he presses the button he will hold to talk."""
         self.heading(
             "Your radio button",
             "Press the button on your wheel or controller that you'll HOLD to talk to Apex. "
@@ -258,6 +267,7 @@ class Wizard:
             self.root.after(20, self.listen_for_button)
 
     def step_engineer(self):
+        """Step 3: clean or spicy, with a button to hear a line."""
         self.heading(
             "How it talks",
             "Clean is straight talk. Spicy swears at the situation and the other cars, never at you. "
@@ -270,6 +280,8 @@ class Wizard:
         ).pack(anchor="w", pady=18)
 
     def voice_test(self):
+        """Says a sample line in the chosen mode with the offline voice, on its own
+        thread so the window stays live."""
         line = (
             "Pass into the Esses. Not before. Oh, get in there! Fucking lovely."
             if self.talk.get() == "spicy"
@@ -287,6 +299,8 @@ class Wizard:
         threading.Thread(target=speak, daemon=True).start()
 
     def step_clips(self):
+        """Step 4: auto-clips on or off, saying plainly what is recorded and where it
+        stays."""
         self.heading(
             "Auto-clips",
             "Apex records only the Le Mans Ultimate window, the game sound and your microphone "
@@ -297,6 +311,8 @@ class Wizard:
         self.choice("No thanks", False, self.clips)
 
     def step_game(self):
+        """Step 5: whether Le Mans Ultimate was found in his Steam libraries, and what
+        to ask first."""
         folder = find_lmu()
         if folder:
             self.heading(
@@ -318,6 +334,8 @@ class Wizard:
         ).pack(anchor="w")
 
     def finish(self):
+        """Saves his answers to profile.json (the rest of his old profile kept) and the
+        radio button if he pressed one, then closes."""
         answers = {
             "name": self.name.get(),
             "car": self.car.get(),
@@ -345,6 +363,7 @@ def sharp_on_scaled_screens():
 
 
 def main():
+    """Opens the setup window, sharp on scaled screens."""
     sharp_on_scaled_screens()
     root = tk.Tk()
     Wizard(root)

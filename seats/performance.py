@@ -70,6 +70,7 @@ MAX_SAMPLE_GAP_M = 200.0  # two snapshots further apart than this cannot be inte
 
 
 def car_lengths(metres):
+    """Metres as car lengths, at least one."""
     return max(1, round(metres / CAR_LENGTH_M))
 
 
@@ -158,6 +159,7 @@ def crossing(before, after, value, key):
 
 
 def median_of(values):
+    """The median of the values that are not None; None when there are none."""
     values = [v for v in values if v is not None]
     if not values:
         return None
@@ -374,10 +376,12 @@ ADVICE = {
 
 
 def advice_text(change, lengths):
+    """The advice for this change, with the car lengths filled in."""
     return ADVICE[change].format(n=lengths)
 
 
 def as_dict(stat):
+    """The parts of a corner stat that what_to_change compares."""
     return {
         "brake_onset": stat.brake_onset,
         "min_speed": stat.min_speed,
@@ -386,6 +390,8 @@ def as_dict(stat):
 
 
 class PerformanceEngineer:
+    """The performance seat: live cues for spins, offs, lock-ups and caught slides; at
+    each line, the corner to work on and earned praise."""
     def __init__(self):
         self.my_speeds = {}  # corner -> every minimum speed I did (racecraft uses it)
         self.my_passes = {}  # corner -> every CornerStat of mine this session
@@ -405,6 +411,9 @@ class PerformanceEngineer:
         self.incident_at = sim_time
 
     def call_for_event(self, event, event_id):
+        """The radio call for a driving event, or None: no "wide" while crawling or just
+        after a spin or hit, and a caught slide waits CATCH_HOLD_S before it is
+        praised."""
         if event.kind == "SPIN":
             self.incident_at = event.sim_time
             # live 27 Sep: "Big moment. Caught it. Good hands." then "Spun." 2 s later. The save
@@ -422,6 +431,9 @@ class PerformanceEngineer:
         return call
 
     def update(self, moment):
+        """One frame: a caught slide that held is said now, new race data feeds the
+        other cars' corners, the balance meter and his finished corner are taken in, and
+        at the line come the lap's calls."""
         calls = []
         race = moment.race
         now = moment.now
@@ -453,6 +465,8 @@ class PerformanceEngineer:
         return calls
 
     def corner_finished(self, stat):
+        """Keeps a corner he just finished: its minimum speed (racecraft uses it) and
+        its stat."""
         self.my_speeds.setdefault(stat.corner, []).append(round(stat.min_speed, 1))
         self.my_passes.setdefault(stat.corner, []).append(stat)
         self.this_lap.append(stat)
@@ -605,6 +619,9 @@ class PerformanceEngineer:
         )
 
     def lap_finished(self, moment, now):
+        """At the line: at most MAX_CORNER_CALLS_PER_LAP corner calls (against his own
+        best, the car's balance, the fastest car), one per corner; then the lap-time
+        calls."""
         calls = []
         own = self.own_best_call(now)
         if own is not None:
@@ -628,6 +645,8 @@ class PerformanceEngineer:
         return calls
 
     def lap_time_calls(self, me, moment, now):
+        """PRAISE for a new personal best (not in qualifying), at most
+        MAX_PRAISE_PER_SESSION times."""
         calls = []
         best = me.best_lap if me.best_lap > 0 else None
         if (

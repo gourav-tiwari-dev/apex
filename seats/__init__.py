@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Moment:
+    """What every seat sees on one frame: his car, the latest race snapshot, the cars
+    near him, his lap and corner, and the stat of the corner he just left."""
     frame: object  # CarState: my car, this frame
     race: object | None  # the latest RaceSnapshot (None on old tapes)
     new_race: bool  # True on the frame a new snapshot arrived
@@ -27,4 +29,5 @@ class Moment:
 
     @property
     def now(self):
+        """This frame's sim time: every decision runs on the game's clock."""
         return self.frame.elapsed_time

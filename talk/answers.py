@@ -83,6 +83,8 @@ class Answers:
         )
 
     def closer(self, intent):
+        """The attitude line for this intent, its lines taken in turn (with a space in
+        front); "" for an intent with none."""
         lines = CLOSERS.get(intent)
         if not lines:
             return ""
@@ -144,6 +146,8 @@ class Answers:
         return "race_engineer", getattr(self, intent.lower())(race)
 
     def gap_ahead(self, race):
+        """GAP_AHEAD: the gap to the car ahead in his class, then the trend when the
+        race model is sure of it, else that car's last lap (from its second lap)."""
         ahead, gap, behind, gap_behind = same_class_neighbours(race, self.model)
         if ahead is None or gap is None:
             return "Nobody ahead in your class. You're leading it."
@@ -168,6 +172,8 @@ class Answers:
         return f"{closing if t['closing_per_lap'] > 0 else growing} {amount:.1f} a lap."
 
     def gap_behind(self, race):
+        """GAP_BEHIND: the gap to the car behind in his class, then the trend when the
+        race model is sure of it, else that car's last lap (from its second lap)."""
         ahead, gap_ahead, behind, gap = same_class_neighbours(race, self.model)
         if behind is None or gap is None:
             return "Nobody behind in your class."
@@ -180,6 +186,8 @@ class Answers:
         return words
 
     def pace_to_catch(self, race):
+        """PACE_TO_CATCH: the lap time that catches the car ahead by the flag (its lap
+        time, less the gap shared over the laps to go), and what it is doing now."""
         ahead, gap, behind, gap_behind = same_class_neighbours(race, self.model)
         if ahead is None or gap is None:
             return "Nobody ahead to catch. Just bring it home."
@@ -216,6 +224,8 @@ class Answers:
         )
 
     def laps_left(self, race):
+        """LAPS_LEFT: the laps to go, this one included: the race engineer's count at
+        the line, else worked out from the race."""
         to_go = self.engineer.to_go_at_line
         if to_go is None:
             to_go = laps_to_go(
@@ -228,6 +238,8 @@ class Answers:
         return f"{to_go} laps to go, this one included."
 
     def where_losing(self):
+        """WHERE_LOSING: the corner where the fastest car finds the most time on him,
+        how much, and the advice for it (the performance seat's focus)."""
         focus = self.performance.focus()
         if focus is None:
             return "Nothing clear yet. Need a couple more laps."
@@ -236,16 +248,21 @@ class Answers:
         return f"{focus['corner']}. The fastest car finds {amount} there. {focus['advice']}"
 
     def position(self, race):
+        """POSITION: his place; in a multiclass race, his place in class and overall."""
         if multiclass(race):
             return self.class_standing(race)  # "P7 in class, of 25. P43 overall."
         return f"P{race.me.place}."
 
     # ---- v3 5b: lookups answered by code (his ask, 25 Sep) ------------------------------------
     def temps_by_wheel(self, me):
+        """His four tyre temperatures, front left first; None when the game does not
+        give all four."""
         temps = tyre_averages(me)
         return temps if len(temps) == 4 else None
 
     def tyres(self, race):
+        """TYRES: the four tyre temperatures, the tyres over HOT_TYRE_C (else the
+        hottest one), and the most worn tyre."""
         temps = self.temps_by_wheel(race.me)
         if temps is None:
             return "No tyre temperatures from the game."
@@ -263,12 +280,14 @@ class Answers:
         return words
 
     def tyre_pressures(self, race):
+        """TYRE_PRESSURES: the four pressures, in kPa."""
         p = race.me.tyre_pressures
         if not p or len(p) != 4:
             return "No pressures from the game."
         return f"Fronts {round(p[0])} and {round(p[1])}. Rears {round(p[2])} and {round(p[3])}. kPa."
 
     def tyre_wear(self, race):
+        """TYRE_WEAR: the percent left on each tyre, and which one is worst."""
         wear = race.me.tyre_wear
         if not wear or len(wear) != 4:
             return "No tyre wear from the game."
@@ -277,6 +296,7 @@ class Answers:
         return f"Fronts {left[0]} and {left[1]} percent left, rears {left[2]} and {left[3]}. Worst the {worst}."
 
     def compound(self, race):
+        """COMPOUND: the tyre compound, when the game says it."""
         return (
             f"{race.me.compound}."
             if race.me.compound
@@ -284,12 +304,15 @@ class Answers:
         )
 
     def brakes(self, race):
+        """BRAKES: the four brake temperatures, in degrees."""
         b = race.me.brake_temps
         if not b or len(b) != 4:
             return "No brake temperatures from the game."
         return f"Brakes: fronts {round(b[0])} and {round(b[1])}, rears {round(b[2])} and {round(b[3])} degrees."
 
     def damage(self, race):
+        """DAMAGE: in how many places the car is dented, and whether a part came off or
+        the engine is overheating."""
         me = race.me
         hit = sum(1 for d in me.dents if d)
         words = (
@@ -306,6 +329,7 @@ class Answers:
         return words
 
     def engine(self, race):
+        """ENGINE: overheating (and what to do about it), or fine."""
         return (
             "Engine's overheating. Short-shift and get air to it."
             if race.me.overheating
@@ -313,6 +337,8 @@ class Answers:
         )
 
     def weather(self, race):
+        """WEATHER: the air and track temperatures, the rain, how wet the track is and
+        how much rubber is down; the game gives no forecast."""
         s = race.session
         rain = (
             "Dry."
@@ -334,6 +360,8 @@ class Answers:
         return words + " No forecast in the data."
 
     def flags(self, race):
+        """FLAGS: the yellows (the whole course in the safety car phase, else the
+        sectors under yellow), and a blue flag shown to him."""
         s = race.session
         yellow_sectors = [
             str(i + 1) for i, f in enumerate(s.sector_flags) if f == SECTOR_YELLOW
@@ -349,6 +377,8 @@ class Answers:
         return words
 
     def sectors(self, race):
+        """SECTORS: his last lap's three sector times, and the best possible lap (his
+        best sectors added up)."""
         timed = [
             r for r in getattr(self.strategist, "lap_records", []) if r.get("sectors_s")
         ]
@@ -360,6 +390,7 @@ class Answers:
         return words + f" Best possible lap {lap_text(sum(best))}."
 
     def class_standing(self, race):
+        """His place in his class, of how many cars, and his place overall."""
         me = race.me
         mine = sorted(
             [me.place]
@@ -368,9 +399,12 @@ class Answers:
         return f"P{mine.index(me.place) + 1} in class, of {len(mine)}. P{me.place} overall."
 
     def class_position(self, race):
+        """CLASS_POSITION: his place in his class (class_standing)."""
         return self.class_standing(race)
 
     def leader(self, race):
+        """LEADER: who leads his class, in what car and how far up the road; and the
+        overall leader's class when that car is in another class."""
         me = race.me
         cars = [(o.place, o) for o in race.opponents]
         overall = min(cars, key=lambda c: c[0]) if cars else None
@@ -394,6 +428,7 @@ class Answers:
         return words
 
     def fastest_lap(self, race):
+        """FASTEST_LAP: the fastest lap in his class, and his own best beside it."""
         me = race.me
         same = [
             o.best_lap
@@ -415,6 +450,7 @@ class Answers:
         return words
 
     def penalty(self, race):
+        """PENALTY: how many penalties he has to serve."""
         n = race.me.penalties
         return (
             "No penalty."
@@ -425,12 +461,15 @@ class Answers:
         )
 
     def track_limits(self, race):
+        """TRACK_LIMITS: his track limit steps and, when the game gives the limit, how
+        many more before a penalty."""
         steps, limit = race.me.track_limit_steps, race.session.limit_steps_per_penalty
         if not limit:
             return f"{steps} track limit steps."
         return f"{steps} of {limit} track limit steps. {max(0, limit - steps)} before a penalty."
 
     def settings(self, race):
+        """SETTINGS: the brake bias, TC, ABS and motor map, as the game reports them."""
         me = race.me
         bias = (
             f"Bias {round(me.brake_bias_rear * 100, 1)} rear. "
@@ -440,6 +479,8 @@ class Answers:
         return f"{bias}TC {me.tc}, ABS {me.abs}, map {me.motor_map}."
 
     def fuel_usage(self, race):
+        """FUEL_USAGE: the litres in the tank, and the fuel used on the last lap the
+        strategist logged."""
         words = f"{round(race.me.fuel, 1)} litres in."
         used = [
             r["fuel_used"]
@@ -453,17 +494,20 @@ class Answers:
         return words
 
     def battery(self, race):
+        """BATTERY: the battery charge, on a car that has one."""
         if race.me.battery <= 0:
             return "No battery on this car."
         return f"Battery {round(race.me.battery * 100)} percent."
 
     def lap_valid(self, race):
+        """LAP_VALID: whether his last timed lap counted."""
         records = getattr(self.strategist, "lap_records", [])
         if not records:
             return "No lap timed yet."
         return "Last lap counted." if records[-1]["valid"] else "Last lap didn't count."
 
     def lap_time(self, race):
+        """LAP_TIME: his last lap and his best."""
         me = race.me
         if me.last_lap <= 0:
             return "No timed lap yet."

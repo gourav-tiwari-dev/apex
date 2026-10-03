@@ -19,25 +19,32 @@ NEAR_RADIUS_M = 60.0
 
 
 def text(raw):
+    """A fixed-size game string as text: the bytes decoded, the NUL padding and spaces
+    stripped."""
     return raw.decode(errors="replace").strip("\x00").strip()
 
 
 def signed_char(raw):
+    """One game byte as a signed number (0 when empty)."""
     if not raw:
         return 0
     return int.from_bytes(raw, "little", signed=True)
 
 
 def speed_kmh_of(velocity):
+    """Speed in km/h from a velocity in m/s."""
     return math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2) * 3.6
 
 
 def kelvin_to_celsius(kelvin):
+    """Kelvin to Celsius, to a tenth of a degree."""
     return round(kelvin - 273.15, 1)
 
 
 @dataclass
 class Session:
+    """The session on one scoring update: track, type, phase, time left, flags, weather
+    and the track limits rule."""
     track: str
     session: int  # 0 testday, 1-4 practice, 5-8 qualifying, 9 warmup, 10-13 race
     game_phase: int  # 0 before, 3 formation, 4 lights, 5 green, 6 yellow/safety car, 7 stopped, 8 over
@@ -63,6 +70,8 @@ class Session:
 
 @dataclass
 class Me:
+    """His car on one scoring update: standing, lap and sector times, pits and flags,
+    and its telemetry (fuel, tyres, brakes, damage, settings)."""
     driver: str
     car_class: str
     place: int
@@ -113,6 +122,8 @@ class Me:
 
 @dataclass
 class Opponent:
+    """Another car on one scoring update: its standing and times, and its telemetry when
+    the game has a row for it."""
     id: int
     driver: str
     steam_id: int
@@ -164,6 +175,8 @@ class Opponent:
 
 @dataclass
 class RaceSnapshot:
+    """The whole race on one scoring update (about 5 a second): the session, his car and
+    every other car."""
     sim_time: float
     session: Session
     me: Me | None
@@ -173,6 +186,8 @@ class RaceSnapshot:
 
 @dataclass
 class NearCar:
+    """A car within NEAR_RADIUS_M of him on one frame: where it is, how fast, and its
+    pedals and steering."""
     id: int
     x: float
     y: float
@@ -185,6 +200,7 @@ class NearCar:
 
 @dataclass
 class NearCars:
+    """Every car within NEAR_RADIUS_M of him on one frame, for the spotter."""
     sim_time: float
     cars: list
     t: str = "near"
@@ -213,6 +229,8 @@ def identity(opponent):
 
 
 def telemetry_by_id(data):
+    """Each car's telemetry row by mID, the id that matches it to its scoring row (rows
+    with mID 0 left out)."""
     rows = {}
     for row in data.telemetry.telemInfo:
         if row.mID != 0:
@@ -221,6 +239,7 @@ def telemetry_by_id(data):
 
 
 def read_session(info):
+    """Session from the game's scoring info."""
     return Session(
         track=text(info.mTrackName),
         session=info.mSession,
@@ -245,6 +264,7 @@ def read_session(info):
 
 
 def read_me(scoring, car):
+    """Me from his scoring row and his car's telemetry."""
     tyre_temps = []
     tyre_pressures = []
     tyre_wear = []
@@ -306,6 +326,8 @@ def read_me(scoring, car):
 
 
 def read_opponent(scoring, car):
+    """Opponent from its scoring row and its telemetry row (None when the game has none
+    for it)."""
     opponent = Opponent(
         id=scoring.mID,
         driver=text(scoring.mDriverName),
@@ -359,6 +381,7 @@ def read_opponent(scoring, car):
 
 
 def read_race_snapshot(data):
+    """RaceSnapshot from one read of the game's shared memory."""
     info = data.scoring.scoringInfo
     my_car = data.telemetry.telemInfo[data.telemetry.playerVehicleIdx]
     cars_by_id = telemetry_by_id(data)
@@ -380,10 +403,13 @@ def read_race_snapshot(data):
 
 
 def my_car_time(data):
+    """His car's telemetry time: the near cars are stamped with it."""
     return data.telemetry.telemInfo[data.telemetry.playerVehicleIdx].mElapsedTime
 
 
 def read_near_cars(data, my_pos):
+    """NearCars of the cars within NEAR_RADIUS_M of my_pos; None when no car is that
+    close."""
     info = data.scoring.scoringInfo
     cars_by_id = telemetry_by_id(data)
     near = []
@@ -416,6 +442,7 @@ def read_near_cars(data, my_pos):
 
 
 def race_snapshot_from_dict(d):
+    """A RaceSnapshot back from its tape line."""
     me = None
     if d["me"] is not None:
         me = Me(**d["me"])
@@ -431,6 +458,7 @@ def race_snapshot_from_dict(d):
 
 
 def near_cars_from_dict(d):
+    """NearCars back from its tape line."""
     cars = []
     for c in d["cars"]:
         cars.append(NearCar(**c))

@@ -36,6 +36,8 @@ ME = "me"
 
 
 class RaceModel:
+    """One picture of the race for every seat and the coach: every car's road trail
+    (mine too), the battles between cars and the pit stops."""
     def __init__(self, lap_length=None):
         self.clock = TrackClock(lap_length)
         self.race = None
@@ -47,9 +49,12 @@ class RaceModel:
     # ---- feeding it (the live loop, once per snapshot / frame, BEFORE any seat) ----------------
     @property
     def lap_length(self):
+        """The lap length the clock works with (None until it knows)."""
         return self.clock.lap_length
 
     def see_race(self, race, now):
+        """Takes in a race snapshot: the trails, then (once the lap length is known) the
+        pit stops of the last two minutes and the battles."""
         if race is None or race.me is None:
             return
         self.race, self.now = race, now
@@ -65,17 +70,21 @@ class RaceModel:
         self.battles_update(now)
 
     def see_me(self, lap_dist, now):
+        """Takes in where I am on the lap, every frame."""
         self.clock.see_me(lap_dist, now)
 
     # ---- where things are ---------------------------------------------------------------------
     def trail(self, key):
+        """That car's road trail (ME for mine), or None."""
         return self.clock.mine if key == ME else self.clock.theirs.get(key)
 
     def distance(self, key):
+        """How far that car has raced on the road, or None."""
         trail = self.trail(key)
         return trail.distance[-1] if trail is not None and trail.distance else None
 
     def car(self, key):
+        """That car in the latest snapshot (ME for mine), or None."""
         if self.race is None:
             return None
         if key == ME:
@@ -94,6 +103,8 @@ class RaceModel:
         return round(b.time[-1] - when_front, 2)
 
     def gap_at(self, front, back, distance):
+        """Seconds after the front car that the back car passed that point of the road;
+        None when either trail does not reach it."""
         f, b = self.trail(front), self.trail(back)
         if f is None or b is None:
             return None
@@ -225,6 +236,8 @@ class RaceModel:
         return [key for _, key in sorted(rows, reverse=True)]
 
     def battles_update(self, now):
+        """Notes since when each pair of cars next to each other on the road has been
+        within BATTLE_S; a pair that drifted apart starts over."""
         keys = self.order()
         seen = set()
         for front, back in zip(keys, keys[1:]):

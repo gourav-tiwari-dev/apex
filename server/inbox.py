@@ -18,6 +18,8 @@ INBOX = os.path.join(HERE, "inbox")
 
 
 def wrangler(*args, binary=False):
+    """Runs a `wrangler kv` command on the door's FEEDBACK store and returns its output
+    (bytes when binary). A failed command stops the inbox with wrangler's error."""
     out = subprocess.run(
         ["npx", "wrangler", "kv", *args, "--binding", "FEEDBACK", "--remote"],
         cwd=HERE,
@@ -30,6 +32,8 @@ def wrangler(*args, binary=False):
 
 
 def main():
+    """Pulls every tester's feedback into server/inbox/ (one line printed each) and
+    their tape when they sent one; --replay plays each new tape through Apex."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--replay", action="store_true")
     args = ap.parse_args()

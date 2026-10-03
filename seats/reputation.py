@@ -25,6 +25,9 @@ class Reputation:
         self.hits_on_me = {}  # identity -> contacts with him this race
 
     def see_race(self, race):
+        """Counts each car's incidents from the game's last-impact time: hits closer
+        than INCIDENT_MERGE_S are one incident, and an impact from before Apex was
+        watching counts none."""
         for opponent in race.opponents:
             impact = opponent.last_impact_time
             if impact is None or impact <= 0:
@@ -40,6 +43,8 @@ class Reputation:
                 self.last_impact[opponent.id] = impact
 
     def hit_recently(self, car_id, now):
+        """That car hit something (a wall or a car) in the last GIFT_IMPACT_S seconds: a
+        place gained from it is a gift, not a pass."""
         impact = self.last_impact.get(car_id)
         return (
             impact is not None
@@ -48,6 +53,8 @@ class Reputation:
         )
 
     def words(self, car):
+        """What the radio says about that car: how often it has hit him, else its
+        incidents today when there are enough to matter; None for a clean car."""
         hits = self.hits_on_me.get(identity(car), 0)
         if hits == 1:
             return "It's already hit you once."
